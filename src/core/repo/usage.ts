@@ -78,28 +78,50 @@ export async function insertUsageEvent(input: {
   const rawJson = input.snapshot.raw != null ? JSON.stringify(input.snapshot.raw) : null;
 
   if (isSupabaseEnabled()) {
-    assertNoError(
-      await getSupabase()
-        .from("usage_events")
-        .insert({
-          id,
-          channel_id: input.channelId,
-          content_plan_id: input.contentPlanId ?? null,
-          content_idea_id: input.contentIdeaId ?? null,
-          video_project_id: input.videoProjectId ?? null,
-          stage: input.stage,
-          provider: input.snapshot.provider,
-          model: input.snapshot.model ?? null,
-          input_tokens: inputTokens,
-          output_tokens: outputTokens,
-          total_tokens: totalTokens,
-          characters: input.snapshot.characters ?? null,
-          duration_seconds: input.snapshot.durationSeconds ?? null,
-          estimated_usd: estimatedUsd,
-          raw_usage: input.snapshot.raw ?? null,
-          created_at: now,
-        })
-    );
+    const res = await getSupabase()
+      .from("usage_events")
+      .insert({
+        id,
+        channel_id: input.channelId,
+        content_plan_id: input.contentPlanId ?? null,
+        content_idea_id: input.contentIdeaId ?? null,
+        video_project_id: input.videoProjectId ?? null,
+        stage: input.stage,
+        provider: input.snapshot.provider,
+        model: input.snapshot.model ?? null,
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        total_tokens: totalTokens,
+        characters: input.snapshot.characters ?? null,
+        duration_seconds: input.snapshot.durationSeconds ?? null,
+        estimated_usd: estimatedUsd,
+        raw_usage: input.snapshot.raw ?? null,
+        created_at: now,
+      });
+    if (res.error) {
+      // Schema not migrated yet — don't block content generation.
+      console.warn(
+        `[usage] insert failed (${res.error.message}). Run supabase/schema_usage.sql in the Supabase SQL editor.`
+      );
+      return {
+        id,
+        channelId: input.channelId,
+        contentPlanId: input.contentPlanId ?? null,
+        contentIdeaId: input.contentIdeaId ?? null,
+        videoProjectId: input.videoProjectId ?? null,
+        stage: input.stage,
+        provider: input.snapshot.provider,
+        model: input.snapshot.model ?? null,
+        inputTokens,
+        outputTokens,
+        totalTokens,
+        characters: input.snapshot.characters ?? null,
+        durationSeconds: input.snapshot.durationSeconds ?? null,
+        estimatedUsd,
+        rawUsage: input.snapshot.raw ?? null,
+        createdAt: now,
+      };
+    }
   } else {
     getDb()
       .prepare(
@@ -161,7 +183,11 @@ export async function listUsageForProject(videoProjectId: string): Promise<Usage
       .select("*")
       .eq("video_project_id", videoProjectId)
       .order("created_at", { ascending: true });
-    return assertNoError(res).map((r) => rowToEvent(r as UsageRow));
+    if (res.error) {
+      console.warn(`[usage] list failed (${res.error.message})`);
+      return [];
+    }
+    return (res.data ?? []).map((r) => rowToEvent(r as UsageRow));
   }
   const rows = getDb()
     .prepare(`SELECT * FROM usage_events WHERE video_project_id = ? ORDER BY created_at ASC`)
@@ -176,7 +202,11 @@ export async function listUsageForPlan(contentPlanId: string): Promise<UsageEven
       .select("*")
       .eq("content_plan_id", contentPlanId)
       .order("created_at", { ascending: true });
-    return assertNoError(res).map((r) => rowToEvent(r as UsageRow));
+    if (res.error) {
+      console.warn(`[usage] list plan failed (${res.error.message})`);
+      return [];
+    }
+    return (res.data ?? []).map((r) => rowToEvent(r as UsageRow));
   }
   const rows = getDb()
     .prepare(`SELECT * FROM usage_events WHERE content_plan_id = ? ORDER BY created_at ASC`)
@@ -207,34 +237,42 @@ export async function recomputeProjectCost(videoProjectId: string): Promise<{
   let events: UsageEvent[] = await listUsageForProject(videoProjectId);
 
   if (isSupabaseEnabled()) {
-    const projectRes = await getSupabase()
-      .from("video_projects")
-      .select("id, content_idea_id")
-      .eq("id", videoProjectId)
-      .maybeSingle();
-    const project = assertNoError(projectRes) as { id: string; content_idea_id: string | null } | null;
-    if (project?.content_idea_id) {
-      const ideaRes = await getSupabase()
-        .from("usage_events")
-        .select("*")
-        .eq("content_idea_id", project.content_idea_id)
-        .eq("stage", "script");
-      await mergeUnique(events, assertNoError(ideaRes).map((r) => rowToEvent(r as UsageRow)));
-
-      const ideaRow = await getSupabase()
-        .from("content_ideas")
-        .select("plan_id")
-        .eq("id", project.content_idea_id)
+    try {
+      const projectRes = await getSupabase()
+        .from("video_projects")
+        .select("id, content_idea_id")
+        .eq("id", videoProjectId)
         .maybeSingle();
-      const planId = (assertNoError(ideaRow) as { plan_id: string } | null)?.plan_id;
-      if (planId) {
-        const planRes = await getSupabase()
+      const project = assertNoError(projectRes) as { id: string; content_idea_id: string | null } | null;
+      if (project?.content_idea_id) {
+        const ideaRes = await getSupabase()
           .from("usage_events")
           .select("*")
-          .eq("content_plan_id", planId)
-          .eq("stage", "ideas");
-        await mergeUnique(events, assertNoError(planRes).map((r) => rowToEvent(r as UsageRow)));
+          .eq("content_idea_id", project.content_idea_id)
+          .eq("stage", "script");
+        if (!ideaRes.error) {
+          await mergeUnique(events, (ideaRes.data ?? []).map((r) => rowToEvent(r as UsageRow)));
+        }
+
+        const ideaRow = await getSupabase()
+          .from("content_ideas")
+          .select("plan_id")
+          .eq("id", project.content_idea_id)
+          .maybeSingle();
+        const planId = (assertNoError(ideaRow) as { plan_id: string } | null)?.plan_id;
+        if (planId) {
+          const planRes = await getSupabase()
+            .from("usage_events")
+            .select("*")
+            .eq("content_plan_id", planId)
+            .eq("stage", "ideas");
+          if (!planRes.error) {
+            await mergeUnique(events, (planRes.data ?? []).map((r) => rowToEvent(r as UsageRow)));
+          }
+        }
       }
+    } catch (err) {
+      console.warn(`[usage] recompute gather failed:`, err);
     }
   } else {
     const project = getDb()
@@ -263,16 +301,18 @@ export async function recomputeProjectCost(videoProjectId: string): Promise<{
   const now = new Date().toISOString();
 
   if (isSupabaseEnabled()) {
-    assertNoError(
-      await getSupabase()
-        .from("video_projects")
-        .update({
-          cost_usd_total: total,
-          cost_breakdown_json: breakdown,
-          updated_at: now,
-        })
-        .eq("id", videoProjectId)
-    );
+    const upd = await getSupabase()
+      .from("video_projects")
+      .update({
+        cost_usd_total: total,
+        cost_breakdown_json: breakdown,
+        updated_at: now,
+      })
+      .eq("id", videoProjectId);
+    if (upd.error) {
+      // cost_* columns may be missing until schema_usage.sql is applied
+      console.warn(`[usage] project cost update failed (${upd.error.message})`);
+    }
   } else {
     getDb()
       .prepare(
