@@ -8,7 +8,7 @@ import {
 import { buildScriptGenerationContext } from "./promptContext";
 import { contentPlanJsonInstructions, scriptJsonInstructions, parseContentPlanJson, parseScriptJson } from "./llmContract";
 
-const MODEL = process.env.GEMINI_SCRIPT_MODEL || "gemini-2.0-flash";
+const MODEL = process.env.GEMINI_SCRIPT_MODEL || "gemini-3.8-flash";
 
 async function complete(prompt: string): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -30,7 +30,9 @@ async function complete(prompt: string): Promise<string> {
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    throw new Error(`Gemini script request failed (${response.status}): ${body.slice(0, 500)}`);
+    throw new Error(
+      `Gemini script request failed (${response.status}) using model "${MODEL}" — set GEMINI_SCRIPT_MODEL in .env.local (or in Vercel's env vars) if Google has retired this one. Response: ${body.slice(0, 500)}`
+    );
   }
 
   const json = await response.json();
