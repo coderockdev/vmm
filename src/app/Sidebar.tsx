@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -13,6 +13,8 @@ import {
   ListIcon,
   UploadIcon,
 } from "./icons";
+
+const COLLAPSED_STORAGE_KEY = "vmm-sidebar-collapsed";
 
 const NAV = [
   { href: "/", label: "Canais", icon: HomeIcon },
@@ -46,15 +48,51 @@ export function Sidebar() {
   // "/channels/..." routes are also part of the "Canais" section.
   const isCanaisActive = pathname === "/" || pathname.startsWith("/channels");
 
+  const [collapsed, setCollapsed] = useState(false);
+
+  // Read the saved preference after mount only — localStorage isn't
+  // available during SSR, and defaulting to "expanded" there avoids a
+  // hydration mismatch (worst case: one frame before it collapses back).
+  useEffect(() => {
+    try {
+      setCollapsed(localStorage.getItem(COLLAPSED_STORAGE_KEY) === "1");
+    } catch {
+      // localStorage unavailable (private mode, etc.) — just stay expanded.
+    }
+  }, []);
+
+  function toggleCollapsed() {
+    setCollapsed((previous) => {
+      const next = !previous;
+      try {
+        localStorage.setItem(COLLAPSED_STORAGE_KEY, next ? "1" : "0");
+      } catch {
+        // ignore — preference just won't persist this session
+      }
+      return next;
+    });
+  }
+
   return (
-    <aside className="sidebar">
-      <Link href="/" className="brand">
-        <BrandMark />
-        <span className="brand-copy">
-          <strong>VMM</strong>
-          <small>VIRAL MONEY MACHINE</small>
-        </span>
-      </Link>
+    <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
+      <div className="brand-row">
+        <Link href="/" className="brand">
+          <BrandMark />
+          <span className="brand-copy">
+            <strong>VMM</strong>
+            <small>VIRAL MONEY MACHINE</small>
+          </span>
+        </Link>
+        <button
+          type="button"
+          className="sidebar-collapse-toggle"
+          onClick={toggleCollapsed}
+          aria-label={collapsed ? "Expandir menu lateral" : "Recolher menu lateral"}
+          aria-pressed={collapsed}
+        >
+          <ChevronRightIcon size={14} />
+        </button>
+      </div>
 
       <nav className="primary-nav" aria-label="Navegação principal">
         {NAV.map((item) => {

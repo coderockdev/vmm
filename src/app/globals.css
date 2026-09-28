@@ -83,15 +83,91 @@ textarea {
   background:
     radial-gradient(circle at 52% 48%, #18191e 0, #121317 47%, #101115 100%);
   border-right: 1px solid #2b2c30;
+  transition: flex-basis .18s ease, width .18s ease;
+}
+
+/* Manually toggled via the collapse button — same visual treatment the
+   narrow-viewport media queries already use, just available at any width. */
+.sidebar.collapsed {
+  flex-basis: 82px;
+  width: 82px;
+  padding-inline: 10px;
+}
+
+.sidebar.collapsed .brand-row {
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sidebar.collapsed .brand {
+  justify-content: center;
+  height: auto;
+  padding: 0;
+}
+
+.sidebar.collapsed .brand-copy,
+.sidebar.collapsed .nav-item span,
+.sidebar.collapsed .profile-copy,
+.sidebar.collapsed .profile-block > svg {
+  display: none;
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar.collapsed .profile-block {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 36px;
 }
 
 .brand {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 11px;
   height: 48px;
+  min-width: 0;
   padding: 0 17px;
-  margin-bottom: 36px;
+}
+
+.sidebar-collapse-toggle {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  color: var(--sidebar-text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color .15s ease, background .15s ease, transform .18s ease;
+}
+
+.sidebar-collapse-toggle:hover,
+.sidebar-collapse-toggle:focus-visible {
+  color: #fff;
+  background: #222329;
+  outline: none;
+}
+
+.sidebar-collapse-toggle svg {
+  transform: rotate(180deg);
+  transition: transform .18s ease;
+}
+
+.sidebar.collapsed .sidebar-collapse-toggle svg {
+  transform: rotate(0deg);
 }
 
 .brand-mark {
@@ -1949,9 +2025,23 @@ body:has(.channel-workspace) .main-content {
     width: 360px;
   }
 
+  .creation-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .creation-card,
+  .channel-summary-card {
+    height: auto;
+  }
+
   .creation-controls {
-    grid-template-columns: minmax(100px, auto) minmax(115px, auto) minmax(240px, 1fr) minmax(190px, auto);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 9px;
+  }
+
+  .format-control,
+  .generate-ideas-button {
+    grid-column: 1 / -1;
   }
 
   .format-control button {
