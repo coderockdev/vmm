@@ -29,6 +29,7 @@ async function complete(prompt: string): Promise<{ text: string; usage: UsageSna
       model: MODEL,
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
+      max_tokens: 8000,
     }),
   });
 

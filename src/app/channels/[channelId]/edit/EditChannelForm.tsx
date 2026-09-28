@@ -59,6 +59,8 @@ export function EditChannelForm({
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [coverUrl, setCoverUrl] = useState(initialCoverUrl);
   const [generatingCover, setGeneratingCover] = useState(false);
   const [coverError, setCoverError] = useState<string | null>(null);
@@ -175,14 +177,17 @@ export function EditChannelForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setSaveMessage(null);
+    setSaveError(null);
     try {
-      await fetch(`/api/channels/${channel.id}`, {
+      const response = await fetch(`/api/channels/${channel.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
           niche,
           dna: {
+            ...channel.dna,
             description,
             purpose,
             audience,
@@ -212,7 +217,22 @@ export function EditChannelForm({
           },
         }),
       });
-      router.push(`/channels/${channel.id}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error ?? `Falha ao salvar (HTTP ${response.status})`);
+      }
+
+      const voiceLabel =
+        voiceProfile.provider === "heygen"
+          ? `${voiceProfile.voice_name} · HeyGen (ElevenLabs v3)`
+          : `${voiceProfile.voice_name} · ${voiceProfile.provider}`;
+      const tagsLabel = performanceEnabled
+        ? ` · ${selectedTags.length} tags de emoção ativas`
+        : " · sem tags de emoção";
+      setSaveMessage(`Salvo com sucesso: ${voiceLabel}${tagsLabel}.`);
+      router.refresh();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
     }
@@ -235,11 +255,73 @@ export function EditChannelForm({
         ← Voltar para {channel.name}
       </Link>
       <h1 style={{ fontSize: 26, fontWeight: 800, marginBottom: 4 }}>Editar Channel DNA</h1>
-      <p style={{ color: "var(--text-dim)", marginBottom: 24 }}>
-        Idioma e template visual são fixos após a criação (evita quebrar o histórico do canal).
+      <p style={{ color: "var(--text-dim)", fontSize: 14, marginBottom: 12 }}>
+        Permanent channel settings. These constrain every future generation.
       </p>
 
+      <div
+        style={{
+          marginBottom: 16,
+          padding: "12px 14px",
+          borderRadius: 12,
+          border: "1px solid #b7e4c7",
+          background: "#edf7f0",
+          fontSize: 13,
+          lineHeight: 1.45,
+        }}
+      >
+        <strong style={{ color: "#1a7f37" }}>Voz salva no canal:</strong>{" "}
+        {channel.dna.voice.profile?.voice_name ?? channel.dna.voice.provider}
+        {channel.dna.voice.profile?.provider === "heygen"
+          ? " · HeyGen (ElevenLabs v3) · tags de emoção ativas"
+          : ` · ${channel.dna.voice.provider}`}
+        {channel.dna.scriptRules.performanceTags?.enabled
+          ? ` · ${channel.dna.scriptRules.performanceTags.selected?.length ?? 0} tags`
+          : ""}
+      </div>
+
+      {saveMessage && (
+        <div
+          role="status"
+          style={{
+            marginBottom: 14,
+            padding: "12px 14px",
+            borderRadius: 12,
+            background: "#1a7f37",
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: 650,
+          }}
+        >
+          {saveMessage}
+          <div style={{ marginTop: 8 }}>
+            <Link href={`/channels/${channel.id}`} style={{ color: "#fff", textDecoration: "underline" }}>
+              Voltar ao canal →
+            </Link>
+          </div>
+        </div>
+      )}
+      {saveError && (
+        <div
+          role="alert"
+          style={{
+            marginBottom: 14,
+            padding: "12px 14px",
+            borderRadius: 12,
+            background: "#fbeceb",
+            color: "var(--danger)",
+            fontSize: 13,
+          }}
+        >
+          {saveError}
+        </div>
+      )}
+
       <form onSubmit={handleSubmit}>
+        <p style={{ color: "var(--text-dim)", marginBottom: 24 }}>
+          Idioma e template visual são fixos após a criação (evita quebrar o histórico do canal).
+        </p>
+
         <section style={sectionStyle}>
           <strong>IDENTIDADE</strong>
 
@@ -584,6 +666,15 @@ export function EditChannelForm({
         {channel.dna.usesNarration && (
           <section style={sectionStyle}>
             <strong>ÁUDIO</strong>
+            <p style={{ fontSize: 12, color: "var(--text-dim)", margin: "8px 0 12px", lineHeight: 1.4 }}>
+              Seleção atual neste formulário:{" "}
+              <strong style={{ color: "var(--text)" }}>
+                {voiceProfile.voice_name}
+                {voiceProfile.provider === "heygen" ? " · HeyGen / ElevenLabs v3" : ` · ${voiceProfile.provider}`}
+              </strong>
+              {performanceEnabled ? ` · ${selectedTags.length} tags de emoção` : ""}
+              . Clique em <strong>Salvar alterações</strong> para gravar no canal.
+            </p>
             <VoicePicker language={channel.dna.language} profile={voiceProfile} onChange={applyVoiceProfile} />
             {voiceProfile.provider === "heygen" && voiceProfile.heygen_template_id === JUAN_CARLOS_HEYGEN.heygen_template_id && (
               <p style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 10, lineHeight: 1.4 }}>
@@ -610,6 +701,9 @@ export function EditChannelForm({
         >
           {saving ? "Salvando..." : "Salvar alterações"}
         </button>
+        {saveMessage && (
+          <p style={{ marginTop: 12, fontSize: 13, color: "#1a7f37", fontWeight: 650 }}>{saveMessage}</p>
+        )}
       </form>
     </div>
   );

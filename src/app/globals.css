@@ -1893,6 +1893,19 @@ body:has(.channel-workspace) .main-content {
   border-radius: 9px;
 }
 
+.workspace-video-thumb-plain {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  background: #1c1f26;
+  padding: 8px;
+}
+
+.workspace-video-thumb-plain > span {
+  position: static;
+  background: transparent;
+}
+
 .workspace-video-thumb .workspace-reference-crop {
   width: 100%;
   height: 100%;

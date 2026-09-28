@@ -440,3 +440,22 @@ export async function getAudioAsset(id: string): Promise<AudioAsset | null> {
   const row = getDb().prepare(`SELECT * FROM audio_assets WHERE id = ?`).get(id) as AudioRow | undefined;
   return row ? rowToAudio(row) : null;
 }
+
+export async function listAudioAssetsForChannel(channelId: string): Promise<AudioAsset[]> {
+  if (isSupabaseEnabled()) {
+    const projects = await listProjectsForChannel(channelId);
+    const ids = projects.map((p) => p.audioAssetId).filter((id): id is string => Boolean(id));
+    if (ids.length === 0) return [];
+    const res = await getSupabase().from("audio_assets").select("*").in("id", ids);
+    return assertNoError(res).map((r) => rowToAudio(r as AudioRow));
+  }
+  const rows = getDb()
+    .prepare(
+      `SELECT a.* FROM audio_assets a
+       JOIN video_projects p ON p.audio_asset_id = a.id
+       WHERE p.channel_id = ?
+       ORDER BY a.created_at DESC`
+    )
+    .all(channelId) as AudioRow[];
+  return rows.map(rowToAudio);
+}

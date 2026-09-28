@@ -22,6 +22,13 @@ export function scriptJsonInstructions(opts?: {
   /** Channel DNA avoid list — repeated at the end so the model cannot miss it. */
   avoid?: string[];
   openingRule?: string;
+  /** When generating one scene of a multi-scene script. */
+  sceneMode?: {
+    scene: number;
+    sceneCount: number;
+    minWords: number;
+    maxChars: number;
+  };
 }): string {
   const durationMinutes = opts?.durationMinutes;
   const wpm = opts?.wordsPerMinute ?? DEFAULT_WORDS_PER_MINUTE;
@@ -30,6 +37,7 @@ export function scriptJsonInstructions(opts?: {
   const targetLines =
     durationMinutes && durationMinutes > 0 ? Math.max(12, Math.round(durationMinutes * 10)) : null;
   const avoid = (opts?.avoid ?? []).map((s) => s.trim()).filter(Boolean);
+  const scene = opts?.sceneMode;
 
   return [
     ``,
@@ -38,15 +46,21 @@ export function scriptJsonInstructions(opts?: {
     `- Cada item de "lines" é UMA frase/linha narrada isoladamente, como seria falada em voz alta (pode incluir tags de interpretação permitidas no contexto).`,
     `- "sectionBreaks" são índices (0-based) de "lines" após os quais deve haver uma pausa maior que o normal (fim de um bloco/seção). Pode ser [].`,
     `- NÃO copie o ângulo/objetivo da ideia como texto falado. O ângulo é instrução interna; o espectador só ouve a oração/narrativa.`,
-    ...(durationMinutes && targetWords && targetLines
+    ...(scene
       ? [
-          `- Duração alvo: ${durationMinutes} minutos de narração (~${targetWords} palavras no total a ~${wpm} ppm, cerca de ${targetLines} linhas).`,
-          `- Varie o conteúdo ao longo da duração; não repita o mesmo bloco com prefixos mecânicos ("Una vez más", "Con calma", "Respirando").`,
+          `- CENA ${scene.scene}/${scene.sceneCount}: escreva no mínimo ~${scene.minWords} palavras nesta resposta.`,
+          `- LIMITE RÍGIDO: o texto falado desta cena deve ter NO MÁXIMO ${scene.maxChars} caracteres (teto TTS).`,
+          `- Não resuma demais: desenvolva emoção, imagens e invocação — sem enchimento mecânico.`,
         ]
-      : []),
+      : durationMinutes && targetWords && targetLines
+        ? [
+            `- Duração alvo: ${durationMinutes} minutos de narração (~${targetWords} palavras no total a ~${wpm} ppm, cerca de ${targetLines} linhas).`,
+            `- Varie o conteúdo ao longo da duração; não repita o mesmo bloco com prefixos mecânicos ("Una vez más", "Con calma", "Respirando").`,
+          ]
+        : []),
     ``,
     `LEMBRETE FINAL ANTES DE ESCREVER (obrigatório):`,
-    opts?.openingRule ? `- Abertura exigida: ${opts.openingRule}` : `- Abra no tom do DNA, nunca com meditação genérica.`,
+    opts?.openingRule ? `- Abertura exigida: ${opts.openingRule}` : `- Abra/continue no tom do DNA, nunca com meditação genérica.`,
     ...(avoid.length
       ? [
           `- FRASES/TEMAS PROIBIDOS — se qualquer um destes aparecer no JSON, a resposta é INVÁLIDA:`,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getChannel, updateChannelDna, updateChannelMeta } from "../../../../core/repo/channels";
-import { listProjectsForChannel } from "../../../../core/repo/projects";
+import { listProjectsForChannel, listAudioAssetsForChannel } from "../../../../core/repo/projects";
 import { listPlansForChannel } from "../../../../core/repo/plans";
 
 export async function GET(_req: NextRequest, { params }: { params: { channelId: string } }) {
@@ -11,6 +11,7 @@ export async function GET(_req: NextRequest, { params }: { params: { channelId: 
     channel,
     projects: await listProjectsForChannel(channel.id),
     plans: await listPlansForChannel(channel.id),
+    audioAssets: await listAudioAssetsForChannel(channel.id),
   });
 }
 

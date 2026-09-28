@@ -3,8 +3,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Channel, ContentPlan, VideoProject, VideoFormat, JobStatus } from "../../../core/types";
+import { Channel, ContentPlan, VideoProject, VideoFormat, JobStatus, AudioAsset } from "../../../core/types";
 import { ProjectCostLabel } from "./ProjectCostLabel";
+import { formatUsd } from "../../../core/usage/types";
 import { findVoice } from "../../../core/providers/tts/voiceCatalog";
 import { TTSProviderName } from "../../../core/providers/tts/TTSProvider";
 import { ScriptReviewModal } from "./ScriptReviewModal";
@@ -25,7 +26,8 @@ const QUANTITIES = [1, 3, 5, 10];
 // "script" = script generated, awaiting human review in the Roteiros tab — it
 // sits there until a person acts, so it's not part of the auto-poll set.
 const ACTIVE_STATUSES: JobStatus[] = ["planned", "audio", "timing", "composing", "rendering"];
-type WorkspaceTab = "criar" | "ideias" | "roteiros" | "videos";
+const AUDIO_ACTIVE: JobStatus[] = ["audio", "timing"];
+type WorkspaceTab = "criar" | "ideias" | "roteiros" | "audio" | "videos";
 
 type Crop = { x: number; y: number; width: number; height: number };
 
@@ -47,27 +49,6 @@ const SAMPLE_IDEAS = [
     title: "A lição da cadeira vazia",
     angle: "Uma situação simples que ensina um aprendizado incrível sobre a vida.",
     objective: "Levar o espectador a valorizar quem está por perto, antes que seja tarde.",
-  },
-] as const;
-
-const SAMPLE_VIDEOS = [
-  {
-    title: "O valor da persistência",
-    meta: "12 ago 2024  ·  12.4K visualizações",
-    duration: "08:24",
-    crop: { x: 270, y: 886, width: 149, height: 82 },
-  },
-  {
-    title: "Noite de chuva na cabana",
-    meta: "11 ago 2024  ·  38.2K visualizações",
-    duration: "03:12:15",
-    crop: { x: 688, y: 886, width: 134, height: 82 },
-  },
-  {
-    title: "Oração da gratidão",
-    meta: "10 ago 2024  ·  21.7K visualizações",
-    duration: "12:08",
-    crop: { x: 1088, y: 886, width: 151, height: 82 },
   },
 ] as const;
 
@@ -130,10 +111,12 @@ export function ChannelWorkspace({
   channel,
   initialProjects,
   initialPlans,
+  initialAudioAssets = [],
 }: {
   channel: Channel;
   initialProjects: VideoProject[];
   initialPlans: ContentPlan[];
+  initialAudioAssets?: AudioAsset[];
 }) {
   const router = useRouter();
   const display = channelDisplay(channel);
@@ -154,6 +137,8 @@ export function ChannelWorkspace({
   const [generating, setGenerating] = useState(false);
   const [scriptError, setScriptError] = useState<string | null>(null);
   const [projects, setProjects] = useState<VideoProject[]>(initialProjects);
+  const [audioAssets, setAudioAssets] = useState<AudioAsset[]>(initialAudioAssets);
+  const [jobByProject, setJobByProject] = useState<Record<string, { progress: number; statusMessage: string; status: string }>>({});
   const [reviewingProject, setReviewingProject] = useState<VideoProject | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -161,7 +146,13 @@ export function ChannelWorkspace({
   const hasActive = projects.some((project) => ACTIVE_STATUSES.includes(project.status));
 
   useEffect(() => {
-    if (hasActive && !pollRef.current) pollRef.current = setInterval(refreshProjects, 2000);
+    if (hasActive && !pollRef.current) {
+      pollRef.current = setInterval(() => {
+        void refreshProjects();
+        void refreshJobs();
+      }, 2000);
+      void refreshJobs();
+    }
     if (!hasActive && pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
@@ -176,6 +167,26 @@ export function ChannelWorkspace({
     const response = await fetch(`/api/channels/${channel.id}`);
     const data = await response.json();
     if (data.projects) setProjects(data.projects);
+    if (data.audioAssets) setAudioAssets(data.audioAssets);
+  }
+
+  async function refreshJobs() {
+    try {
+      const response = await fetch("/api/jobs");
+      const data = await response.json();
+      const map: Record<string, { progress: number; statusMessage: string; status: string }> = {};
+      for (const job of data.jobs ?? []) {
+        if (job.channelId !== channel.id) continue;
+        map[job.videoProjectId] = {
+          progress: job.progress ?? 0,
+          statusMessage: job.statusMessage ?? "",
+          status: job.status ?? "",
+        };
+      }
+      setJobByProject(map);
+    } catch {
+      // ignore poll errors
+    }
   }
 
   async function handleGenerateIdeas() {
@@ -259,7 +270,16 @@ export function ChannelWorkspace({
   const allSelected = visibleIdeas.length > 0 && visibleIdeas.every((idea) => activeSelection.has(idea.id));
 
   const reviewProjects = projects.filter((p) => p.status === "script");
-  const videoProjects = projects.filter((p) => p.status !== "script");
+  const audioById = new Map(audioAssets.map((a) => [a.id, a]));
+  const audioProjects = projects.filter(
+    (p) =>
+      p.status !== "script" &&
+      (AUDIO_ACTIVE.includes(p.status) ||
+        Boolean(p.audioAssetId) ||
+        ["composing", "rendering", "completed", "failed"].includes(p.status))
+  );
+  const audioBusyCount = projects.filter((p) => AUDIO_ACTIVE.includes(p.status)).length;
+  const videoProjects = projects.filter((p) => p.status === "completed" || p.status === "rendering" || p.status === "composing");
 
   function toggleIdea(id: string, checked: boolean) {
     const setter = usingSamples ? setSampleSelected : setSelectedIds;
@@ -320,6 +340,9 @@ export function ChannelWorkspace({
         <button type="button" className={activeTab === "roteiros" ? "active" : ""} onClick={() => setActiveTab("roteiros")}>
           Roteiros{reviewProjects.length > 0 && <span className="tab-badge">{reviewProjects.length}</span>}
         </button>
+        <button type="button" className={activeTab === "audio" ? "active" : ""} onClick={() => setActiveTab("audio")}>
+          Áudio{audioBusyCount > 0 && <span className="tab-badge">{audioBusyCount}</span>}
+        </button>
         <button type="button" className={activeTab === "videos" ? "active" : ""} onClick={() => setActiveTab("videos")}>Vídeos</button>
         <button type="button" disabled title="Ainda não implementado">Estatísticas</button>
         <button type="button" onClick={() => router.push(`/channels/${channel.id}/edit`)}>Configurações</button>
@@ -377,7 +400,15 @@ export function ChannelWorkspace({
             <div className="voice-row">
               <MiniIcon name="sparkles" size={24} />
               <span className="voice-label">IA para gerar as ideias</span>
-              <select value={ideaAiOverride} onChange={(event) => setIdeaAiOverride(event.target.value as typeof ideaAiOverride)}>
+              <select
+                value={ideaAiOverride}
+                onChange={(event) => {
+                  const next = event.target.value as typeof ideaAiOverride;
+                  setIdeaAiOverride(next);
+                  // Keep script IA in sync so "ChatGPT nas ideias" também gera o roteiro com ChatGPT.
+                  setScriptAiOverride(next);
+                }}
+              >
                 <option value="">Padrão do sistema (AI_PROVIDER)</option>
                 <option value="mock">Mock (sem IA, offline)</option>
                 <option value="anthropic">Claude (Anthropic)</option>
@@ -386,7 +417,15 @@ export function ChannelWorkspace({
               </select>
               <label className="voice-toggle-label">
                 <span>Usar outra IA apenas nesta geração</span>
-                <input type="checkbox" checked={Boolean(ideaAiOverride)} onChange={(event) => setIdeaAiOverride(event.target.checked ? "anthropic" : "")} />
+                <input
+                  type="checkbox"
+                  checked={Boolean(ideaAiOverride)}
+                  onChange={(event) => {
+                    const next = event.target.checked ? "openai" : "";
+                    setIdeaAiOverride(next);
+                    setScriptAiOverride(next);
+                  }}
+                />
                 <i />
               </label>
             </div>
@@ -489,26 +528,92 @@ export function ChannelWorkspace({
         </section>
       )}
 
+      {activeTab === "audio" && (
+        <section className="review-queue-section">
+          <div className="workspace-section-title">
+            <h2>Áudios do canal</h2>
+            <p>Acompanhe a geração TTS (ElevenLabs/Cartesia/local): status, duração e custo estimado.</p>
+          </div>
+          {audioProjects.length === 0 ? (
+            <div className="review-empty-state">
+              Nenhum áudio ainda. Aprove um roteiro na aba{" "}
+              <button type="button" onClick={() => setActiveTab("roteiros")}>Roteiros</button> para gerar.
+            </div>
+          ) : (
+            <div className="review-queue-list">
+              {audioProjects.map((project) => {
+                const asset = project.audioAssetId ? audioById.get(project.audioAssetId) : undefined;
+                const job = jobByProject[project.id];
+                const audioCost = project.costBreakdown?.audio ?? 0;
+                const generatingAudio = AUDIO_ACTIVE.includes(project.status);
+                const statusLabel = generatingAudio
+                  ? job?.statusMessage || "Gerando áudio..."
+                  : project.status === "failed"
+                    ? "Falhou"
+                    : asset
+                      ? "Áudio pronto"
+                      : project.status === "completed"
+                        ? "Áudio pronto"
+                        : "Em produção";
+                return (
+                  <article className="review-queue-card" key={project.id}>
+                    <div className="review-queue-icon"><MiniIcon name="mic" size={22} /></div>
+                    <div className="review-queue-copy">
+                      <h3>{project.title}</h3>
+                      <p>
+                        {asset?.provider ?? project.ttsProviderOverride ?? channel.dna.voice.provider}
+                        {asset ? ` · ${formatDuration(asset.durationSeconds)}` : ""}
+                        {audioCost > 0 ? ` · áudio ${formatUsd(audioCost)}` : ""}
+                        {project.costUsdTotal != null && project.costUsdTotal > 0
+                          ? ` · total ${formatUsd(project.costUsdTotal)}`
+                          : ""}
+                      </p>
+                      <span className={`workspace-rendered${project.status === "failed" ? " failed" : ""}`}>
+                        <i /> {statusLabel}
+                        {generatingAudio && job ? ` · ${Math.round(job.progress)}%` : ""}
+                      </span>
+                      <ProjectCostLabel project={project} />
+                    </div>
+                    {asset?.filePath ? (
+                      <a href={asset.filePath} target="_blank" rel="noreferrer">
+                        Ouvir
+                      </a>
+                    ) : (
+                      <button type="button" disabled={generatingAudio} onClick={() => void refreshProjects()}>
+                        {generatingAudio ? "Atualizando..." : "Atualizar"}
+                      </button>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
       {activeTab === "videos" && (
         <section className="channel-videos-section" id="channel-videos">
           <div className="videos-heading">
             <h2>Últimos vídeos do canal</h2>
             <Link href="/renders">Ver todos <span>→</span></Link>
           </div>
-          <div className="workspace-videos-grid">
-            {videoProjects.length === 0
-              ? SAMPLE_VIDEOS.map((video) => <StaticVideoCard key={video.title} video={video} />)
-              : videoProjects.slice(0, 6).map((project, index) => (
-                  <ProjectRow
-                    key={project.id}
-                    project={project}
-                    crop={SAMPLE_VIDEOS[index % SAMPLE_VIDEOS.length].crop}
-                    channel={channel}
-                    onDelete={handleDelete}
-                    onRegenerate={handleRegenerate}
-                  />
-                ))}
-          </div>
+          {videoProjects.length === 0 ? (
+            <div className="review-empty-state">
+              Nenhum vídeo real ainda. Quando o render terminar, aparece aqui.
+            </div>
+          ) : (
+            <div className="workspace-videos-grid">
+              {videoProjects.slice(0, 12).map((project) => (
+                <ProjectRow
+                  key={project.id}
+                  project={project}
+                  channel={channel}
+                  onDelete={handleDelete}
+                  onRegenerate={handleRegenerate}
+                />
+              ))}
+            </div>
+          )}
         </section>
       )}
 
@@ -520,7 +625,8 @@ export function ChannelWorkspace({
           onApproved={(updated) => {
             setProjects((previous) => previous.map((p) => (p.id === updated.id ? updated : p)));
             setReviewingProject(null);
-            setActiveTab("videos");
+            setActiveTab("audio");
+            void refreshJobs();
           }}
           onDeleted={(projectId) => {
             setProjects((previous) => previous.filter((p) => p.id !== projectId));
@@ -532,32 +638,13 @@ export function ChannelWorkspace({
   );
 }
 
-function StaticVideoCard({ video }: { video: typeof SAMPLE_VIDEOS[number] }) {
-  return (
-    <article className="workspace-video-card">
-      <div className="workspace-video-thumb">
-        <ReferenceCrop crop={video.crop} alt={`Miniatura de ${video.title}`} />
-        <span>{video.duration}</span>
-      </div>
-      <div className="workspace-video-copy">
-        <h3>{video.title}</h3>
-        <p>{video.meta}</p>
-        <span className="workspace-rendered"><i /> Renderizado</span>
-      </div>
-      <button type="button" className="workspace-video-menu" aria-label={`Mais opções para ${video.title}`}>⋮</button>
-    </article>
-  );
-}
-
 function ProjectRow({
   project,
-  crop,
   channel,
   onDelete,
   onRegenerate,
 }: {
   project: VideoProject;
-  crop: Crop;
   channel: Channel;
   onDelete: (id: string) => void;
   onRegenerate: (id: string) => void;
@@ -565,8 +652,7 @@ function ProjectRow({
   const isComplete = project.status === "completed";
   return (
     <article className="workspace-video-card">
-      <div className="workspace-video-thumb">
-        <ReferenceCrop crop={crop} alt={`Miniatura de ${project.title}`} />
+      <div className="workspace-video-thumb workspace-video-thumb-plain">
         <span>{project.renderDurationSeconds ? formatDuration(project.renderDurationSeconds) : `${project.durationMinutes}:00`}</span>
       </div>
       <div className="workspace-video-copy">
