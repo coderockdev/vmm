@@ -3,22 +3,64 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { getTTSProvider, TTSProviderName } from "../../../../core/providers/tts";
+import { compileForVoice, VoiceCompileError } from "../../../../core/providers/tts/compileForVoice";
+import { VoiceProfile, profileFromLegacyVoice } from "../../../../core/providers/tts/voiceCapabilities";
 
 /**
  * Synthesizes a short sample with any provider/voice, for the voice-testing
- * UI. Nothing here is persisted to the project's data dir — it's a scratch
- * file streamed back and discarded, unlike the real narration pipeline.
+ * UI. Nothing here is persisted — scratch file streamed back and discarded.
+ * Optional `confirmPaid: true` required when body.paidSample is set (credit use).
  */
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const provider: TTSProviderName = body.provider ?? "cartesia";
   const voiceId: string | null = body.voiceId ?? null;
-  const text: string = body.text;
+  let text: string = body.text;
   const speed: number = body.speed ?? 1;
   const language: "es" | "pt" | "en" = body.language ?? "pt";
+  const profile = body.profile as VoiceProfile | undefined;
+  const paidSample = Boolean(body.paidSample);
+  const confirmPaid = Boolean(body.confirmPaid);
 
   if (!text) {
     return NextResponse.json({ error: "text is required" }, { status: 400 });
+  }
+
+  if (provider === "heygen") {
+    return NextResponse.json(
+      {
+        error:
+          "HeyGen: use a prévia gratuita do card (preview_audio). Não geramos vídeo para testar voz.",
+      },
+      { status: 400 }
+    );
+  }
+
+  if (paidSample && !confirmPaid) {
+    return NextResponse.json(
+      {
+        error: `Isto usa ~${Math.min(text.length, 150)} caracteres de crédito do provider ${provider}. Confirme com confirmPaid: true.`,
+        requiresConfirm: true,
+      },
+      { status: 402 }
+    );
+  }
+
+  if (paidSample) {
+    text = text.slice(0, 150);
+  }
+
+  const effectiveProfile =
+    profile ??
+    profileFromLegacyVoice({ provider, voiceId, speed, language });
+
+  try {
+    text = compileForVoice(text, effectiveProfile);
+  } catch (err) {
+    if (err instanceof VoiceCompileError) {
+      return NextResponse.json({ error: err.message, badTags: err.badTags }, { status: 400 });
+    }
+    throw err;
   }
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vmm-voice-test-"));

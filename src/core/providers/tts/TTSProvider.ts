@@ -1,4 +1,4 @@
-export type TTSProviderName = "local" | "cartesia" | "elevenlabs" | "uploaded";
+export type TTSProviderName = "local" | "cartesia" | "elevenlabs" | "uploaded" | "heygen";
 
 export interface SynthesizeArgs {
   text: string;

@@ -4,22 +4,29 @@ import { Channel, ScriptLine } from "../types";
 import { RawLine } from "../scriptLines";
 import { getTTSProvider } from "../providers/tts";
 import { TTSProviderName } from "../providers/tts/TTSProvider";
+import { compileForVoice, VoiceCompileError } from "../providers/tts/compileForVoice";
+import { profileFromLegacyVoice } from "../providers/tts/voiceCapabilities";
 import { concatAudioFiles, renderSilence, ensureParentDir } from "../audio/ffmpegUtils";
 import { channelTmpDir } from "../paths";
 import { workingFilePath, persistFile } from "../storage";
+import { softCharLimitForProvider, splitTextForTts } from "../providers/tts/ttsLimits";
 
 export interface NarrationResult {
-  filePath: string; // absolute local path, or a full URL in remote-storage mode
+  filePath: string;
   durationSeconds: number;
   provider: TTSProviderName;
-  lines: ScriptLine[]; // with EXACT start/end/pauseAfter from real audio
+  lines: ScriptLine[];
+  /** Characters sent to TTS after compileForVoice (for cost). */
+  characters: number;
 }
 
 /**
- * Synthesizes each script line as its own clip (so pauses are exact silence,
- * not guesswork), concatenates them into one narration file, and returns
- * timestamps derived directly from the real per-line audio durations —
- * text and narration are sample-accurate in sync by construction.
+ * Synthesizes each script line as its own clip (so pauses are exact silence),
+ * compiling performance tags for the channel voice first so engines never
+ * speak raw [whisper] / accent tags aloud.
+ *
+ * Requests are already one-line-per-call; if a single line still exceeds the
+ * provider soft limit (~4800 for ElevenLabs/Cartesia), it is split further.
  */
 export async function synthesizeNarration(args: {
   channel: Channel;
@@ -33,41 +40,83 @@ export async function synthesizeNarration(args: {
   }
 
   const isOverridden = Boolean(args.ttsOverride && args.ttsOverride !== channel.dna.voice.provider);
-  const provider = getTTSProvider(args.ttsOverride ?? (channel.dna.voice.provider as TTSProviderName));
-  // A voiceId is only meaningful for the provider it was picked for — if the
-  // engine itself is being overridden (A/B test), let that provider fall
-  // back to its own default voice instead of misinterpreting another
-  // provider's voice id.
+  const providerName = args.ttsOverride ?? (channel.dna.voice.provider as TTSProviderName);
+  if (providerName === "heygen") {
+    throw new Error(
+      "HeyGen não sintetiza narração linha a linha aqui — use generate_from_template com o template do canal."
+    );
+  }
+  const provider = getTTSProvider(providerName);
   const voiceId = isOverridden ? null : channel.dna.voice.voiceId;
+  const profile =
+    !isOverridden && channel.dna.voice.profile
+      ? channel.dna.voice.profile
+      : profileFromLegacyVoice({
+          provider: providerName,
+          voiceId,
+          speed: channel.dna.voice.speed,
+          language: channel.dna.language,
+        });
+  const maxChars = softCharLimitForProvider(provider.name);
+
   const tmpDir = path.join(channelTmpDir(channel.id), videoProjectId);
   fs.mkdirSync(tmpDir, { recursive: true });
 
   const clipPaths: string[] = [];
   const finalLines: ScriptLine[] = [];
   let cursor = 0;
+  let characters = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const result = await provider.synthesize({
-      text: line.text,
-      language: channel.dna.language,
-      voiceId,
-      speed: channel.dna.voice.speed,
-      outDir: tmpDir,
-      fileBaseName: `line-${String(i).padStart(3, "0")}`,
-    });
+    let spoken: string;
+    try {
+      spoken = compileForVoice(line.text, profile);
+    } catch (err) {
+      if (err instanceof VoiceCompileError) {
+        throw new Error(`Linha ${i + 1}: ${err.message}`);
+      }
+      throw err;
+    }
+    characters += spoken.length;
+    if (!spoken.trim()) {
+      finalLines.push({
+        text: line.text,
+        start: cursor,
+        end: cursor,
+        pauseAfter: line.pauseAfter,
+        sectionBreak: line.sectionBreak,
+      });
+      if (line.pauseAfter > 0) {
+        const silencePath = path.join(tmpDir, `pause-${String(i).padStart(3, "0")}.aiff`);
+        await renderSilence(line.pauseAfter, silencePath);
+        clipPaths.push(silencePath);
+        cursor += line.pauseAfter;
+      }
+      continue;
+    }
 
-    clipPaths.push(result.filePath);
+    const chunks = splitTextForTts(spoken, maxChars);
     const start = cursor;
-    const end = start + result.durationSeconds;
+    for (let c = 0; c < chunks.length; c++) {
+      const result = await provider.synthesize({
+        text: chunks[c],
+        language: channel.dna.language,
+        voiceId,
+        speed: channel.dna.voice.speed,
+        outDir: tmpDir,
+        fileBaseName: `line-${String(i).padStart(3, "0")}-p${String(c).padStart(2, "0")}`,
+      });
+      clipPaths.push(result.filePath);
+      cursor += result.durationSeconds;
+    }
     finalLines.push({
       text: line.text,
       start,
-      end,
+      end: cursor,
       pauseAfter: line.pauseAfter,
       sectionBreak: line.sectionBreak,
     });
-    cursor = end;
 
     if (line.pauseAfter > 0) {
       const silencePath = path.join(tmpDir, `pause-${String(i).padStart(3, "0")}.aiff`);
@@ -91,15 +140,15 @@ export async function synthesizeNarration(args: {
     durationSeconds: cursor,
     provider: provider.name,
     lines: finalLines,
+    characters,
   };
 }
 
-/**
- * Attaches a user-uploaded MP3/WAV as the narration instead of synthesizing
- * one. Timestamps for this path come from EstimateTimingProvider since we
- * only know the total duration, not per-line splits.
- */
-export async function attachUploadedAudioPath(uploadedAbsolutePath: string, channel: Channel, videoProjectId: string): Promise<string> {
+export async function attachUploadedAudioPath(
+  uploadedAbsolutePath: string,
+  channel: Channel,
+  videoProjectId: string
+): Promise<string> {
   const ext = path.extname(uploadedAbsolutePath) || ".mp3";
   const fileName = `${videoProjectId}${ext}`;
   const destPath = workingFilePath(channel.id, "audio", fileName);

@@ -2,8 +2,10 @@ import { Channel, ContentIdea, VideoFormat } from "../types";
 import { getScriptProvider } from "../providers/script";
 import { createContentPlan, listAllIdeaTitlesForChannel } from "../repo/plans";
 import { createVideoProject, createScript, attachScriptToProject, updateProjectStatus, listScriptTextsForChannel } from "../repo/projects";
+import { insertUsageEvent, recomputeProjectCost } from "../repo/usage";
 import { parseGeneratedScript } from "../scriptLines";
 import { hashStringToSeed } from "../../remotion/seededRandom";
+import { UsageSnapshot } from "../usage/types";
 
 export async function generateContentPlanForChannel(args: {
   channel: Channel;
@@ -16,14 +18,14 @@ export async function generateContentPlanForChannel(args: {
   const provider = getScriptProvider(args.aiProviderOverride);
   const previousTitles = await listAllIdeaTitlesForChannel(args.channel.id);
 
-  const ideas = await provider.generateContentPlan({
+  const { ideas, usage } = await provider.generateContentPlan({
     channel: args.channel,
     topic: args.topic,
     quantity: args.quantity,
     previousTitles,
   });
 
-  return createContentPlan({
+  const plan = await createContentPlan({
     channelId: args.channel.id,
     topic: args.topic,
     quantity: args.quantity,
@@ -31,6 +33,17 @@ export async function generateContentPlanForChannel(args: {
     format: args.format,
     ideas,
   });
+
+  if (usage) {
+    await insertUsageEvent({
+      channelId: args.channel.id,
+      contentPlanId: plan.id,
+      stage: "ideas",
+      snapshot: usage,
+    });
+  }
+
+  return plan;
 }
 
 /**
@@ -62,11 +75,16 @@ export async function generateScriptsForIdeas(args: {
           durationMinutes: args.durationMinutes,
           previousScripts,
         })
-      : { rawText: `Ambiente contínuo sobre ${args.topic}.`, sectionBreaks: [] };
+      : {
+          rawText: `Ambiente contínuo sobre ${args.topic}.`,
+          sectionBreaks: [] as number[],
+          usage: { provider: "mock" as const, model: "mock", inputTokens: 0, outputTokens: 0 },
+        };
 
     const rawLines = parseGeneratedScript(generated, args.channel.dna.scriptRules.pauses);
     const wordCount = rawLines.reduce((sum, l) => sum + l.text.split(/\s+/).filter(Boolean).length, 0);
 
+    let firstProjectId: string | null = null;
     for (const format of formats) {
       const seed = hashStringToSeed(`${idea.id}-${format}`);
 
@@ -90,6 +108,23 @@ export async function generateScriptsForIdeas(args: {
       await updateProjectStatus(project.id, "script");
 
       createdProjectIds.push(project.id);
+      if (!firstProjectId) firstProjectId = project.id;
+    }
+
+    // One LLM call → one cost event (attach to idea + first project; both formats share it).
+    const usage: UsageSnapshot | undefined = generated.usage;
+    if (usage && firstProjectId) {
+      await insertUsageEvent({
+        channelId: args.channel.id,
+        contentIdeaId: idea.id,
+        videoProjectId: firstProjectId,
+        stage: "script",
+        snapshot: usage,
+      });
+      // Refresh cost on sibling projects (format=both) so UI shows script cost too.
+      for (const pid of createdProjectIds.slice(-formats.length)) {
+        if (pid !== firstProjectId) await recomputeProjectCost(pid);
+      }
     }
   }
 

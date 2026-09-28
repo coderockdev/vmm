@@ -7,9 +7,25 @@ export type ContentBucket = "affirmation" | "prayer" | "story" | "ambient";
 
 export function inferBucket(topics: string[]): ContentBucket {
   const joined = topics.join(" ").toLowerCase();
-  if (joined.includes("oração") || joined.includes("fé") || joined.includes("espiritual")) return "prayer";
+  // PT + ES prayer / oración channels (Amor Amor lives here).
+  if (
+    joined.includes("oração") ||
+    joined.includes("oracion") ||
+    joined.includes("oración") ||
+    joined.includes("oraciones") ||
+    joined.includes("fé") ||
+    joined.includes("fe ") ||
+    joined.includes("espiritual") ||
+    joined.includes("reconciliación") ||
+    joined.includes("reconciliacion") ||
+    joined.includes("regreso del amor")
+  ) {
+    return "prayer";
+  }
   if (joined.includes("história") || joined.includes("historias") || joined.includes("curiosidade")) return "story";
-  if (joined.includes("chuva") || joined.includes("ruído branco") || joined.includes("relaxamento")) return "ambient";
+  if (joined.includes("chuva") || joined.includes("ruído blanco") || joined.includes("ruído branco") || joined.includes("relaxamento")) {
+    return "ambient";
+  }
   return "affirmation";
 }
 
@@ -38,6 +54,15 @@ const AFFIRMATION_ANGLES_PT: AngleTemplate[] = [
   { title: (t) => `Ritual breve de energia para ${t}`, angle: "ritual energético", objective: "renovar energia emocional" },
 ];
 
+const PRAYER_ANGLES_ES: AngleTemplate[] = [
+  { title: (t) => `Oración terrible para que regrese: ${t}`, angle: "invocación de regreso", objective: "despertar urgencia de contacto" },
+  { title: (t) => `Si te bloqueó, escucha esto sobre ${t}`, angle: "romper el silencio", objective: "sostener la esperanza de un mensaje" },
+  { title: (t) => `Oración de las 3:33 para ${t}`, angle: "hora simbólica", objective: "intensificar el deseo de regreso" },
+  { title: (t) => `Que recuerde tu nombre: ${t}`, angle: "arrepentimiento", objective: "imaginar el orgullo cediendo" },
+  { title: (t) => `Oración para que escriba esta noche: ${t}`, angle: "mensaje inesperado", objective: "canalizar la desesperación en oración" },
+  { title: (t) => `No digas su nombre todavía: ${t}`, angle: "advertencia / gancho", objective: "enganchar en los primeros segundos" },
+];
+
 const PRAYER_ANGLES_PT: AngleTemplate[] = [
   { title: (t) => `Oração para atravessar ${t}`, angle: "oração central", objective: "trazer conforto imediato" },
   { title: (t) => `Momento de gratidão sobre ${t}`, angle: "gratidão", objective: "mudar o foco para o que há de bom" },
@@ -63,7 +88,7 @@ const AMBIENT_ANGLES_PT: AngleTemplate[] = [
 
 export function pickAngleTemplates(bucket: ContentBucket, language: string): AngleTemplate[] {
   if (bucket === "affirmation") return language === "es" ? AFFIRMATION_ANGLES_ES : AFFIRMATION_ANGLES_PT;
-  if (bucket === "prayer") return PRAYER_ANGLES_PT;
+  if (bucket === "prayer") return language === "es" ? PRAYER_ANGLES_ES : PRAYER_ANGLES_PT;
   if (bucket === "story") return STORY_ANGLES_PT;
   return AMBIENT_ANGLES_PT;
 }
@@ -158,7 +183,46 @@ export function buildAffirmationSections(
   };
 }
 
-export function buildPrayerSections(topic: string, angle: string, durationMinutes: number): ScriptSections {
+export function buildPrayerSections(
+  topic: string,
+  angle: string,
+  durationMinutes: number,
+  language: "es" | "pt" = "pt"
+): ScriptSections {
+  if (language === "es") {
+    // Intense love-prayer mock (Amor Amor style) — NO breathing / meditation.
+    const pool = [
+      `Hoy no vengo a pedirte que te calmes. Vengo a orar por ${topic}.`,
+      "Si te duele el silencio, quédate. Esta oración es para ese dolor exacto.",
+      "Que esa persona recuerde lo que vivieron juntos cuando menos lo espere.",
+      "Que el orgullo se quiebre. Que la distancia duela también del otro lado.",
+      "Que sienta la urgencia de escribir, de llamar, de volver a buscarte.",
+      "Que diga en su corazón: perdóname, quiero hablar contigo.",
+      "Repito: que regrese. Que regrese. Que regrese.",
+      "Que rompa este bloqueo. Que deje de huir de lo que aún siente.",
+      "Que esta noche no pueda dormir sin pensar en ti.",
+      "Que el amor verdadero encuentre camino, aunque ahora solo haya herida.",
+    ];
+    const connectors = ["Escucha:", "Con más fuerza:", "Ahora:", "Desde el fondo:"];
+    return {
+      opening: [
+        "Cuidado.",
+        "No digas su nombre todavía.",
+        `Si llegaste aquí por ${topic}, esta oración no es suave: es urgente.`,
+      ],
+      preparation: [
+        "Suscríbete a Amor Amor si esto te está hablando al pecho.",
+        "Escribe su nombre en los comentarios solo si estás listo para orar hasta el final.",
+      ],
+      main: expandPool(pool, targetMainLineCount(durationMinutes, 8), connectors),
+      reflection: [
+        "Ahora suelta un poco la bronca. Si hay amor verdadero, que encuentre su camino.",
+        "Perdono lo que pueda. Suelto lo que ya no me corresponde cargar.",
+      ],
+      closing: ["Gracias.", "Gracias.", "Gracias.", "Amén.", "Escribe AMÉN y vuelve mañana."],
+    };
+  }
+
   const pool = [
     `Vamos entrar juntos em ${angle}.`,
     "Senhor, obrigado por mais um dia de vida.",

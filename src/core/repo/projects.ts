@@ -19,8 +19,23 @@ interface ProjectRow {
   audio_asset_id: string | null;
   render_path: string | null;
   render_duration_seconds: number | null;
+  cost_usd_total?: number | null;
+  cost_breakdown_json?: string | object | null;
   created_at: string;
   updated_at: string;
+}
+
+function parseBreakdown(raw: string | object | null | undefined): VideoProject["costBreakdown"] {
+  if (raw == null) return null;
+  const obj = typeof raw === "string" ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
+  if (!obj || typeof obj !== "object") return null;
+  const o = obj as Record<string, unknown>;
+  return {
+    ideas: Number(o.ideas) || 0,
+    script: Number(o.script) || 0,
+    audio: Number(o.audio) || 0,
+    render: Number(o.render) || 0,
+  };
 }
 
 function rowToProject(row: ProjectRow): VideoProject {
@@ -40,6 +55,8 @@ function rowToProject(row: ProjectRow): VideoProject {
     audioAssetId: row.audio_asset_id,
     renderPath: row.render_path,
     renderDurationSeconds: row.render_duration_seconds,
+    costUsdTotal: row.cost_usd_total != null ? Number(row.cost_usd_total) : null,
+    costBreakdown: parseBreakdown(row.cost_breakdown_json),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

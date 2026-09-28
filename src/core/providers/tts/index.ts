@@ -1,11 +1,14 @@
-import { TTSProvider, TTSProviderName } from "./TTSProvider";
 import { LocalTTSProvider } from "./LocalTTSProvider";
 import { CartesiaTTSProvider } from "./CartesiaTTSProvider";
 import { ElevenLabsTTSProvider } from "./ElevenLabsTTSProvider";
 import { UploadedAudioProvider } from "./UploadedAudioProvider";
+import { HeyGenTTSProvider } from "./HeyGenTTSProvider";
+import { TTSProvider, TTSProviderName } from "./TTSProvider";
 
 export * from "./TTSProvider";
 export * from "./voiceCatalog";
+export * from "./voiceCapabilities";
+export * from "./compileForVoice";
 
 /**
  * TTS_PROVIDER env var sets the channel-wide default (Cartesia — best
@@ -23,6 +26,8 @@ export function getTTSProvider(override?: TTSProviderName | null): TTSProvider {
       return new CartesiaTTSProvider();
     case "elevenlabs":
       return new ElevenLabsTTSProvider();
+    case "heygen":
+      return new HeyGenTTSProvider();
     case "uploaded":
       return new UploadedAudioProvider();
     default:

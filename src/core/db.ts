@@ -93,10 +93,31 @@ function migrate(db: Database.Database) {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS usage_events (
+      id TEXT PRIMARY KEY,
+      channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+      content_plan_id TEXT,
+      content_idea_id TEXT,
+      video_project_id TEXT,
+      stage TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      model TEXT,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      total_tokens INTEGER,
+      characters INTEGER,
+      duration_seconds REAL,
+      estimated_usd REAL NOT NULL DEFAULT 0,
+      raw_usage TEXT,
+      created_at TEXT NOT NULL
+    );
   `);
 
   addColumnIfMissing(db, "video_projects", "tts_provider_override", "TEXT");
   addColumnIfMissing(db, "channels", "cover_ref", "TEXT");
+  addColumnIfMissing(db, "video_projects", "cost_usd_total", "REAL");
+  addColumnIfMissing(db, "video_projects", "cost_breakdown_json", "TEXT");
 }
 
 function addColumnIfMissing(db: Database.Database, table: string, column: string, type: string) {

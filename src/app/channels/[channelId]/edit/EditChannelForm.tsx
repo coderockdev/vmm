@@ -1,11 +1,38 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Channel } from "../../../../core/types";
-import { TTSProviderName } from "../../../../core/providers/tts/TTSProvider";
+import { Channel, VoiceProfile } from "../../../../core/types";
+import { catalogForProvider } from "../../../../core/providers/tts/performanceTagCatalog";
+import {
+  JUAN_CARLOS_HEYGEN,
+  profileFromLegacyVoice,
+} from "../../../../core/providers/tts/voiceCapabilities";
+import { findVoice } from "../../../../core/providers/tts/voiceCatalog";
+import {
+  charsForDuration,
+  DEFAULT_CHARS_PER_WORD,
+  DEFAULT_WORDS_PER_MINUTE,
+  formatBudgetLabel,
+  minutesForWords,
+  wordsForDuration,
+} from "../../../../core/scriptBudget";
 import { VoicePicker } from "./VoicePicker";
+
+function initialVoiceProfile(channel: Channel): VoiceProfile {
+  if (channel.dna.voice.profile) return channel.dna.voice.profile;
+  const catalog = channel.dna.voice.voiceId
+    ? findVoice(channel.dna.voice.provider as any, channel.dna.voice.voiceId)
+    : undefined;
+  return profileFromLegacyVoice({
+    provider: channel.dna.voice.provider,
+    voiceId: channel.dna.voice.voiceId,
+    voiceName: catalog?.name,
+    speed: channel.dna.voice.speed,
+    language: channel.dna.language,
+  });
+}
 
 const inputStyle: React.CSSProperties = { width: "100%" };
 const sectionStyle: React.CSSProperties = {
@@ -66,11 +93,84 @@ export function EditChannelForm({
   const [defaultDurationMinutes, setDefaultDurationMinutes] = useState(
     channel.dna.scriptRules.defaultDurationMinutes
   );
-  const [voice, setVoice] = useState({
-    provider: channel.dna.voice.provider as TTSProviderName,
-    voiceId: channel.dna.voice.voiceId ?? "",
-    speed: channel.dna.voice.speed,
+  const [wordsPerMinute, setWordsPerMinute] = useState(
+    channel.dna.scriptRules.wordsPerMinute ?? DEFAULT_WORDS_PER_MINUTE
+  );
+  const [charsPerWord, setCharsPerWord] = useState(
+    channel.dna.scriptRules.charsPerWord ?? DEFAULT_CHARS_PER_WORD
+  );
+  const [targetWordsInput, setTargetWordsInput] = useState(
+    String(wordsForDuration(channel.dna.scriptRules.defaultDurationMinutes, channel.dna.scriptRules.wordsPerMinute ?? DEFAULT_WORDS_PER_MINUTE))
+  );
+  const [performanceEnabled, setPerformanceEnabled] = useState(
+    channel.dna.scriptRules.performanceTags?.enabled ?? false
+  );
+  const [selectedTags, setSelectedTags] = useState<string[]>(
+    channel.dna.scriptRules.performanceTags?.selected ?? []
+  );
+  const [tagsPerThousandWords, setTagsPerThousandWords] = useState(
+    channel.dna.scriptRules.performanceTags?.tagsPerThousandWords ?? 35
+  );
+  const [customTag, setCustomTag] = useState("");
+  const [voiceProfile, setVoiceProfile] = useState<VoiceProfile>(() => initialVoiceProfile(channel));
+
+  const tagCatalog = useMemo(() => catalogForProvider(voiceProfile.provider as any), [voiceProfile.provider]);
+  const catalogMarkups = useMemo(() => tagCatalog.map((t) => t.markup), [tagCatalog]);
+
+  function densityLabel(n: number): string {
+    if (n <= 22) return "pouco";
+    if (n <= 40) return "médio";
+    return "muito";
+  }
+
+  function applyVoiceProfile(next: VoiceProfile) {
+    setVoiceProfile(next);
+    // Keep performance-tag checklist aligned with what this voice accepts.
+    if (next.capabilities.emotion_tags && next.capabilities.allowed_tags.length) {
+      setPerformanceEnabled(true);
+      setSelectedTags(next.capabilities.allowed_tags);
+    } else {
+      setPerformanceEnabled(false);
+      setSelectedTags([]);
+    }
+  }
+  const budgetLabel = formatBudgetLabel({
+    durationMinutes: defaultDurationMinutes,
+    wordsPerMinute,
+    charsPerWord,
   });
+
+  function applyDurationMinutes(nextMinutes: number) {
+    const minutes = Number.isFinite(nextMinutes) && nextMinutes > 0 ? nextMinutes : 0;
+    setDefaultDurationMinutes(minutes);
+    setTargetWordsInput(String(wordsForDuration(minutes, wordsPerMinute)));
+  }
+
+  function applyWordsPerMinute(nextWpm: number) {
+    const wpm = Number.isFinite(nextWpm) && nextWpm > 0 ? nextWpm : DEFAULT_WORDS_PER_MINUTE;
+    setWordsPerMinute(wpm);
+    setTargetWordsInput(String(wordsForDuration(defaultDurationMinutes, wpm)));
+  }
+
+  function applyTargetWords(raw: string) {
+    setTargetWordsInput(raw);
+    const words = Number(raw);
+    if (!(words > 0)) return;
+    const minutes = minutesForWords(words, wordsPerMinute);
+    if (minutes > 0) setDefaultDurationMinutes(minutes);
+  }
+
+  function toggleTag(markup: string) {
+    setSelectedTags((prev) => (prev.includes(markup) ? prev.filter((t) => t !== markup) : [...prev, markup]));
+  }
+
+  function addCustomTag() {
+    const trimmed = customTag.trim();
+    if (!trimmed) return;
+    const markup = trimmed.startsWith("[") ? trimmed : `[${trimmed.replace(/^\[|\]$/g, "")}]`;
+    if (!selectedTags.includes(markup)) setSelectedTags((prev) => [...prev, markup]);
+    setCustomTag("");
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -94,8 +194,21 @@ export function EditChannelForm({
               structure,
               generationPrompt,
               defaultDurationMinutes,
+              wordsPerMinute,
+              charsPerWord,
+              performanceTags: {
+                enabled: performanceEnabled,
+                selected: selectedTags,
+                tagsPerThousandWords,
+              },
             },
-            voice: { ...channel.dna.voice, ...voice },
+            voice: {
+              provider: voiceProfile.provider,
+              voiceId: voiceProfile.voice_id,
+              speed: voiceProfile.speed,
+              volume: channel.dna.voice.volume ?? 1,
+              profile: voiceProfile,
+            },
           },
         }),
       });
@@ -199,13 +312,69 @@ export function EditChannelForm({
           <input style={inputStyle} value={avoid} onChange={(e) => setAvoid(e.target.value)} />
           <label style={labelStyle}>Estrutura padrão (resumo)</label>
           <input style={inputStyle} value={structure} onChange={(e) => setStructure(e.target.value)} />
-          <label style={labelStyle}>Duração padrão (min)</label>
-          <input
-            type="number"
-            style={inputStyle}
-            value={defaultDurationMinutes}
-            onChange={(e) => setDefaultDurationMinutes(Number(e.target.value))}
-          />
+
+          <label style={labelStyle}>Duração padrão</label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <span style={{ fontSize: 12, color: "var(--text-dim)" }}>Minutos</span>
+              <input
+                type="number"
+                min={1}
+                step={0.5}
+                style={inputStyle}
+                value={defaultDurationMinutes}
+                onChange={(e) => applyDurationMinutes(Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <span style={{ fontSize: 12, color: "var(--text-dim)" }}>Palavras alvo</span>
+              <input
+                type="number"
+                min={50}
+                step={1}
+                style={inputStyle}
+                value={targetWordsInput}
+                onChange={(e) => applyTargetWords(e.target.value)}
+              />
+            </div>
+          </div>
+          <p style={{ fontSize: 13, color: "var(--text)", marginTop: 10, marginBottom: 0, fontWeight: 600 }}>
+            {budgetLabel}
+          </p>
+          <p style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4, marginBottom: 0, lineHeight: 1.4 }}>
+            Ex.: ~1.000 palavras ≈ 8 min a 125 ppm; voz mais lenta (Amor Amor) ≈ 145 ppm → ~1.600 palavras em 11 min.
+            Depende do motor e da velocidade da voz.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 8 }}>
+            <div>
+              <label style={{ ...labelStyle, marginTop: 0 }}>Palavras / minuto (WPM)</label>
+              <input
+                type="number"
+                min={80}
+                max={220}
+                style={inputStyle}
+                value={wordsPerMinute}
+                onChange={(e) => applyWordsPerMinute(Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <label style={{ ...labelStyle, marginTop: 0 }}>Chars / palavra</label>
+              <input
+                type="number"
+                min={4}
+                max={10}
+                step={0.5}
+                style={inputStyle}
+                value={charsPerWord}
+                onChange={(e) => setCharsPerWord(Number(e.target.value) || DEFAULT_CHARS_PER_WORD)}
+              />
+            </div>
+          </div>
+          <p style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6 }}>
+            Agora: {wordsForDuration(defaultDurationMinutes, wordsPerMinute).toLocaleString("pt-BR")} palavras ·{" "}
+            {charsForDuration(defaultDurationMinutes, wordsPerMinute, charsPerWord).toLocaleString("pt-BR")} caracteres totais
+            (o áudio é gerado em vários pedidos TTS — ~4.800 chars/pedido no máx., não um único envio).
+          </p>
         </section>
 
         {channel.dna.usesScript && (
@@ -226,16 +395,202 @@ export function EditChannelForm({
           </section>
         )}
 
+        {channel.dna.usesScript && (
+          <section style={sectionStyle}>
+            <strong>COMANDOS DE INTERPRETAÇÃO</strong>
+            <p style={{ fontSize: 13, color: "var(--text-dim)", marginTop: 8, lineHeight: 1.45 }}>
+              Tags de emocionalidade e pausa no roteiro (ex. <code>[whisper]</code>, <code>[pause]</code>).
+              Só marque o que faz sentido para o motor de voz — se o motor não interpreta, o áudio
+              remove a tag para não ler em voz alta.
+            </p>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                marginTop: 12,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={performanceEnabled}
+                onChange={(e) => setPerformanceEnabled(e.target.checked)}
+              />
+              Usar comandos no roteiro gerado
+            </label>
+
+            {performanceEnabled && (
+              <>
+                <div
+                  style={{
+                    marginTop: 14,
+                    padding: "12px 14px",
+                    borderRadius: 12,
+                    border: "1px solid var(--border)",
+                    background: "color-mix(in srgb, var(--surface) 80%, #f3f4f6)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+                    <strong style={{ fontSize: 13 }}>Densidade de comandos</strong>
+                    <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                      ~{tagsPerThousandWords}/1.000 palavras ({densityLabel(tagsPerThousandWords)})
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={15}
+                    max={55}
+                    step={5}
+                    value={tagsPerThousandWords}
+                    onChange={(e) => setTagsPerThousandWords(Number(e.target.value))}
+                    style={{ width: "100%", marginTop: 10 }}
+                    aria-label="Densidade de tags por mil palavras"
+                  />
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontSize: 11,
+                      color: "var(--text-dim)",
+                      marginTop: 2,
+                    }}
+                  >
+                    <span>pouco (~20)</span>
+                    <span>médio (~35)</span>
+                    <span>muito (~50)</span>
+                  </div>
+                  <p style={{ fontSize: 12, color: "var(--text-dim)", margin: "8px 0 0", lineHeight: 1.4 }}>
+                    Em ~1.600 palavras: cerca de {Math.round((1600 * tagsPerThousandWords) / 1000)} tags no roteiro.
+                  </p>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTags([...catalogMarkups])}
+                    style={{
+                      border: "1px solid var(--border)",
+                      background: "var(--surface)",
+                      borderRadius: 8,
+                      padding: "6px 12px",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Selecionar todos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTags([])}
+                    style={{
+                      border: "1px solid var(--border)",
+                      background: "var(--surface)",
+                      borderRadius: 8,
+                      padding: "6px 12px",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Limpar
+                  </button>
+                </div>
+
+                <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+                  {tagCatalog.map((tag) => {
+                    const checked = selectedTags.includes(tag.markup);
+                    return (
+                      <label
+                        key={tag.markup}
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: 10,
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: `1px solid ${checked ? "var(--accent)" : "var(--border)"}`,
+                          background: checked ? "color-mix(in srgb, var(--accent) 8%, transparent)" : "transparent",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleTag(tag.markup)}
+                          style={{ marginTop: 3 }}
+                        />
+                        <span>
+                          <span style={{ fontFamily: "ui-monospace, Menlo, monospace", fontSize: 13 }}>{tag.markup}</span>
+                          <span style={{ display: "block", fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>
+                            {tag.label} — {tag.hint}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                  {selectedTags
+                    .filter((t) => !tagCatalog.some((c) => c.markup === t))
+                    .map((markup) => (
+                      <label
+                        key={markup}
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: 10,
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: "1px solid var(--accent)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <input type="checkbox" checked onChange={() => toggleTag(markup)} style={{ marginTop: 3 }} />
+                        <span style={{ fontFamily: "ui-monospace, Menlo, monospace", fontSize: 13 }}>{markup}</span>
+                      </label>
+                    ))}
+                </div>
+                <label style={labelStyle}>Colar tag custom</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    style={inputStyle}
+                    value={customTag}
+                    onChange={(e) => setCustomTag(e.target.value)}
+                    placeholder='ex. [softly sigh] ou softly sigh'
+                  />
+                  <button
+                    type="button"
+                    onClick={addCustomTag}
+                    style={{
+                      border: "1px solid var(--border)",
+                      background: "var(--surface)",
+                      borderRadius: 8,
+                      padding: "8px 14px",
+                      fontWeight: 600,
+                      whiteSpace: "nowrap",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Adicionar
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
+        )}
+
         {channel.dna.usesNarration && (
           <section style={sectionStyle}>
             <strong>ÁUDIO</strong>
-            <VoicePicker
-              language={channel.dna.language}
-              provider={voice.provider}
-              voiceId={voice.voiceId}
-              speed={voice.speed}
-              onChange={(next) => setVoice(next)}
-            />
+            <VoicePicker language={channel.dna.language} profile={voiceProfile} onChange={applyVoiceProfile} />
+            {voiceProfile.provider === "heygen" && voiceProfile.heygen_template_id === JUAN_CARLOS_HEYGEN.heygen_template_id && (
+              <p style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 10, lineHeight: 1.4 }}>
+                Juan Carlos: vídeo via <code>generate_from_template</code> (texto_oracion_1..4), sem voice_id.
+                Confirme cada peça antes de gastar crédito de vídeo.
+              </p>
+            )}
           </section>
         )}
 

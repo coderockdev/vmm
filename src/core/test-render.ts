@@ -10,7 +10,7 @@ async function main() {
   const channel = (await getChannel("amor-amor"))!;
   const scriptProvider = getScriptProvider();
 
-  const ideas = await scriptProvider.generateContentPlan({
+  const { ideas } = await scriptProvider.generateContentPlan({
     channel,
     topic: "reconciliación amorosa",
     quantity: 1,

@@ -28,6 +28,15 @@ export async function POST(req: NextRequest) {
         betweenLines: body.scriptRules?.pauses?.betweenLines ?? 0.5,
         betweenSections: body.scriptRules?.pauses?.betweenSections ?? 1.5,
       },
+      wordsPerMinute: body.scriptRules?.wordsPerMinute ?? 145,
+      charsPerWord: body.scriptRules?.charsPerWord ?? 6,
+      performanceTags: {
+        enabled: body.scriptRules?.performanceTags?.enabled ?? false,
+        selected: Array.isArray(body.scriptRules?.performanceTags?.selected)
+          ? body.scriptRules.performanceTags.selected
+          : [],
+        tagsPerThousandWords: body.scriptRules?.performanceTags?.tagsPerThousandWords ?? 35,
+      },
     },
     visual: {
       template: "neon-meditation",

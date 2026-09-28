@@ -1,16 +1,17 @@
 import { Channel } from "../../types";
+import {
+  charsForDuration,
+  DEFAULT_CHARS_PER_WORD,
+  DEFAULT_WORDS_PER_MINUTE,
+  wordsForDuration,
+} from "../../scriptBudget";
+import { profileFromLegacyVoice } from "../tts/voiceCapabilities";
 
 /**
  * Assembles the SCRIPT GENERATION CONTEXT described in the VMM spec:
  *
  *   CHANNEL CONTEXT + CHANNEL RULES + RELEVANT HISTORY + REQUESTED TOPIC
  *   = SCRIPT GENERATION CONTEXT
- *
- * This is the ONE place that combines a channel's permanent DNA with a
- * variable topic. Every ScriptProvider (mock today, a real LLM tomorrow)
- * must build its prompt/context through this function instead of ever
- * receiving the bare topic string on its own. This is what makes the
- * Channel DNA "govern" generation rather than being a suggestion.
  */
 export function buildScriptGenerationContext(args: {
   channel: Channel;
@@ -24,10 +25,53 @@ export function buildScriptGenerationContext(args: {
   const durationMinutes = args.durationMinutes;
   const generationPrompt = (dna.scriptRules.generationPrompt ?? "").trim();
 
-  // Calm spoken narration lands around ~130–150 words/min; we aim mid-range
-  // so TTS + pauses fill the chosen duration without sounding rushed.
+  const wpm = dna.scriptRules.wordsPerMinute ?? DEFAULT_WORDS_PER_MINUTE;
+  const cpw = dna.scriptRules.charsPerWord ?? DEFAULT_CHARS_PER_WORD;
   const targetWords =
-    durationMinutes && durationMinutes > 0 ? Math.round(durationMinutes * 140) : null;
+    durationMinutes && durationMinutes > 0 ? wordsForDuration(durationMinutes, wpm) : null;
+  const targetChars =
+    durationMinutes && durationMinutes > 0 ? charsForDuration(durationMinutes, wpm, cpw) : null;
+
+  const voiceProfile =
+    dna.voice.profile ??
+    profileFromLegacyVoice({
+      provider: dna.voice.provider,
+      voiceId: dna.voice.voiceId,
+      speed: dna.voice.speed,
+      language: dna.language,
+    });
+
+  const perf = dna.scriptRules.performanceTags;
+  const allowedFromVoice = voiceProfile.capabilities.allowed_tags;
+  const allowedTags =
+    perf?.enabled && perf.selected?.length
+      ? perf.selected.filter((t) => allowedFromVoice.includes(t) || voiceProfile.capabilities.emotion_tags)
+      : voiceProfile.capabilities.emotion_tags
+        ? allowedFromVoice
+        : [];
+  const useTags = allowedTags.length > 0 && voiceProfile.capabilities.emotion_tags;
+
+  const voiceRules: string[] = [
+    ``,
+    `VOZ DO CANAL (${voiceProfile.voice_name} / ${voiceProfile.provider}):`,
+    `- NÃO use tags de sotaque (ex. [soft Colombian accent]) — o sotaque vem da voz escolhida, nunca de uma tag.`,
+  ];
+  if (useTags) {
+    const density = perf?.tagsPerThousandWords ?? 35;
+    const approxEvery = Math.max(1, Math.round(1000 / density / 12)); // rough: ~12 words/phrase
+    voiceRules.push(
+      `- Pode usar APENAS estas tags de interpretação: ${allowedTags.join(", ")}.`,
+      `- Densidade alvo: ~${density} tags de emoção/pausa por 1.000 palavras (pouco≈20, médio≈35, muito≈50). Não saturar; espalhar ao longo do roteiro (cerca de 1 tag a cada ~${approxEvery} frases curtas).`,
+      voiceProfile.capabilities.break_tags || voiceProfile.provider === "elevenlabs"
+        ? `- Pausas estruturais: use <break time="2.7s"/> antes de invocações fortes e <break time="1.4s"/> entre alguns parágrafos (3–4 por bloco) — isso é aparte da densidade de tags [...].`
+        : `- NÃO use <break time="…"/> — este motor não aceita; use [pause] se estiver na lista permitida.`,
+      `- As tags NÃO são faladas: são direção de performance. Não invente outras tags.`
+    );
+  } else {
+    voiceRules.push(
+      `- NÃO use nenhuma tag entre colchetes [...] nem <break> / direção de cena — o motor leria em voz alta.`
+    );
+  }
 
   return [
     `SYSTEM CONTEXT:`,
@@ -40,10 +84,16 @@ export function buildScriptGenerationContext(args: {
     `- Idioma: ${dna.language}`,
     `- Tom: ${dna.tone.join(", ")}`,
     `- Temas permitidos: ${dna.topics.join(", ")}`,
-    `- Assuntos a evitar: ${dna.avoid.join(", ")}`,
     `- Estrutura do roteiro (resumo): ${dna.scriptRules.structure}`,
     `- Abertura: ${dna.scriptRules.opening}`,
     `- CTA: ${dna.scriptRules.cta}`,
+    ``,
+    `PROIBIDO ABSOLUTO (Assuntos a evitar — se aparecer no roteiro, o texto está ERRADO):`,
+    ...(dna.avoid.length
+      ? dna.avoid.map((item) => `- NUNCA diga / faça / sugira: "${item}"`)
+      : [`- (nenhum item extra)`]),
+    `- NUNCA abra com respiração, relaxamento, "respira profundamente", "relájate", "cierra los ojos", meditação, mindfulness ou bem-estar suave se isso estiver na lista acima ou contradisser a descrição do canal.`,
+    `- NUNCA vaze meta-texto editorial ("hoy vamos a trabajar en…", ângulo, objetivo da ideia) — só fala dirigida ao espectador.`,
     ...(generationPrompt
       ? [
           ``,
@@ -51,6 +101,7 @@ export function buildScriptGenerationContext(args: {
           generationPrompt,
         ]
       : []),
+    ...voiceRules,
     ``,
     `REGRAS:`,
     `- respeite o nicho;`,
@@ -60,11 +111,11 @@ export function buildScriptGenerationContext(args: {
     `- não saia da premissa editorial;`,
     `- não introduza assuntos não relacionados;`,
     `- evite repetir literalmente roteiros anteriores;`,
-    `- NÃO narrar meta-instruções (tom, ângulo editorial, "hoje vamos trabalhar em…") — só o texto falado ao espectador.`,
-    ...(durationMinutes && targetWords
+    `- números por extenso quando fizer sentido na narração.`,
+    ...(durationMinutes && targetWords && targetChars
       ? [
-          `- a narração deve preencher cerca de ${durationMinutes} minutos (~${targetWords} palavras, tom calmo);`,
-          `- não encher com as mesmas frases em loop com conectores ("una vez más", "con calma"); desenvolva conteúdo real na duração.`,
+          `- a narração deve preencher cerca de ${durationMinutes} minutos (~${targetWords} palavras / ~${targetChars} caracteres, ritmo ~${wpm} ppm);`,
+          `- não encher com as mesmas frases em loop; desenvolva conteúdo real na duração.`,
         ]
       : []),
     ...(previousTitles.length
@@ -74,6 +125,6 @@ export function buildScriptGenerationContext(args: {
     `ASSUNTO DESTA PRODUÇÃO:`,
     `"${topic}"`,
     ``,
-    `Gere um roteiro compatível com esse canal.`,
+    `Gere um roteiro compatível com esse canal — começando no tom certo deste DNA, nunca no template genérico de meditação.`,
   ].join("\n");
 }

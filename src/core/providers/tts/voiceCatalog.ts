@@ -14,6 +14,8 @@ export interface CatalogVoice {
   gender: "feminine" | "masculine";
   description: string;
   recommendedSpeed: number;
+  /** Only true after client sign-off for a channel (e.g. Amor Amor). */
+  validatedForChannel?: boolean;
 }
 
 export const VOICE_CATALOG: CatalogVoice[] = [

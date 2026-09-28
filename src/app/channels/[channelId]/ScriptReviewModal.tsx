@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Channel, Script, VideoProject } from "../../../core/types";
 import { PlayIcon } from "../../icons";
+import { ProjectCostLabel } from "./ProjectCostLabel";
 
 type AiOverride = "" | "mock" | "anthropic" | "openai" | "gemini";
 type TtsOverride = "" | "local" | "cartesia" | "elevenlabs";
@@ -21,6 +22,7 @@ export function ScriptReviewModal({
   onDeleted: (projectId: string) => void;
 }) {
   const [script, setScript] = useState<Script | null>(null);
+  const [currentProject, setCurrentProject] = useState(project);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,6 +37,7 @@ export function ScriptReviewModal({
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
+    setCurrentProject(project);
     void loadScript();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
@@ -46,6 +49,7 @@ export function ScriptReviewModal({
       const response = await fetch(`/api/videos/${project.id}`);
       const data = await response.json();
       setScript(data.script ?? null);
+      if (data.project) setCurrentProject(data.project);
     } catch {
       setError("Não foi possível carregar o roteiro.");
     } finally {
@@ -118,6 +122,7 @@ export function ScriptReviewModal({
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Falha ao regenerar o roteiro");
       setScript(data.script);
+      if (data.project) setCurrentProject(data.project);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -146,6 +151,9 @@ export function ScriptReviewModal({
   }
   if (current.length) paragraphs.push(current);
 
+  const fullText = (script?.lines ?? []).map((l) => l.text).join(" ");
+  const wordCount = fullText.trim() ? fullText.trim().split(/\s+/).filter(Boolean).length : 0;
+  const charCount = fullText.length;
   const busy = approving || regenerating || deleting;
 
   return (
@@ -155,6 +163,7 @@ export function ScriptReviewModal({
           <div>
             <h2>{project.title}</h2>
             <p>{project.topic} · {project.durationMinutes} min · {project.format}</p>
+            <ProjectCostLabel project={currentProject} />
           </div>
           <button type="button" className="script-review-close" onClick={onClose} aria-label="Fechar" disabled={busy}>×</button>
         </header>
@@ -166,6 +175,14 @@ export function ScriptReviewModal({
             <p key={index}>{paragraph.join(" ")}</p>
           ))}
         </div>
+
+        {!loading && script && (
+          <div className="script-review-stats" aria-live="polite">
+            <span>{wordCount.toLocaleString("pt-BR")} palavras</span>
+            <span aria-hidden>·</span>
+            <span>{charCount.toLocaleString("pt-BR")} caracteres</span>
+          </div>
+        )}
 
         {error && <div className="script-review-error">{error}</div>}
 

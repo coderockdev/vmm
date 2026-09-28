@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Channel, ContentPlan, VideoProject, VideoFormat, JobStatus } from "../../../core/types";
+import { ProjectCostLabel } from "./ProjectCostLabel";
 import { findVoice } from "../../../core/providers/tts/voiceCatalog";
 import { TTSProviderName } from "../../../core/providers/tts/TTSProvider";
 import { ScriptReviewModal } from "./ScriptReviewModal";
@@ -478,6 +479,7 @@ export function ChannelWorkspace({
                   <div className="review-queue-copy">
                     <h3>{project.title}</h3>
                     <p>{project.topic} · {project.durationMinutes} min · {project.format}</p>
+                    <ProjectCostLabel project={project} />
                   </div>
                   <button type="button" onClick={() => setReviewingProject(project)}>Ler e revisar</button>
                 </article>
@@ -570,6 +572,7 @@ function ProjectRow({
       <div className="workspace-video-copy">
         <h3>{project.title}</h3>
         <p>{new Date(project.createdAt).toLocaleDateString("pt-BR")} · {channel.name}</p>
+        <ProjectCostLabel project={project} />
         <span className={`workspace-rendered${project.status === "failed" ? " failed" : ""}`}><i /> {isComplete ? "Renderizado" : project.status === "failed" ? "Falhou" : "Em produção"}</span>
       </div>
       <details className="project-actions">

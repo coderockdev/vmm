@@ -4,11 +4,13 @@ import {
   GenerateContentPlanArgs,
   GenerateScriptArgs,
   GeneratedScript,
-  ContentIdeaDraft,
+  ContentPlanResult,
 } from "./ScriptProvider";
 import { buildScriptGenerationContext } from "./promptContext";
-import { contentPlanJsonInstructions, scriptJsonInstructions, parseContentPlanJson, parseScriptJson } from "./llmContract";
+import { contentPlanJsonInstructions, parseContentPlanJson } from "./llmContract";
+import { generateScriptWithGuard } from "./generateScriptWithGuard";
 import { describeProviderError } from "../../httpRetry";
+import { UsageSnapshot } from "../../usage/types";
 
 const MODEL = process.env.ANTHROPIC_SCRIPT_MODEL || "claude-opus-5";
 
@@ -17,17 +19,14 @@ function client(): Anthropic {
   if (!apiKey) {
     throw new Error("ANTHROPIC_API_KEY is not set. Add it to .env.local to use AI_PROVIDER=anthropic.");
   }
-  // The SDK already retries 429/5xx automatically before giving up.
   return new Anthropic({ apiKey });
 }
 
-async function complete(prompt: string): Promise<string> {
+async function complete(prompt: string): Promise<{ text: string; usage: UsageSnapshot }> {
   let message;
   try {
     message = await client().messages.create({
       model: MODEL,
-      // Sonnet/Opus 5 use adaptive thinking — keep headroom so the text
-      // block isn't truncated away after internal reasoning tokens.
       max_tokens: 16000,
       messages: [{ role: "user", content: prompt }],
     });
@@ -47,36 +46,30 @@ async function complete(prompt: string): Promise<string> {
       `Claude response had no text content (stop_reason=${message.stop_reason ?? "?"}, blocks=[${types}]). Tente de novo ou troque o modelo em ANTHROPIC_SCRIPT_MODEL.`
     );
   }
-  return text;
+  const usageRaw = message.usage ?? null;
+  const usage: UsageSnapshot = {
+    provider: "anthropic",
+    model: MODEL,
+    inputTokens: usageRaw?.input_tokens ?? null,
+    outputTokens: usageRaw?.output_tokens ?? null,
+    raw: usageRaw,
+  };
+  return { text, usage };
 }
 
 /** Real Anthropic (Claude) script generation — one of the interchangeable AI_PROVIDER backends. */
 export class ClaudeScriptProvider implements ScriptProvider {
-  async generateContentPlan(args: GenerateContentPlanArgs): Promise<ContentIdeaDraft[]> {
+  async generateContentPlan(args: GenerateContentPlanArgs): Promise<ContentPlanResult> {
     const context = buildScriptGenerationContext({
       channel: args.channel,
       topic: args.topic,
       previousTitles: args.previousTitles,
     });
-    const text = await complete(context + contentPlanJsonInstructions(args.quantity));
-    return parseContentPlanJson(text, args.quantity);
+    const { text, usage } = await complete(context + contentPlanJsonInstructions(args.quantity));
+    return { ideas: parseContentPlanJson(text, args.quantity), usage };
   }
 
   async generateScript(args: GenerateScriptArgs): Promise<GeneratedScript> {
-    const context = buildScriptGenerationContext({
-      channel: args.channel,
-      topic: args.topic,
-      previousTitles: args.previousScripts.slice(0, 5),
-      durationMinutes: args.durationMinutes,
-    });
-    const prompt = [
-      context,
-      ``,
-      `IDEIA APROVADA: ${args.contentIdea.title} — ${args.contentIdea.angle}`,
-      `Duração alvo da narração: ${args.durationMinutes} minutos.`,
-      scriptJsonInstructions(args.durationMinutes),
-    ].join("\n");
-    const text = await complete(prompt);
-    return parseScriptJson(text);
+    return generateScriptWithGuard({ scriptArgs: args, complete });
   }
 }

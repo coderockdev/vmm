@@ -34,7 +34,7 @@ export class ElevenLabsTTSProvider implements TTSProvider {
       },
       body: JSON.stringify({
         text: args.text,
-        model_id: "eleven_multilingual_v2",
+        model_id: "eleven_v3",
         voice_settings: {
           stability: 0.5,
           similarity_boost: 0.75,

@@ -3,15 +3,17 @@ import {
   GenerateContentPlanArgs,
   GenerateScriptArgs,
   GeneratedScript,
-  ContentIdeaDraft,
+  ContentPlanResult,
 } from "./ScriptProvider";
 import { buildScriptGenerationContext } from "./promptContext";
-import { contentPlanJsonInstructions, scriptJsonInstructions, parseContentPlanJson, parseScriptJson } from "./llmContract";
+import { contentPlanJsonInstructions, parseContentPlanJson } from "./llmContract";
+import { generateScriptWithGuard } from "./generateScriptWithGuard";
 import { fetchWithRetry, describeProviderError } from "../../httpRetry";
+import { UsageSnapshot } from "../../usage/types";
 
 const MODEL = process.env.GEMINI_SCRIPT_MODEL || "gemini-3.8-flash";
 
-async function complete(prompt: string): Promise<string> {
+async function complete(prompt: string): Promise<{ text: string; usage: UsageSnapshot }> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY is not set. Add it to .env.local to use AI_PROVIDER=gemini.");
@@ -37,36 +39,30 @@ async function complete(prompt: string): Promise<string> {
   const json = await response.json();
   const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) throw new Error("Gemini response had no content.");
-  return text;
+  const usageRaw = json.usageMetadata ?? null;
+  const usage: UsageSnapshot = {
+    provider: "gemini",
+    model: MODEL,
+    inputTokens: usageRaw?.promptTokenCount ?? null,
+    outputTokens: usageRaw?.candidatesTokenCount ?? null,
+    raw: usageRaw,
+  };
+  return { text, usage };
 }
 
 /** Real Google Gemini script generation — one of the interchangeable AI_PROVIDER backends. */
 export class GeminiScriptProvider implements ScriptProvider {
-  async generateContentPlan(args: GenerateContentPlanArgs): Promise<ContentIdeaDraft[]> {
+  async generateContentPlan(args: GenerateContentPlanArgs): Promise<ContentPlanResult> {
     const context = buildScriptGenerationContext({
       channel: args.channel,
       topic: args.topic,
       previousTitles: args.previousTitles,
     });
-    const text = await complete(context + contentPlanJsonInstructions(args.quantity));
-    return parseContentPlanJson(text, args.quantity);
+    const { text, usage } = await complete(context + contentPlanJsonInstructions(args.quantity));
+    return { ideas: parseContentPlanJson(text, args.quantity), usage };
   }
 
   async generateScript(args: GenerateScriptArgs): Promise<GeneratedScript> {
-    const context = buildScriptGenerationContext({
-      channel: args.channel,
-      topic: args.topic,
-      previousTitles: args.previousScripts.slice(0, 5),
-      durationMinutes: args.durationMinutes,
-    });
-    const prompt = [
-      context,
-      ``,
-      `IDEIA APROVADA: ${args.contentIdea.title} — ${args.contentIdea.angle}`,
-      `Duração alvo da narração: ${args.durationMinutes} minutos.`,
-      scriptJsonInstructions(args.durationMinutes),
-    ].join("\n");
-    const text = await complete(prompt);
-    return parseScriptJson(text);
+    return generateScriptWithGuard({ scriptArgs: args, complete });
   }
 }

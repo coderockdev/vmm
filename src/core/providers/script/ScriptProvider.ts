@@ -1,4 +1,5 @@
-import { Channel, ContentIdea, Script } from "../../types";
+import { Channel, ContentIdea } from "../../types";
+import { UsageSnapshot } from "../../usage/types";
 
 export interface ContentIdeaDraft {
   title: string;
@@ -36,6 +37,13 @@ export interface GeneratedScript {
    * between-lines pause. Optional — omitted lines just use the normal pause.
    */
   sectionBreaks?: number[];
+  /** Token/usage snapshot from the LLM call that produced this script. */
+  usage?: UsageSnapshot;
+}
+
+export interface ContentPlanResult {
+  ideas: ContentIdeaDraft[];
+  usage?: UsageSnapshot;
 }
 
 /**
@@ -45,7 +53,7 @@ export interface GeneratedScript {
  */
 export interface ScriptProvider {
   /** Turns one topic into N distinct content ideas (the Content Plan). */
-  generateContentPlan(args: GenerateContentPlanArgs): Promise<ContentIdeaDraft[]>;
+  generateContentPlan(args: GenerateContentPlanArgs): Promise<ContentPlanResult>;
 
   /** Turns one content idea + the channel's permanent DNA into a full script. */
   generateScript(args: GenerateScriptArgs): Promise<GeneratedScript>;

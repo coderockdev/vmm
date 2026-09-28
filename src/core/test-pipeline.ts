@@ -13,7 +13,7 @@ async function main() {
     const channel = (await getChannel(channelId))!;
     console.log(`\n=== ${channel.name} (${channel.dna.language}) ===`);
 
-    const ideas = await scriptProvider.generateContentPlan({
+    const { ideas } = await scriptProvider.generateContentPlan({
       channel,
       topic: channelId === "amor-amor" ? "reconciliação amorosa" : "uma noite difícil",
       quantity: 3,

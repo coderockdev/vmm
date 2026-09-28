@@ -1,15 +1,25 @@
 import { getJob, updateJob } from "../repo/jobs";
-import { getVideoProject, updateProjectStatus, getScript, updateScriptLines, attachAudioToProject, createAudioAsset, completeProjectRender } from "../repo/projects";
+import {
+  getVideoProject,
+  updateProjectStatus,
+  getScript,
+  updateScriptLines,
+  attachAudioToProject,
+  createAudioAsset,
+  completeProjectRender,
+} from "../repo/projects";
 import { getChannel } from "../repo/channels";
+import { insertUsageEvent } from "../repo/usage";
 import { synthesizeNarration } from "./narration";
 import { renderVideoProject } from "./render";
 import { RawLine } from "../scriptLines";
 import { VideoFormat } from "../types";
+import { UsageProvider } from "../usage/types";
 
 /**
  * Executes the heavy part of a single video's pipeline (audio → timing →
  * composing → rendering). Script generation already happened synchronously
- * before the job was enqueued (it's cheap with a mock/local provider).
+ * before the job was enqueued.
  */
 export async function runProject(jobId: string): Promise<void> {
   const job = await getJob(jobId);
@@ -56,6 +66,25 @@ export async function runProject(jobId: string): Promise<void> {
       audioAbsolutePath = narration.filePath;
       durationInSeconds = narration.durationSeconds;
 
+      const ttsProvider = (narration.provider === "heygen" ? "heygen" : narration.provider) as UsageProvider;
+      await insertUsageEvent({
+        channelId: channel.id,
+        contentIdeaId: project.contentIdeaId,
+        videoProjectId: project.id,
+        stage: "audio",
+        snapshot: {
+          provider: ttsProvider,
+          model:
+            narration.provider === "elevenlabs"
+              ? "eleven_v3"
+              : narration.provider === "cartesia"
+                ? "sonic-3.6"
+                : narration.provider,
+          characters: narration.characters,
+          durationSeconds: narration.durationSeconds,
+        },
+      });
+
       await updateJob(job.id, { status: "timing", progress: 55, statusMessage: "Sincronizando texto..." });
       await updateProjectStatus(project.id, "timing");
     }
@@ -82,6 +111,23 @@ export async function runProject(jobId: string): Promise<void> {
     });
 
     await completeProjectRender(project.id, result.relativeRenderPath, result.durationSeconds);
+
+    const renderProvider =
+      (process.env.RENDER_PROVIDER ?? "local").toLowerCase() === "lambda"
+        ? ("remotion-lambda" as const)
+        : ("local" as const);
+    await insertUsageEvent({
+      channelId: channel.id,
+      contentIdeaId: project.contentIdeaId,
+      videoProjectId: project.id,
+      stage: "render",
+      snapshot: {
+        provider: renderProvider,
+        model: renderProvider === "remotion-lambda" ? process.env.REMOTION_LAMBDA_FUNCTION_NAME ?? "lambda" : "local",
+        durationSeconds: result.durationSeconds,
+      },
+    });
+
     await updateJob(job.id, { status: "completed", progress: 100, statusMessage: "Vídeo pronto" });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

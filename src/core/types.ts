@@ -6,6 +6,14 @@ export type Language = "es" | "pt" | "en";
 
 export type VideoFormat = "video" | "short" | "both";
 
+export type {
+  VoiceProfile,
+  VoiceProvider,
+  VoiceCapabilities,
+} from "./providers/tts/voiceCapabilities";
+
+import type { VoiceProfile } from "./providers/tts/voiceCapabilities";
+
 /**
  * ChannelDNA is the permanent editorial identity of a channel.
  * Everything generated inside a channel must inherit from this.
@@ -25,6 +33,14 @@ export interface ChannelDNA {
     cta: string;
     defaultDurationMinutes: number;
     /**
+     * Spoken-pace budget used to translate minutes ↔ words ↔ characters
+     * for the LLM and the DNA UI. Calm/passionate narration is often ~130–150;
+     * Amor Amor targets ~145 → ~1600 words at 11 min.
+     */
+    wordsPerMinute: number;
+    /** Average characters per spoken word (incl. spaces), for the char estimate. */
+    charsPerWord: number;
+    /**
      * Channel-specific blueprint for how scripts must be written (beats,
      * repetition style, what to say/avoid, section order, etc.). Injected
      * verbatim into every script-generation prompt. Empty = only the short
@@ -36,6 +52,20 @@ export interface ChannelDNA {
       betweenLines: number;
       betweenSections: number;
     };
+    /**
+     * Performance / emotion markup the script generator may insert
+     * (e.g. "[pause]", "[whisper]"). Only `selected` tags are allowed in
+     * prompts; TTS strips any markup the engine cannot interpret.
+     */
+    performanceTags: {
+      enabled: boolean;
+      selected: string[];
+      /**
+       * How many interpretation tags the LLM should aim for per 1000 spoken
+       * words (e.g. 30 = sparse, 50 = dense). Ignored when disabled.
+       */
+      tagsPerThousandWords: number;
+    };
   };
 
   visual: {
@@ -45,10 +75,12 @@ export interface ChannelDNA {
   };
 
   voice: {
-    provider: "local" | "cartesia" | "uploaded" | "elevenlabs";
+    provider: "local" | "cartesia" | "uploaded" | "elevenlabs" | "heygen";
     voiceId: string | null;
     speed: number;
     volume: number;
+    /** Full voice selection (provider, capabilities, HeyGen template, etc.). */
+    profile?: VoiceProfile;
   };
 
   /** Whether this channel's pipeline needs a script/narration at all. */
@@ -118,7 +150,7 @@ export interface AudioAsset {
   videoProjectId: string;
   filePath: string; // relative to data dir (local storage) or full URL (remote storage)
   durationSeconds: number;
-  provider: "local" | "cartesia" | "uploaded" | "elevenlabs";
+  provider: "local" | "cartesia" | "uploaded" | "elevenlabs" | "heygen";
   createdAt: string;
 }
 
@@ -145,11 +177,15 @@ export interface VideoProject {
   errorMessage: string | null;
   seed: number;
   /** Per-generation TTS override (e.g. to A/B "local" vs "elevenlabs" for the same script). Null = use channel default. */
-  ttsProviderOverride: "local" | "cartesia" | "elevenlabs" | "uploaded" | null;
+  ttsProviderOverride: "local" | "cartesia" | "elevenlabs" | "uploaded" | "heygen" | null;
   scriptId: string | null;
   audioAssetId: string | null;
   renderPath: string | null; // relative path under data dir (local storage) or full URL (remote storage), once completed
   renderDurationSeconds: number | null;
+  /** Sum of estimated USD for ideas+script+audio+render attributed to this project. */
+  costUsdTotal: number | null;
+  /** Per-stage USD snapshot { ideas, script, audio, render }. */
+  costBreakdown: { ideas: number; script: number; audio: number; render: number } | null;
   createdAt: string;
   updatedAt: string;
 }

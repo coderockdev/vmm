@@ -2,6 +2,9 @@ import { randomUUID } from "crypto";
 import { getDb } from "../db";
 import { getSupabase, isSupabaseEnabled, assertNoError } from "../supabaseClient";
 import { Channel, ChannelDNA } from "../types";
+import { DEFAULT_CHARS_PER_WORD, DEFAULT_WORDS_PER_MINUTE } from "../scriptBudget";
+import { findVoice } from "../providers/tts/voiceCatalog";
+import { profileFromLegacyVoice } from "../providers/tts/voiceCapabilities";
 
 interface ChannelRow {
   id: string;
@@ -15,11 +18,52 @@ interface ChannelRow {
 }
 
 function normalizeDna(raw: ChannelDNA): ChannelDNA {
+  const wordsPerMinute = raw.scriptRules?.wordsPerMinute ?? DEFAULT_WORDS_PER_MINUTE;
+  const charsPerWord = raw.scriptRules?.charsPerWord ?? DEFAULT_CHARS_PER_WORD;
+  const performanceTags = {
+    enabled: raw.scriptRules?.performanceTags?.enabled ?? false,
+    selected: Array.isArray(raw.scriptRules?.performanceTags?.selected)
+      ? raw.scriptRules.performanceTags.selected
+      : [],
+    tagsPerThousandWords:
+      typeof raw.scriptRules?.performanceTags?.tagsPerThousandWords === "number" &&
+      raw.scriptRules.performanceTags.tagsPerThousandWords > 0
+        ? raw.scriptRules.performanceTags.tagsPerThousandWords
+        : 35,
+  };
+
+  const catalog = raw.voice?.voiceId
+    ? findVoice(raw.voice.provider as any, raw.voice.voiceId)
+    : undefined;
+  const profile =
+    raw.voice?.profile ??
+    (raw.voice
+      ? profileFromLegacyVoice({
+          provider: raw.voice.provider,
+          voiceId: raw.voice.voiceId,
+          voiceName: catalog?.name,
+          speed: raw.voice.speed,
+          language: raw.language,
+        })
+      : undefined);
+
+  // If profile has emotion tags and performanceTags empty, seed from voice.
+  if (profile?.capabilities.emotion_tags && !performanceTags.enabled && profile.capabilities.allowed_tags.length) {
+    // leave disabled until user opts in — but keep selected list ready from voice when enabled later
+  }
+
   return {
     ...raw,
     scriptRules: {
       ...raw.scriptRules,
       generationPrompt: raw.scriptRules?.generationPrompt ?? "",
+      wordsPerMinute,
+      charsPerWord,
+      performanceTags,
+    },
+    voice: {
+      ...raw.voice,
+      profile,
     },
   };
 }

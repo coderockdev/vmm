@@ -8,6 +8,7 @@ import {
   listScriptTextsForChannel,
 } from "../repo/projects";
 import { createJob } from "../repo/jobs";
+import { insertUsageEvent } from "../repo/usage";
 import { enqueueJob } from "./queue";
 import { getScriptProvider } from "../providers/script";
 import { parseGeneratedScript } from "../scriptLines";
@@ -67,7 +68,11 @@ export async function regenerateScript(projectId: string, aiProviderOverride: st
         durationMinutes: project.durationMinutes,
         previousScripts,
       })
-    : { rawText: `Ambiente contínuo sobre ${project.topic}.`, sectionBreaks: [] };
+    : {
+        rawText: `Ambiente contínuo sobre ${project.topic}.`,
+        sectionBreaks: [] as number[],
+        usage: { provider: "mock" as const, model: "mock", inputTokens: 0, outputTokens: 0 },
+      };
 
   const rawLines = parseGeneratedScript(generated, channel.dna.scriptRules.pauses);
   const wordCount = rawLines.reduce((sum, l) => sum + l.text.split(/\s+/).filter(Boolean).length, 0);
@@ -79,6 +84,16 @@ export async function regenerateScript(projectId: string, aiProviderOverride: st
     wordCount,
   });
   await attachScriptToProject(project.id, script.id);
+
+  if (generated.usage) {
+    await insertUsageEvent({
+      channelId: channel.id,
+      contentIdeaId: idea.id,
+      videoProjectId: project.id,
+      stage: "script",
+      snapshot: generated.usage,
+    });
+  }
 
   return script;
 }

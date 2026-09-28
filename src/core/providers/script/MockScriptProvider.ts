@@ -3,6 +3,7 @@ import {
   GenerateScriptArgs,
   GeneratedScript,
   ContentIdeaDraft,
+  ContentPlanResult,
   ScriptProvider,
 } from "./ScriptProvider";
 import { buildScriptGenerationContext } from "./promptContext";
@@ -24,7 +25,7 @@ import {
  * feeding that same context string as the system/user prompt.
  */
 export class MockScriptProvider implements ScriptProvider {
-  async generateContentPlan(args: GenerateContentPlanArgs): Promise<ContentIdeaDraft[]> {
+  async generateContentPlan(args: GenerateContentPlanArgs): Promise<ContentPlanResult> {
     // Context is built (and would be sent to a real LLM here) even though the
     // mock only reads a slice of it — this keeps the seam realistic.
     void buildScriptGenerationContext({
@@ -51,7 +52,10 @@ export class MockScriptProvider implements ScriptProvider {
       usedTitles.add(title.toLowerCase());
       ideas.push({ title, angle: template.angle, objective: template.objective });
     }
-    return ideas;
+    return {
+      ideas,
+      usage: { provider: "mock", model: "mock", inputTokens: 0, outputTokens: 0 },
+    };
   }
 
   async generateScript(args: GenerateScriptArgs): Promise<GeneratedScript> {
@@ -73,7 +77,12 @@ export class MockScriptProvider implements ScriptProvider {
         args.durationMinutes
       );
     } else if (bucket === "prayer") {
-      sections = buildPrayerSections(args.topic, args.contentIdea.angle, args.durationMinutes);
+      sections = buildPrayerSections(
+        args.topic,
+        args.contentIdea.angle,
+        args.durationMinutes,
+        language === "es" ? "es" : "pt"
+      );
     } else if (bucket === "story") {
       sections = buildStorySections(args.topic, args.contentIdea.angle, args.durationMinutes);
     } else {
@@ -94,6 +103,10 @@ export class MockScriptProvider implements ScriptProvider {
 
     const rawText = lines.length ? lines.join("\n\n") : `Ambiente contínuo sobre ${args.topic}.`;
 
-    return { rawText, sectionBreaks };
+    return {
+      rawText,
+      sectionBreaks,
+      usage: { provider: "mock", model: "mock", inputTokens: 0, outputTokens: 0 },
+    };
   }
 }
