@@ -9,6 +9,7 @@ import { formatUsd } from "../../../core/usage/types";
 import { findVoice } from "../../../core/providers/tts/voiceCatalog";
 import { TTSProviderName } from "../../../core/providers/tts/TTSProvider";
 import { ScriptReviewModal } from "./ScriptReviewModal";
+import { mediaUrl } from "../../../core/media";
 import {
   CalendarIcon,
   CarouselIcon,
@@ -546,6 +547,7 @@ export function ChannelWorkspace({
                 const job = jobByProject[project.id];
                 const audioCost = project.costBreakdown?.audio ?? 0;
                 const generatingAudio = AUDIO_ACTIVE.includes(project.status);
+                const listenUrl = asset ? mediaUrl(channel.id, asset.filePath) : null;
                 const statusLabel = generatingAudio
                   ? job?.statusMessage || "Gerando áudio..."
                   : project.status === "failed"
@@ -556,7 +558,7 @@ export function ChannelWorkspace({
                         ? "Áudio pronto"
                         : "Em produção";
                 return (
-                  <article className="review-queue-card" key={project.id}>
+                  <article className="review-queue-card review-queue-card-audio" key={project.id}>
                     <div className="review-queue-icon"><MiniIcon name="mic" size={22} /></div>
                     <div className="review-queue-copy">
                       <h3>{project.title}</h3>
@@ -573,13 +575,22 @@ export function ChannelWorkspace({
                         {generatingAudio && job ? ` · ${Math.round(job.progress)}%` : ""}
                       </span>
                       <ProjectCostLabel project={project} />
+                      {listenUrl && (
+                        <audio className="review-queue-audio" controls preload="metadata" src={listenUrl}>
+                          Seu navegador não reproduz áudio embutido.
+                        </audio>
+                      )}
                     </div>
-                    {asset?.filePath ? (
-                      <a href={asset.filePath} target="_blank" rel="noreferrer">
-                        Ouvir
+                    {listenUrl ? (
+                      <a className="review-queue-action" href={listenUrl} target="_blank" rel="noreferrer">
+                        Abrir áudio
                       </a>
+                    ) : asset ? (
+                      <span className="review-queue-action review-queue-action-muted" title="Arquivo só existia no disco da máquina que gerou; gere de novo para subir ao Supabase.">
+                        Indisponível
+                      </span>
                     ) : (
-                      <button type="button" disabled={generatingAudio} onClick={() => void refreshProjects()}>
+                      <button type="button" className="review-queue-action" disabled={generatingAudio} onClick={() => void refreshProjects()}>
                         {generatingAudio ? "Atualizando..." : "Atualizar"}
                       </button>
                     )}

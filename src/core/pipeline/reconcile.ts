@@ -1,5 +1,4 @@
 import { listJobs, updateJob } from "../repo/jobs";
-import { updateProjectStatus } from "../repo/projects";
 import { JobStatus } from "../types";
 import { wake } from "./queue";
 
@@ -20,11 +19,16 @@ const INTERRUPTED_MESSAGE = "Interrompido: o servidor foi reiniciado durante o p
  * Runs once per server process (guarded by a global flag). Called from
  * ensureSeeded() so every page load gets a sane job list without needing a
  * dedicated startup hook.
+ *
+ * updateProjectStatus is loaded lazily to avoid a circular import with
+ * page.tsx → seed → reconcile → projects (which left named exports undefined
+ * under webpack and made channel tabs look clickable but do nothing).
  */
 export async function reconcileStuckJobs(): Promise<void> {
   if (global.__vmmReconciled) return;
   global.__vmmReconciled = true;
 
+  const { updateProjectStatus } = await import("../repo/projects");
   const jobs = await listJobs();
   let hasPlanned = false;
 

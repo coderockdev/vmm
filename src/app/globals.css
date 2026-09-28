@@ -2364,17 +2364,41 @@ body:has(.channel-workspace) .main-content {
   margin: 2px 0 4px;
 }
 
-.review-queue-card > button {
+.review-queue-card > button,
+.review-queue-card > .review-queue-action {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 37px;
   padding: 0 16px;
   color: #fff;
   font-size: 12px;
   font-weight: 620;
+  line-height: 1;
+  text-decoration: none;
   background: var(--accent);
   border: 0;
   border-radius: 999px;
   cursor: pointer;
+}
+
+.review-queue-card > .review-queue-action-muted {
+  color: var(--text-dim);
+  background: var(--surface-2);
+  cursor: default;
+}
+
+.review-queue-card-audio {
+  align-items: flex-start;
+}
+
+.review-queue-audio {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  height: 36px;
+  margin-top: 10px;
 }
 
 .script-review-overlay {
