@@ -6,8 +6,8 @@ import { synthesizeNarration } from "./pipeline/narration";
 import { renderVideoProject } from "./pipeline/render";
 
 async function main() {
-  ensureSeeded();
-  const channel = getChannel("amor-amor")!;
+  await ensureSeeded();
+  const channel = (await getChannel("amor-amor"))!;
   const scriptProvider = getScriptProvider();
 
   const ideas = await scriptProvider.generateContentPlan({

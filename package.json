@@ -12,12 +12,14 @@
     "remotion:studio": "remotion studio src/remotion/index.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@aws-sdk/client-s3": "^3.382.0",
     "@remotion/bundler": "4.0.150",
     "@remotion/cli": "4.0.150",
     "@remotion/lambda": "4.0.150",
     "@remotion/player": "4.0.150",
     "@remotion/renderer": "4.0.150",
+    "@supabase/supabase-js": "^2.109.0",
     "better-sqlite3": "^11.9.1",
     "next": "^14.2.18",
     "react": "^18.3.1",

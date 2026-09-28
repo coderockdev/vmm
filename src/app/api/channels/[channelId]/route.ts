@@ -4,24 +4,24 @@ import { listProjectsForChannel } from "../../../../core/repo/projects";
 import { listPlansForChannel } from "../../../../core/repo/plans";
 
 export async function GET(_req: NextRequest, { params }: { params: { channelId: string } }) {
-  const channel = getChannel(params.channelId);
+  const channel = await getChannel(params.channelId);
   if (!channel) return NextResponse.json({ error: "Channel not found" }, { status: 404 });
 
   return NextResponse.json({
     channel,
-    projects: listProjectsForChannel(channel.id),
-    plans: listPlansForChannel(channel.id),
+    projects: await listProjectsForChannel(channel.id),
+    plans: await listPlansForChannel(channel.id),
   });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { channelId: string } }) {
-  const channel = getChannel(params.channelId);
+  const channel = await getChannel(params.channelId);
   if (!channel) return NextResponse.json({ error: "Channel not found" }, { status: 404 });
 
   const body = await req.json();
 
   if (body.name || body.niche || body.coverColor) {
-    updateChannelMeta(channel.id, {
+    await updateChannelMeta(channel.id, {
       name: body.name,
       niche: body.niche,
       coverColor: body.coverColor,
@@ -29,8 +29,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { channelId:
   }
 
   if (body.dna) {
-    updateChannelDna(channel.id, { ...channel.dna, ...body.dna });
+    await updateChannelDna(channel.id, { ...channel.dna, ...body.dna });
   }
 
-  return NextResponse.json({ channel: getChannel(channel.id) });
+  return NextResponse.json({ channel: await getChannel(channel.id) });
 }

@@ -15,6 +15,9 @@ export default function SettingsPage() {
   const renderProvider = process.env.RENDER_PROVIDER ?? "local";
   const hasCartesiaKey = Boolean(process.env.CARTESIA_API_KEY);
   const hasElevenLabsKey = Boolean(process.env.ELEVENLABS_API_KEY);
+  const hasAnthropicKey = Boolean(process.env.ANTHROPIC_API_KEY);
+  const hasOpenAIKey = Boolean(process.env.OPENAI_API_KEY);
+  const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY);
   const hasLambdaConfig = Boolean(
     process.env.REMOTION_LAMBDA_FUNCTION_NAME && process.env.REMOTION_LAMBDA_SERVE_URL
   );
@@ -26,8 +29,26 @@ export default function SettingsPage() {
       <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 20, marginBottom: 20 }}>
         <div style={{ fontWeight: 700, marginBottom: 8 }}>Provedores (variáveis de ambiente)</div>
         <div style={rowStyle}>
-          <span>AI_PROVIDER</span>
+          <span>AI_PROVIDER (roteiro, padrão)</span>
           <span style={{ color: "var(--text-dim)" }}>{aiProvider}</span>
+        </div>
+        <div style={rowStyle}>
+          <span>ANTHROPIC_API_KEY (Claude)</span>
+          <span style={{ color: hasAnthropicKey ? "var(--success)" : "var(--text-dim)" }}>
+            {hasAnthropicKey ? "configurada" : "não configurada"}
+          </span>
+        </div>
+        <div style={rowStyle}>
+          <span>OPENAI_API_KEY (ChatGPT)</span>
+          <span style={{ color: hasOpenAIKey ? "var(--success)" : "var(--text-dim)" }}>
+            {hasOpenAIKey ? "configurada" : "não configurada"}
+          </span>
+        </div>
+        <div style={rowStyle}>
+          <span>GEMINI_API_KEY (Gemini)</span>
+          <span style={{ color: hasGeminiKey ? "var(--success)" : "var(--text-dim)" }}>
+            {hasGeminiKey ? "configurada" : "não configurada"}
+          </span>
         </div>
         <div style={rowStyle}>
           <span>TTS_PROVIDER (padrão)</span>
@@ -59,8 +80,8 @@ export default function SettingsPage() {
         )}
         <p style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 12 }}>
           Edite o arquivo <code>.env.local</code> na raiz do projeto e reinicie o servidor para aplicar mudanças.
-          Cada geração de vídeo também pode sobrepor o motor de voz do canal (local ↔ ElevenLabs) para comparar
-          qual soa melhor.
+          Cada geração também pode sobrepor a IA de roteiro (Claude ↔ ChatGPT ↔ Gemini ↔ Mock) e o motor de voz
+          do canal (local ↔ Cartesia ↔ ElevenLabs) para comparar qual soa/escreve melhor.
         </p>
       </section>
 

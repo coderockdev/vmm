@@ -12,23 +12,23 @@ import { VideoFormat } from "../types";
  * before the job was enqueued (it's cheap with a mock/local provider).
  */
 export async function runProject(jobId: string): Promise<void> {
-  const job = getJob(jobId);
+  const job = await getJob(jobId);
   if (!job) throw new Error(`Job not found: ${jobId}`);
 
-  const project = getVideoProject(job.videoProjectId);
+  const project = await getVideoProject(job.videoProjectId);
   if (!project) throw new Error(`Video project not found: ${job.videoProjectId}`);
 
-  const channel = getChannel(project.channelId);
+  const channel = await getChannel(project.channelId);
   if (!channel) throw new Error(`Channel not found: ${project.channelId}`);
 
   try {
-    let lines = project.scriptId ? getScript(project.scriptId)?.lines ?? [] : [];
+    let lines = project.scriptId ? (await getScript(project.scriptId))?.lines ?? [] : [];
     let audioAbsolutePath: string | null = null;
     let durationInSeconds = project.durationMinutes * 60;
 
     if (channel.dna.usesNarration && project.scriptId) {
-      updateJob(job.id, { status: "audio", progress: 25, statusMessage: "Gerando áudio..." });
-      updateProjectStatus(project.id, "audio");
+      await updateJob(job.id, { status: "audio", progress: 25, statusMessage: "Gerando áudio..." });
+      await updateProjectStatus(project.id, "audio");
 
       const rawLines: RawLine[] = lines.map((l) => ({
         text: l.text,
@@ -43,28 +43,28 @@ export async function runProject(jobId: string): Promise<void> {
         ttsOverride: project.ttsProviderOverride,
       });
 
-      const audioAsset = createAudioAsset({
+      const audioAsset = await createAudioAsset({
         videoProjectId: project.id,
         filePath: narration.filePath,
         durationSeconds: narration.durationSeconds,
         provider: narration.provider,
       });
-      attachAudioToProject(project.id, audioAsset.id);
-      updateScriptLines(project.scriptId, narration.lines);
+      await attachAudioToProject(project.id, audioAsset.id);
+      await updateScriptLines(project.scriptId, narration.lines);
 
       lines = narration.lines;
       audioAbsolutePath = narration.filePath;
       durationInSeconds = narration.durationSeconds;
 
-      updateJob(job.id, { status: "timing", progress: 55, statusMessage: "Sincronizando texto..." });
-      updateProjectStatus(project.id, "timing");
+      await updateJob(job.id, { status: "timing", progress: 55, statusMessage: "Sincronizando texto..." });
+      await updateProjectStatus(project.id, "timing");
     }
 
-    updateJob(job.id, { status: "composing", progress: 65, statusMessage: "Preparando composição..." });
-    updateProjectStatus(project.id, "composing");
+    await updateJob(job.id, { status: "composing", progress: 65, statusMessage: "Preparando composição..." });
+    await updateProjectStatus(project.id, "composing");
 
-    updateJob(job.id, { status: "rendering", progress: 75, statusMessage: "Renderizando..." });
-    updateProjectStatus(project.id, "rendering");
+    await updateJob(job.id, { status: "rendering", progress: 75, statusMessage: "Renderizando..." });
+    await updateProjectStatus(project.id, "rendering");
 
     const format: Exclude<VideoFormat, "both"> = project.format === "short" ? "short" : "video";
 
@@ -77,16 +77,16 @@ export async function runProject(jobId: string): Promise<void> {
       format,
       audioAbsolutePath,
       onProgress: (progress, message) => {
-        updateJob(job.id, { progress: Math.min(98, progress), statusMessage: message });
+        updateJob(job.id, { progress: Math.min(98, progress), statusMessage: message }).catch(() => {});
       },
     });
 
-    completeProjectRender(project.id, result.relativeRenderPath, result.durationSeconds);
-    updateJob(job.id, { status: "completed", progress: 100, statusMessage: "Vídeo pronto" });
+    await completeProjectRender(project.id, result.relativeRenderPath, result.durationSeconds);
+    await updateJob(job.id, { status: "completed", progress: 100, statusMessage: "Vídeo pronto" });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    updateProjectStatus(project.id, "failed", message);
-    updateJob(job.id, { status: "failed", statusMessage: message });
+    await updateProjectStatus(project.id, "failed", message);
+    await updateJob(job.id, { status: "failed", statusMessage: message });
     throw err;
   }
 }

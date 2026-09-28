@@ -11,3 +11,6 @@ public/render-tmp/*
 prompt*.md
 
 tsconfig.tsbuildinfo
+
+# Claude Code local runtime state (not part of the app)
+.claude/

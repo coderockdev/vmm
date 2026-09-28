@@ -115,6 +115,7 @@ export interface AudioAsset {
 
 export type JobStatus =
   | "planned"
+  /** Script generated, sitting in the Roteiros review queue awaiting human approval. */
   | "script"
   | "audio"
   | "timing"

@@ -7,6 +7,9 @@ const CONTENT_TYPES: Record<string, string> = {
   ".mp4": "video/mp4",
   ".mp3": "audio/mpeg",
   ".wav": "audio/wav",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
 };
 
 // Serves files under data/channels/** (renders + audio), which live outside

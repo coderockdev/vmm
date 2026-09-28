@@ -3,7 +3,7 @@ import { listChannels, createChannel, slugify } from "../../../core/repo/channel
 import { ChannelDNA } from "../../../core/types";
 
 export async function GET() {
-  return NextResponse.json({ channels: listChannels() });
+  return NextResponse.json({ channels: await listChannels() });
 }
 
 export async function POST(req: NextRequest) {
@@ -43,8 +43,8 @@ export async function POST(req: NextRequest) {
     usesNarration: body.usesNarration ?? true,
   };
 
-  const channel = createChannel({
-    id: slugify(body.name),
+  const channel = await createChannel({
+    id: await slugify(body.name),
     name: body.name,
     niche: body.niche ?? "",
     coverColor: body.coverColor ?? "#ff5a2e",

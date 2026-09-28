@@ -1,13 +1,7 @@
 import { randomUUID } from "crypto";
 import { getDb } from "../db";
-import {
-  AudioAsset,
-  JobStatus,
-  Script,
-  ScriptLine,
-  VideoFormat,
-  VideoProject,
-} from "../types";
+import { getSupabase, isSupabaseEnabled, assertNoError } from "../supabaseClient";
+import { AudioAsset, JobStatus, Script, ScriptLine, VideoFormat, VideoProject } from "../types";
 
 interface ProjectRow {
   id: string;
@@ -51,7 +45,7 @@ function rowToProject(row: ProjectRow): VideoProject {
   };
 }
 
-export function createVideoProject(input: {
+export async function createVideoProject(input: {
   channelId: string;
   contentIdeaId: string | null;
   title: string;
@@ -60,9 +54,33 @@ export function createVideoProject(input: {
   format: VideoFormat;
   seed: number;
   ttsProviderOverride?: VideoProject["ttsProviderOverride"];
-}): VideoProject {
+}): Promise<VideoProject> {
   const id = randomUUID();
   const now = new Date().toISOString();
+
+  if (isSupabaseEnabled()) {
+    assertNoError(
+      await getSupabase()
+        .from("video_projects")
+        .insert({
+          id,
+          channel_id: input.channelId,
+          content_idea_id: input.contentIdeaId,
+          title: input.title,
+          topic: input.topic,
+          duration_minutes: input.durationMinutes,
+          format: input.format,
+          status: "planned",
+          error_message: null,
+          seed: input.seed,
+          tts_provider_override: input.ttsProviderOverride ?? null,
+          created_at: now,
+          updated_at: now,
+        })
+    );
+    return (await getVideoProject(id))!;
+  }
+
   getDb()
     .prepare(
       `INSERT INTO video_projects
@@ -83,67 +101,143 @@ export function createVideoProject(input: {
       createdAt: now,
       updatedAt: now,
     });
-  return getVideoProject(id)!;
+  return (await getVideoProject(id))!;
 }
 
-export function getVideoProject(id: string): VideoProject | null {
-  const row = getDb()
-    .prepare(`SELECT * FROM video_projects WHERE id = ?`)
-    .get(id) as ProjectRow | undefined;
+export async function getVideoProject(id: string): Promise<VideoProject | null> {
+  if (isSupabaseEnabled()) {
+    const res = await getSupabase().from("video_projects").select("*").eq("id", id).maybeSingle();
+    const row = assertNoError(res);
+    return row ? rowToProject(row as ProjectRow) : null;
+  }
+  const row = getDb().prepare(`SELECT * FROM video_projects WHERE id = ?`).get(id) as ProjectRow | undefined;
   return row ? rowToProject(row) : null;
 }
 
-export function listProjectsForChannel(channelId: string): VideoProject[] {
+export async function listProjectsForChannel(channelId: string): Promise<VideoProject[]> {
+  if (isSupabaseEnabled()) {
+    const res = await getSupabase()
+      .from("video_projects")
+      .select("*")
+      .eq("channel_id", channelId)
+      .order("created_at", { ascending: false });
+    return assertNoError(res).map(rowToProject);
+  }
   const rows = getDb()
     .prepare(`SELECT * FROM video_projects WHERE channel_id = ? ORDER BY created_at DESC`)
     .all(channelId) as ProjectRow[];
   return rows.map(rowToProject);
 }
 
-export function listAllProjects(): VideoProject[] {
-  const rows = getDb()
-    .prepare(`SELECT * FROM video_projects ORDER BY created_at DESC`)
-    .all() as ProjectRow[];
+export async function listAllProjects(): Promise<VideoProject[]> {
+  if (isSupabaseEnabled()) {
+    const res = await getSupabase().from("video_projects").select("*").order("created_at", { ascending: false });
+    return assertNoError(res).map(rowToProject);
+  }
+  const rows = getDb().prepare(`SELECT * FROM video_projects ORDER BY created_at DESC`).all() as ProjectRow[];
   return rows.map(rowToProject);
 }
 
-export function updateProjectStatus(
+export async function updateProjectStatus(
   id: string,
   status: JobStatus,
   errorMessage: string | null = null
-) {
+): Promise<void> {
+  const now = new Date().toISOString();
+  if (isSupabaseEnabled()) {
+    assertNoError(
+      await getSupabase()
+        .from("video_projects")
+        .update({ status, error_message: errorMessage, updated_at: now })
+        .eq("id", id)
+    );
+    return;
+  }
   getDb()
-    .prepare(
-      `UPDATE video_projects SET status = ?, error_message = ?, updated_at = ? WHERE id = ?`
-    )
-    .run(status, errorMessage, new Date().toISOString(), id);
+    .prepare(`UPDATE video_projects SET status = ?, error_message = ?, updated_at = ? WHERE id = ?`)
+    .run(status, errorMessage, now, id);
 }
 
-export function attachScriptToProject(projectId: string, scriptId: string) {
+export async function setTtsProviderOverride(
+  projectId: string,
+  override: VideoProject["ttsProviderOverride"]
+): Promise<void> {
+  const now = new Date().toISOString();
+  if (isSupabaseEnabled()) {
+    assertNoError(
+      await getSupabase()
+        .from("video_projects")
+        .update({ tts_provider_override: override, updated_at: now })
+        .eq("id", projectId)
+    );
+    return;
+  }
+  getDb()
+    .prepare(`UPDATE video_projects SET tts_provider_override = ?, updated_at = ? WHERE id = ?`)
+    .run(override, now, projectId);
+}
+
+export async function attachScriptToProject(projectId: string, scriptId: string): Promise<void> {
+  const now = new Date().toISOString();
+  if (isSupabaseEnabled()) {
+    assertNoError(
+      await getSupabase().from("video_projects").update({ script_id: scriptId, updated_at: now }).eq("id", projectId)
+    );
+    return;
+  }
   getDb()
     .prepare(`UPDATE video_projects SET script_id = ?, updated_at = ? WHERE id = ?`)
-    .run(scriptId, new Date().toISOString(), projectId);
+    .run(scriptId, now, projectId);
 }
 
-export function attachAudioToProject(projectId: string, audioAssetId: string) {
+export async function attachAudioToProject(projectId: string, audioAssetId: string): Promise<void> {
+  const now = new Date().toISOString();
+  if (isSupabaseEnabled()) {
+    assertNoError(
+      await getSupabase()
+        .from("video_projects")
+        .update({ audio_asset_id: audioAssetId, updated_at: now })
+        .eq("id", projectId)
+    );
+    return;
+  }
   getDb()
     .prepare(`UPDATE video_projects SET audio_asset_id = ?, updated_at = ? WHERE id = ?`)
-    .run(audioAssetId, new Date().toISOString(), projectId);
+    .run(audioAssetId, now, projectId);
 }
 
-export function completeProjectRender(
+export async function completeProjectRender(
   projectId: string,
   renderPath: string,
   renderDurationSeconds: number
-) {
+): Promise<void> {
+  const now = new Date().toISOString();
+  if (isSupabaseEnabled()) {
+    assertNoError(
+      await getSupabase()
+        .from("video_projects")
+        .update({
+          render_path: renderPath,
+          render_duration_seconds: renderDurationSeconds,
+          status: "completed",
+          updated_at: now,
+        })
+        .eq("id", projectId)
+    );
+    return;
+  }
   getDb()
     .prepare(
       `UPDATE video_projects SET render_path = ?, render_duration_seconds = ?, status = 'completed', updated_at = ? WHERE id = ?`
     )
-    .run(renderPath, renderDurationSeconds, new Date().toISOString(), projectId);
+    .run(renderPath, renderDurationSeconds, now, projectId);
 }
 
-export function deleteVideoProject(id: string) {
+export async function deleteVideoProject(id: string): Promise<void> {
+  if (isSupabaseEnabled()) {
+    assertNoError(await getSupabase().from("video_projects").delete().eq("id", id));
+    return;
+  }
   getDb().prepare(`DELETE FROM video_projects WHERE id = ?`).run(id);
 }
 
@@ -155,7 +249,7 @@ interface ScriptRow {
   id: string;
   video_project_id: string;
   raw_text: string;
-  lines_json: string;
+  lines_json: string | ScriptLine[];
   word_count: number;
   created_at: string;
 }
@@ -165,20 +259,37 @@ function rowToScript(row: ScriptRow): Script {
     id: row.id,
     videoProjectId: row.video_project_id,
     rawText: row.raw_text,
-    lines: JSON.parse(row.lines_json),
+    lines: typeof row.lines_json === "string" ? JSON.parse(row.lines_json) : row.lines_json,
     wordCount: row.word_count,
     createdAt: row.created_at,
   };
 }
 
-export function createScript(input: {
+export async function createScript(input: {
   videoProjectId: string;
   rawText: string;
   lines: ScriptLine[];
   wordCount: number;
-}): Script {
+}): Promise<Script> {
   const id = randomUUID();
   const now = new Date().toISOString();
+
+  if (isSupabaseEnabled()) {
+    assertNoError(
+      await getSupabase()
+        .from("scripts")
+        .insert({
+          id,
+          video_project_id: input.videoProjectId,
+          raw_text: input.rawText,
+          lines_json: input.lines,
+          word_count: input.wordCount,
+          created_at: now,
+        })
+    );
+    return (await getScript(id))!;
+  }
+
   getDb()
     .prepare(
       `INSERT INTO scripts (id, video_project_id, raw_text, lines_json, word_count, created_at)
@@ -192,10 +303,22 @@ export function createScript(input: {
       wordCount: input.wordCount,
       createdAt: now,
     });
-  return getScript(id)!;
+  return (await getScript(id))!;
 }
 
-export function listScriptTextsForChannel(channelId: string): string[] {
+export async function listScriptTextsForChannel(channelId: string): Promise<string[]> {
+  if (isSupabaseEnabled()) {
+    const projectIdsRes = await getSupabase().from("video_projects").select("id").eq("channel_id", channelId);
+    const projectIds = assertNoError(projectIdsRes).map((p: { id: string }) => p.id);
+    if (projectIds.length === 0) return [];
+    const res = await getSupabase()
+      .from("scripts")
+      .select("raw_text")
+      .in("video_project_id", projectIds)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    return assertNoError(res).map((r: { raw_text: string }) => r.raw_text);
+  }
   const rows = getDb()
     .prepare(
       `SELECT s.raw_text as raw_text FROM scripts s
@@ -208,17 +331,22 @@ export function listScriptTextsForChannel(channelId: string): string[] {
   return rows.map((r) => r.raw_text);
 }
 
-export function getScript(id: string): Script | null {
-  const row = getDb().prepare(`SELECT * FROM scripts WHERE id = ?`).get(id) as
-    | ScriptRow
-    | undefined;
+export async function getScript(id: string): Promise<Script | null> {
+  if (isSupabaseEnabled()) {
+    const res = await getSupabase().from("scripts").select("*").eq("id", id).maybeSingle();
+    const row = assertNoError(res);
+    return row ? rowToScript(row as ScriptRow) : null;
+  }
+  const row = getDb().prepare(`SELECT * FROM scripts WHERE id = ?`).get(id) as ScriptRow | undefined;
   return row ? rowToScript(row) : null;
 }
 
-export function updateScriptLines(id: string, lines: ScriptLine[]) {
-  getDb()
-    .prepare(`UPDATE scripts SET lines_json = ? WHERE id = ?`)
-    .run(JSON.stringify(lines), id);
+export async function updateScriptLines(id: string, lines: ScriptLine[]): Promise<void> {
+  if (isSupabaseEnabled()) {
+    assertNoError(await getSupabase().from("scripts").update({ lines_json: lines }).eq("id", id));
+    return;
+  }
+  getDb().prepare(`UPDATE scripts SET lines_json = ? WHERE id = ?`).run(JSON.stringify(lines), id);
 }
 
 // ---------------------------------------------------------------------------
@@ -245,14 +373,31 @@ function rowToAudio(row: AudioRow): AudioAsset {
   };
 }
 
-export function createAudioAsset(input: {
+export async function createAudioAsset(input: {
   videoProjectId: string;
   filePath: string;
   durationSeconds: number;
   provider: AudioAsset["provider"];
-}): AudioAsset {
+}): Promise<AudioAsset> {
   const id = randomUUID();
   const now = new Date().toISOString();
+
+  if (isSupabaseEnabled()) {
+    assertNoError(
+      await getSupabase()
+        .from("audio_assets")
+        .insert({
+          id,
+          video_project_id: input.videoProjectId,
+          file_path: input.filePath,
+          duration_seconds: input.durationSeconds,
+          provider: input.provider,
+          created_at: now,
+        })
+    );
+    return (await getAudioAsset(id))!;
+  }
+
   getDb()
     .prepare(
       `INSERT INTO audio_assets (id, video_project_id, file_path, duration_seconds, provider, created_at)
@@ -266,12 +411,15 @@ export function createAudioAsset(input: {
       provider: input.provider,
       createdAt: now,
     });
-  return getAudioAsset(id)!;
+  return (await getAudioAsset(id))!;
 }
 
-export function getAudioAsset(id: string): AudioAsset | null {
-  const row = getDb().prepare(`SELECT * FROM audio_assets WHERE id = ?`).get(id) as
-    | AudioRow
-    | undefined;
+export async function getAudioAsset(id: string): Promise<AudioAsset | null> {
+  if (isSupabaseEnabled()) {
+    const res = await getSupabase().from("audio_assets").select("*").eq("id", id).maybeSingle();
+    const row = assertNoError(res);
+    return row ? rowToAudio(row as AudioRow) : null;
+  }
+  const row = getDb().prepare(`SELECT * FROM audio_assets WHERE id = ?`).get(id) as AudioRow | undefined;
   return row ? rowToAudio(row) : null;
 }

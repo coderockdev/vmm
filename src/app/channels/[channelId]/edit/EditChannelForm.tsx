@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Channel } from "../../../../core/types";
 import { TTSProviderName } from "../../../../core/providers/tts/TTSProvider";
@@ -22,9 +23,33 @@ const labelStyle: React.CSSProperties = {
   marginTop: 14,
 };
 
-export function EditChannelForm({ channel }: { channel: Channel }) {
+export function EditChannelForm({
+  channel,
+  initialCoverUrl,
+}: {
+  channel: Channel;
+  initialCoverUrl: string | null;
+}) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
+  const [coverUrl, setCoverUrl] = useState(initialCoverUrl);
+  const [generatingCover, setGeneratingCover] = useState(false);
+  const [coverError, setCoverError] = useState<string | null>(null);
+
+  async function handleGenerateCover() {
+    setGeneratingCover(true);
+    setCoverError(null);
+    try {
+      const res = await fetch(`/api/channels/${channel.id}/cover`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Falha ao gerar capa");
+      setCoverUrl(data.coverUrl);
+    } catch (err) {
+      setCoverError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setGeneratingCover(false);
+    }
+  }
 
   const [name, setName] = useState(channel.name);
   const [niche, setNiche] = useState(channel.niche);
@@ -74,6 +99,20 @@ export function EditChannelForm({ channel }: { channel: Channel }) {
 
   return (
     <div style={{ maxWidth: 640 }}>
+      <Link
+        href={`/channels/${channel.id}`}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 13,
+          fontWeight: 600,
+          color: "var(--text-dim)",
+          marginBottom: 16,
+        }}
+      >
+        ← Voltar para {channel.name}
+      </Link>
       <h1 style={{ fontSize: 26, fontWeight: 800, marginBottom: 4 }}>Editar Channel DNA</h1>
       <p style={{ color: "var(--text-dim)", marginBottom: 24 }}>
         Idioma e template visual são fixos após a criação (evita quebrar o histórico do canal).
@@ -82,6 +121,54 @@ export function EditChannelForm({ channel }: { channel: Channel }) {
       <form onSubmit={handleSubmit}>
         <section style={sectionStyle}>
           <strong>IDENTIDADE</strong>
+
+          <label style={labelStyle}>Capa do canal</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div
+              style={{
+                width: 100,
+                height: 100,
+                borderRadius: 12,
+                overflow: "hidden",
+                background: `linear-gradient(135deg, ${channel.coverColor}, ${channel.coverColor}99)`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              {coverUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={coverUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              ) : (
+                <span style={{ fontSize: 32, fontWeight: 800, color: "#ffffffcc" }}>{channel.name.charAt(0)}</span>
+              )}
+            </div>
+            <div>
+              <button
+                type="button"
+                onClick={handleGenerateCover}
+                disabled={generatingCover}
+                style={{
+                  border: "1px solid var(--border)",
+                  background: "var(--surface)",
+                  borderRadius: 8,
+                  padding: "8px 14px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: generatingCover ? "default" : "pointer",
+                  opacity: generatingCover ? 0.6 : 1,
+                }}
+              >
+                {generatingCover ? "Gerando..." : "✨ Gerar capa com IA"}
+              </button>
+              <p style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6, maxWidth: 260 }}>
+                Usa a descrição, tom e temas do canal para gerar a arte automaticamente (requer OPENAI_API_KEY).
+              </p>
+              {coverError && <p style={{ fontSize: 11, color: "var(--danger)", marginTop: 4 }}>{coverError}</p>}
+            </div>
+          </div>
+
           <label style={labelStyle}>Nome do canal</label>
           <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} required />
           <label style={labelStyle}>Tagline</label>

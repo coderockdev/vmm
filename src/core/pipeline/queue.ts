@@ -1,21 +1,9 @@
-import { getDb } from "../db";
-import { getJob, updateJob } from "../repo/jobs";
+import { getJob, updateJob, findNextPendingJobId } from "../repo/jobs";
 import { runProject } from "./runProject";
 
 declare global {
   // eslint-disable-next-line no-var
   var __vmmQueueRunning: boolean | undefined;
-}
-
-interface PendingJobRow {
-  id: string;
-}
-
-function nextPendingJobId(): string | null {
-  const row = getDb()
-    .prepare(`SELECT id FROM production_jobs WHERE status = 'planned' ORDER BY created_at ASC LIMIT 1`)
-    .get() as PendingJobRow | undefined;
-  return row?.id ?? null;
 }
 
 /**
@@ -32,7 +20,7 @@ export function wake(): void {
 async function loop(): Promise<void> {
   try {
     while (true) {
-      const jobId = nextPendingJobId();
+      const jobId = await findNextPendingJobId();
       if (!jobId) break;
       try {
         await runProject(jobId);
@@ -47,9 +35,9 @@ async function loop(): Promise<void> {
   }
 }
 
-export function enqueueJob(jobId: string): void {
-  const job = getJob(jobId);
+export async function enqueueJob(jobId: string): Promise<void> {
+  const job = await getJob(jobId);
   if (!job) throw new Error(`Job not found: ${jobId}`);
-  updateJob(jobId, { status: "planned", progress: 0, statusMessage: "Na fila" });
+  await updateJob(jobId, { status: "planned", progress: 0, statusMessage: "Na fila" });
   wake();
 }

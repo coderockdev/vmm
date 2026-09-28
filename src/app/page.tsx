@@ -1,8 +1,11 @@
 import React from "react";
+import fs from "fs";
+import path from "path";
 import Link from "next/link";
 import { ensureSeeded } from "../core/seed";
 import { listChannels, getChannel } from "../core/repo/channels";
 import { listProjectsForChannel, listAllProjects } from "../core/repo/projects";
+import { channelDir } from "../core/paths";
 import {
   CalendarIcon,
   CarouselIcon,
@@ -111,12 +114,32 @@ function Stat({ icon, value, label }: { icon: React.ReactNode; value: number; la
   );
 }
 
-export default function HomePage() {
-  ensureSeeded();
-  const channels = listChannels();
-  const recentContent = listAllProjects()
-    .filter((p) => p.status === "completed")
-    .slice(0, 3);
+export default async function HomePage() {
+  await ensureSeeded();
+  const channels = await listChannels();
+  const recentContent = (await listAllProjects()).filter((p) => p.status === "completed").slice(0, 3);
+
+  const channelCards = await Promise.all(
+    channels.map(async (channel) => {
+      const projects = await listProjectsForChannel(channel.id);
+      return {
+        channel,
+        videos: projects.filter((p) => p.status === "completed" && p.format === "video").length,
+        shorts: projects.filter((p) => p.status === "completed" && p.format === "short").length,
+        category: KNOWN_CATEGORY_OVERRIDES[channel.id] ?? channel.niche.split(" • ")[0],
+        crop: KNOWN_COVER_CROPS[channel.id],
+        hasRealCover: fs.existsSync(path.join(channelDir(channel.id), "cover.png")),
+        description:
+          channel.dna.description.length > 95
+            ? channel.dna.description.slice(0, 95) + "…"
+            : channel.dna.description,
+      };
+    })
+  );
+
+  const recentCards = await Promise.all(
+    recentContent.map(async (project) => ({ project, channel: await getChannel(project.channelId) }))
+  );
 
   return (
     <div className="dashboard-page">
@@ -146,21 +169,18 @@ export default function HomePage() {
       </section>
 
       <section className="channel-grid" aria-label="Seus canais">
-        {channels.map((channel) => {
-          const projects = listProjectsForChannel(channel.id);
-          const videos = projects.filter((p) => p.status === "completed" && p.format === "video").length;
-          const shorts = projects.filter((p) => p.status === "completed" && p.format === "short").length;
-          const category = KNOWN_CATEGORY_OVERRIDES[channel.id] ?? channel.niche.split(" • ")[0];
-          const crop = KNOWN_COVER_CROPS[channel.id];
-          const description =
-            channel.dna.description.length > 95
-              ? channel.dna.description.slice(0, 95) + "…"
-              : channel.dna.description;
-
+        {channelCards.map(({ channel, videos, shorts, category, crop, hasRealCover, description }) => {
           return (
             <article className="channel-card" key={channel.id}>
               <div className="channel-cover">
-                {crop ? (
+                {hasRealCover ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={`/api/media/${channel.id}/cover.png`}
+                    alt={`Capa do canal ${channel.name}`}
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                ) : crop ? (
                   <ReferenceCrop crop={crop} alt={`Capa do canal ${channel.name}`} />
                 ) : (
                   <GradientCover color={channel.coverColor} initial={channel.name.charAt(0)} />
@@ -211,8 +231,7 @@ export default function HomePage() {
           <p style={{ color: "var(--text-dim)", fontSize: 14 }}>Nenhum conteúdo renderizado ainda.</p>
         ) : (
           <div className="recent-grid">
-            {recentContent.map((project) => {
-              const channel = getChannel(project.channelId);
+            {recentCards.map(({ project, channel }) => {
               return (
                 <article className="recent-card" key={project.id}>
                   <div className="recent-thumbnail">

@@ -5,12 +5,12 @@ import { parseGeneratedScript } from "./scriptLines";
 import { synthesizeNarration } from "./pipeline/narration";
 
 async function main() {
-  ensureSeeded();
+  await ensureSeeded();
 
   const scriptProvider = getScriptProvider();
 
   for (const channelId of ["amor-amor", "oracoes-da-noite"]) {
-    const channel = getChannel(channelId)!;
+    const channel = (await getChannel(channelId))!;
     console.log(`\n=== ${channel.name} (${channel.dna.language}) ===`);
 
     const ideas = await scriptProvider.generateContentPlan({

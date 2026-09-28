@@ -12,19 +12,30 @@ function getConfig() {
   const functionName = process.env.REMOTION_LAMBDA_FUNCTION_NAME;
   const serveUrl = process.env.REMOTION_LAMBDA_SERVE_URL;
   const bucketName = process.env.REMOTION_LAMBDA_BUCKET;
+  const accessKeyId = process.env.REMOTION_AWS_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.REMOTION_AWS_SECRET_ACCESS_KEY;
   if (!functionName || !serveUrl || !bucketName) {
     throw new Error(
       "RENDER_PROVIDER=lambda requires REMOTION_LAMBDA_FUNCTION_NAME, REMOTION_LAMBDA_SERVE_URL and REMOTION_LAMBDA_BUCKET in .env.local."
     );
   }
-  return { region, functionName, serveUrl, bucketName };
+  if (!accessKeyId || !secretAccessKey) {
+    throw new Error(
+      "RENDER_PROVIDER=lambda requires REMOTION_AWS_ACCESS_KEY_ID and REMOTION_AWS_SECRET_ACCESS_KEY in .env.local."
+    );
+  }
+  return { region, functionName, serveUrl, bucketName, accessKeyId, secretAccessKey };
 }
 
 export async function renderVideoProjectLambda(args: RenderVideoArgs): Promise<RenderVideoResult> {
   const { channel, videoProjectId, lines, seed, durationInSeconds, format, audioAbsolutePath } = args;
-  const { region, functionName, serveUrl, bucketName } = getConfig();
+  const { region, functionName, serveUrl, bucketName, accessKeyId, secretAccessKey } = getConfig();
 
-  const s3 = new S3Client({ region });
+  // Remotion's own renderMediaOnLambda/getRenderProgress read REMOTION_AWS_*
+  // internally, but a plain S3Client only honors the standard AWS_* names —
+  // pass credentials explicitly or it falls through the default provider
+  // chain and fails with "Could not load credentials from any providers".
+  const s3 = new S3Client({ region, credentials: { accessKeyId, secretAccessKey } });
   let audioObjectKey: string | null = null;
   let audioUrl: string | null = null;
 
