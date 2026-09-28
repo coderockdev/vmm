@@ -8,6 +8,7 @@ import {
 } from "./ScriptProvider";
 import { buildScriptGenerationContext } from "./promptContext";
 import { contentPlanJsonInstructions, scriptJsonInstructions, parseContentPlanJson, parseScriptJson } from "./llmContract";
+import { describeProviderError } from "../../httpRetry";
 
 const MODEL = process.env.ANTHROPIC_SCRIPT_MODEL || "claude-opus-5";
 
@@ -16,15 +17,23 @@ function client(): Anthropic {
   if (!apiKey) {
     throw new Error("ANTHROPIC_API_KEY is not set. Add it to .env.local to use AI_PROVIDER=anthropic.");
   }
+  // The SDK already retries 429/5xx automatically before giving up.
   return new Anthropic({ apiKey });
 }
 
 async function complete(prompt: string): Promise<string> {
-  const message = await client().messages.create({
-    model: MODEL,
-    max_tokens: 4096,
-    messages: [{ role: "user", content: prompt }],
-  });
+  let message;
+  try {
+    message = await client().messages.create({
+      model: MODEL,
+      max_tokens: 4096,
+      messages: [{ role: "user", content: prompt }],
+    });
+  } catch (err) {
+    const status = err instanceof Anthropic.APIError ? err.status ?? 500 : 500;
+    const body = err instanceof Error ? err.message : String(err);
+    throw new Error(describeProviderError(`Claude (modelo "${MODEL}")`, status, body));
+  }
   const textBlock = message.content.find((block) => block.type === "text");
   if (!textBlock || textBlock.type !== "text") {
     throw new Error("Claude response had no text content.");

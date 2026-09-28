@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { ImageProvider, GenerateImageArgs, GenerateImageResult } from "./ImageProvider";
+import { fetchWithRetry, describeProviderError } from "../../httpRetry";
 
 const MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
 
@@ -18,7 +19,7 @@ export class OpenAIImageProvider implements ImageProvider {
       throw new Error("OPENAI_API_KEY is not set. Add it to your .env.local to generate cover art with AI.");
     }
 
-    const response = await fetch("https://api.openai.com/v1/images/generations", {
+    const response = await fetchWithRetry("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -34,9 +35,7 @@ export class OpenAIImageProvider implements ImageProvider {
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");
-      throw new Error(
-        `OpenAI image request failed (${response.status}) using model "${MODEL}" — set OPENAI_IMAGE_MODEL in .env.local if your account uses a different image model. Response: ${body.slice(0, 500)}`
-      );
+      throw new Error(describeProviderError(`OpenAI Images (modelo "${MODEL}")`, response.status, body));
     }
 
     const json = await response.json();

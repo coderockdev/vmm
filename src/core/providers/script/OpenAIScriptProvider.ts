@@ -7,6 +7,7 @@ import {
 } from "./ScriptProvider";
 import { buildScriptGenerationContext } from "./promptContext";
 import { contentPlanJsonInstructions, scriptJsonInstructions, parseContentPlanJson, parseScriptJson } from "./llmContract";
+import { fetchWithRetry, describeProviderError } from "../../httpRetry";
 
 const MODEL = process.env.OPENAI_SCRIPT_MODEL || "gpt-4o";
 
@@ -16,7 +17,7 @@ async function complete(prompt: string): Promise<string> {
     throw new Error("OPENAI_API_KEY is not set. Add it to .env.local to use AI_PROVIDER=openai.");
   }
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const response = await fetchWithRetry("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -31,7 +32,7 @@ async function complete(prompt: string): Promise<string> {
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    throw new Error(`OpenAI script request failed (${response.status}): ${body.slice(0, 500)}`);
+    throw new Error(describeProviderError(`ChatGPT (modelo "${MODEL}")`, response.status, body));
   }
 
   const json = await response.json();

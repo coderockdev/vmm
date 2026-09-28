@@ -7,6 +7,7 @@ import {
 } from "./ScriptProvider";
 import { buildScriptGenerationContext } from "./promptContext";
 import { contentPlanJsonInstructions, scriptJsonInstructions, parseContentPlanJson, parseScriptJson } from "./llmContract";
+import { fetchWithRetry, describeProviderError } from "../../httpRetry";
 
 const MODEL = process.env.GEMINI_SCRIPT_MODEL || "gemini-3.8-flash";
 
@@ -16,7 +17,7 @@ async function complete(prompt: string): Promise<string> {
     throw new Error("GEMINI_API_KEY is not set. Add it to .env.local to use AI_PROVIDER=gemini.");
   }
 
-  const response = await fetch(
+  const response = await fetchWithRetry(
     `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`,
     {
       method: "POST",
@@ -30,9 +31,7 @@ async function complete(prompt: string): Promise<string> {
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    throw new Error(
-      `Gemini script request failed (${response.status}) using model "${MODEL}" — set GEMINI_SCRIPT_MODEL in .env.local (or in Vercel's env vars) if Google has retired this one. Response: ${body.slice(0, 500)}`
-    );
+    throw new Error(describeProviderError(`Gemini (modelo "${MODEL}")`, response.status, body));
   }
 
   const json = await response.json();

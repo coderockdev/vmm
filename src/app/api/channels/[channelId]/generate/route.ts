@@ -21,14 +21,18 @@ export async function POST(req: NextRequest, { params }: { params: { channelId: 
     return NextResponse.json({ error: "No ideas selected" }, { status: 400 });
   }
 
-  const projectIds = await generateScriptsForIdeas({
-    channel,
-    topic: plan.topic,
-    durationMinutes: plan.durationMinutes,
-    format: plan.format,
-    ideas,
-    aiProviderOverride: body.aiProviderOverride ?? null,
-  });
-
-  return NextResponse.json({ projectIds });
+  try {
+    const projectIds = await generateScriptsForIdeas({
+      channel,
+      topic: plan.topic,
+      durationMinutes: plan.durationMinutes,
+      format: plan.format,
+      ideas,
+      aiProviderOverride: body.aiProviderOverride ?? null,
+    });
+    return NextResponse.json({ projectIds });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
 }

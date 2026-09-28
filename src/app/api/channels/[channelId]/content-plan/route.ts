@@ -11,14 +11,18 @@ export async function POST(req: NextRequest, { params }: { params: { channelId: 
   const durationMinutes = Number(body.durationMinutes) || channel.dna.scriptRules.defaultDurationMinutes;
   const format = body.format ?? "video";
 
-  const plan = await generateContentPlanForChannel({
-    channel,
-    topic: String(body.topic ?? "").trim(),
-    quantity,
-    durationMinutes,
-    format,
-    aiProviderOverride: body.aiProviderOverride ?? null,
-  });
-
-  return NextResponse.json({ plan });
+  try {
+    const plan = await generateContentPlanForChannel({
+      channel,
+      topic: String(body.topic ?? "").trim(),
+      quantity,
+      durationMinutes,
+      format,
+      aiProviderOverride: body.aiProviderOverride ?? null,
+    });
+    return NextResponse.json({ plan });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
 }
