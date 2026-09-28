@@ -1,0 +1,13 @@
+node_modules
+.next
+data
+public/render-tmp/*
+!public/render-tmp/.gitkeep
+.env.local
+*.log
+
+# Unrelated files that predate this project in this working directory
+*.pdf
+prompt*.md
+
+tsconfig.tsbuildinfo

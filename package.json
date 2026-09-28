@@ -1,0 +1,35 @@
+{
+  "name": "vmm-viral-money-machine",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "seed": "tsx src/core/seed.ts",
+    "test:pipeline": "tsx src/core/test-pipeline.ts",
+    "remotion:studio": "remotion studio src/remotion/index.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.382.0",
+    "@remotion/bundler": "4.0.150",
+    "@remotion/cli": "4.0.150",
+    "@remotion/lambda": "4.0.150",
+    "@remotion/player": "4.0.150",
+    "@remotion/renderer": "4.0.150",
+    "better-sqlite3": "^11.9.1",
+    "next": "^14.2.18",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "4.0.150"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.14.15",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
