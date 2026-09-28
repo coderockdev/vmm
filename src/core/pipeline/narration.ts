@@ -5,10 +5,11 @@ import { RawLine } from "../scriptLines";
 import { getTTSProvider } from "../providers/tts";
 import { TTSProviderName } from "../providers/tts/TTSProvider";
 import { concatAudioFiles, renderSilence, ensureParentDir } from "../audio/ffmpegUtils";
-import { channelAudioDir, channelTmpDir } from "../paths";
+import { channelTmpDir } from "../paths";
+import { workingFilePath, persistFile } from "../storage";
 
 export interface NarrationResult {
-  filePath: string; // absolute path
+  filePath: string; // absolute local path, or a full URL in remote-storage mode
   durationSeconds: number;
   provider: TTSProviderName;
   lines: ScriptLine[]; // with EXACT start/end/pauseAfter from real audio
@@ -76,14 +77,17 @@ export async function synthesizeNarration(args: {
     }
   }
 
-  const outPath = path.join(channelAudioDir(channel.id), `${videoProjectId}.mp3`);
+  const fileName = `${videoProjectId}.mp3`;
+  const outPath = workingFilePath(channel.id, "audio", fileName);
   ensureParentDir(outPath);
   await concatAudioFiles(clipPaths, outPath);
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 
+  const ref = await persistFile(outPath, channel.id, "audio", fileName, "audio/mpeg");
+
   return {
-    filePath: outPath,
+    filePath: ref,
     durationSeconds: cursor,
     provider: provider.name,
     lines: finalLines,
@@ -95,10 +99,10 @@ export async function synthesizeNarration(args: {
  * one. Timestamps for this path come from EstimateTimingProvider since we
  * only know the total duration, not per-line splits.
  */
-export function attachUploadedAudioPath(uploadedAbsolutePath: string, channel: Channel, videoProjectId: string): string {
-  const destDir = channelAudioDir(channel.id);
+export async function attachUploadedAudioPath(uploadedAbsolutePath: string, channel: Channel, videoProjectId: string): Promise<string> {
   const ext = path.extname(uploadedAbsolutePath) || ".mp3";
-  const destPath = path.join(destDir, `${videoProjectId}${ext}`);
+  const fileName = `${videoProjectId}${ext}`;
+  const destPath = workingFilePath(channel.id, "audio", fileName);
   fs.copyFileSync(uploadedAbsolutePath, destPath);
-  return destPath;
+  return persistFile(destPath, channel.id, "audio", fileName, "audio/mpeg");
 }

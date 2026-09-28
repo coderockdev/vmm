@@ -8,9 +8,12 @@ create table if not exists channels (
   niche text not null,
   cover_color text not null,
   dna_json jsonb not null,
+  cover_ref text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table channels add column if not exists cover_ref text;
 
 create table if not exists content_plans (
   id uuid primary key default gen_random_uuid(),

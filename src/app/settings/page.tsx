@@ -1,4 +1,5 @@
 import React from "react";
+import { isRemoteStorageEnabled } from "../../core/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,8 @@ export default function SettingsPage() {
   const hasLambdaConfig = Boolean(
     process.env.REMOTION_LAMBDA_FUNCTION_NAME && process.env.REMOTION_LAMBDA_SERVE_URL
   );
+  const remoteStorage = isRemoteStorageEnabled();
+  const hasStorageConfig = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 
   return (
     <div style={{ maxWidth: 640 }}>
@@ -75,6 +78,18 @@ export default function SettingsPage() {
             <span>Configuração Lambda</span>
             <span style={{ color: hasLambdaConfig ? "var(--success)" : "var(--danger)" }}>
               {hasLambdaConfig ? "configurada" : "faltando função/site"}
+            </span>
+          </div>
+        )}
+        <div style={rowStyle}>
+          <span>Armazenamento de arquivos</span>
+          <span style={{ color: "var(--text-dim)" }}>{remoteStorage ? "Supabase Storage (remoto)" : "Disco local (./data)"}</span>
+        </div>
+        {remoteStorage && (
+          <div style={rowStyle}>
+            <span>Configuração do Storage</span>
+            <span style={{ color: hasStorageConfig ? "var(--success)" : "var(--danger)" }}>
+              {hasStorageConfig ? "configurada" : "faltando SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY"}
             </span>
           </div>
         )}

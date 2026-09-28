@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
 import {
   getVideoProject,
   getScript,
@@ -8,7 +6,7 @@ import {
   deleteVideoProject,
 } from "../../../../core/repo/projects";
 import { getJobForProject } from "../../../../core/repo/jobs";
-import { channelDir } from "../../../../core/paths";
+import { deleteStoredFile } from "../../../../core/storage";
 
 export async function GET(_req: NextRequest, { params }: { params: { videoProjectId: string } }) {
   const project = await getVideoProject(params.videoProjectId);
@@ -25,14 +23,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: { videoPro
   const project = await getVideoProject(params.videoProjectId);
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  if (project.renderPath) {
-    const abs = path.join(channelDir(project.channelId), project.renderPath);
-    fs.rmSync(abs, { force: true });
-  }
+  await deleteStoredFile(project.channelId, project.renderPath);
   const audio = project.audioAssetId ? await getAudioAsset(project.audioAssetId) : null;
-  if (audio) {
-    fs.rmSync(audio.filePath, { force: true });
-  }
+  if (audio) await deleteStoredFile(project.channelId, audio.filePath);
 
   await deleteVideoProject(project.id);
   return NextResponse.json({ ok: true });

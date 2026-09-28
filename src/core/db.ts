@@ -96,6 +96,7 @@ function migrate(db: Database.Database) {
   `);
 
   addColumnIfMissing(db, "video_projects", "tts_provider_override", "TEXT");
+  addColumnIfMissing(db, "channels", "cover_ref", "TEXT");
 }
 
 function addColumnIfMissing(db: Database.Database, table: string, column: string, type: string) {

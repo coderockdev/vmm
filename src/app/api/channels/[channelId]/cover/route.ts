@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import path from "path";
-import { getChannel } from "../../../../../core/repo/channels";
-import { channelDir } from "../../../../../core/paths";
+import { getChannel, updateChannelCoverRef } from "../../../../../core/repo/channels";
 import { getImageProvider, buildCoverPrompt } from "../../../../../core/providers/image";
+import { workingFilePath, persistFile } from "../../../../../core/storage";
+import { mediaUrl } from "../../../../../core/media";
 
 export async function POST(_req: NextRequest, { params }: { params: { channelId: string } }) {
   const channel = await getChannel(params.channelId);
@@ -17,10 +17,13 @@ export async function POST(_req: NextRequest, { params }: { params: { channelId:
       palette: channel.dna.visual.palette,
     });
 
-    const outPath = path.join(channelDir(channel.id), "cover.png");
+    const fileName = "cover.png";
+    const outPath = workingFilePath(channel.id, "cover", fileName);
     await getImageProvider().generate({ prompt, outPath });
+    const ref = await persistFile(outPath, channel.id, "cover", fileName, "image/png");
+    await updateChannelCoverRef(channel.id, ref);
 
-    return NextResponse.json({ coverUrl: `/api/media/${channel.id}/cover.png?t=${Date.now()}` });
+    return NextResponse.json({ coverUrl: `${mediaUrl(channel.id, ref)}?t=${Date.now()}` });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: message }, { status: 500 });

@@ -1,10 +1,8 @@
 import React from "react";
-import fs from "fs";
-import path from "path";
 import { notFound } from "next/navigation";
 import { getChannel } from "../../../../core/repo/channels";
-import { channelDir } from "../../../../core/paths";
 import { ensureSeeded } from "../../../../core/seed";
+import { mediaUrl } from "../../../../core/media";
 import { EditChannelForm } from "./EditChannelForm";
 
 export const dynamic = "force-dynamic";
@@ -14,8 +12,7 @@ export default async function EditChannelPage({ params }: { params: { channelId:
   const channel = await getChannel(params.channelId);
   if (!channel) notFound();
 
-  const hasCover = fs.existsSync(path.join(channelDir(channel.id), "cover.png"));
-  const initialCoverUrl = hasCover ? `/api/media/${channel.id}/cover.png` : null;
+  const initialCoverUrl = mediaUrl(channel.id, channel.coverRef);
 
   return <EditChannelForm channel={channel} initialCoverUrl={initialCoverUrl} />;
 }
