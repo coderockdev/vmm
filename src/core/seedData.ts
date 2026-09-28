@@ -38,6 +38,7 @@ export const SEED_CHANNELS: SeedChannel[] = [
         structure: "introdução → preparação → conteúdo principal → repetição/reflexão → encerramento",
         cta: "CTA curto e natural quando apropriado",
         defaultDurationMinutes: 8,
+        generationPrompt: "",
         pauses: { betweenLines: 0.5, betweenSections: 1.5 },
       },
       visual: {
@@ -76,6 +77,7 @@ export const SEED_CHANNELS: SeedChannel[] = [
         structure: "introdução → oração principal → reflexão → momento de silêncio → encerramento com bênção",
         cta: "convite gentil para compartilhar ou voltar amanhã",
         defaultDurationMinutes: 10,
+        generationPrompt: "",
         pauses: { betweenLines: 0.65, betweenSections: 2 },
       },
       visual: {
@@ -112,6 +114,7 @@ export const SEED_CHANNELS: SeedChannel[] = [
         structure: "gancho → contexto → desenvolvimento → virada → conclusão/moral leve",
         cta: "convite curto para continuar acompanhando as histórias do Zé",
         defaultDurationMinutes: 5,
+        generationPrompt: "",
         pauses: { betweenLines: 0.3, betweenSections: 0.9 },
       },
       visual: {
@@ -148,6 +151,7 @@ export const SEED_CHANNELS: SeedChannel[] = [
         structure: "loop ambiente contínuo, sem estrutura narrativa tradicional",
         cta: "nenhum (canal não utiliza narração)",
         defaultDurationMinutes: 20,
+        generationPrompt: "",
         pauses: { betweenLines: 0, betweenSections: 0 },
       },
       visual: {

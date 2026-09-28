@@ -16,10 +16,18 @@ export function buildScriptGenerationContext(args: {
   channel: Channel;
   topic: string;
   previousTitles?: string[];
+  durationMinutes?: number;
 }): string {
   const { channel, topic } = args;
   const dna = channel.dna;
   const previousTitles = args.previousTitles ?? [];
+  const durationMinutes = args.durationMinutes;
+  const generationPrompt = (dna.scriptRules.generationPrompt ?? "").trim();
+
+  // Calm spoken narration lands around ~130–150 words/min; we aim mid-range
+  // so TTS + pauses fill the chosen duration without sounding rushed.
+  const targetWords =
+    durationMinutes && durationMinutes > 0 ? Math.round(durationMinutes * 140) : null;
 
   return [
     `SYSTEM CONTEXT:`,
@@ -33,18 +41,32 @@ export function buildScriptGenerationContext(args: {
     `- Tom: ${dna.tone.join(", ")}`,
     `- Temas permitidos: ${dna.topics.join(", ")}`,
     `- Assuntos a evitar: ${dna.avoid.join(", ")}`,
-    `- Estrutura do roteiro: ${dna.scriptRules.structure}`,
+    `- Estrutura do roteiro (resumo): ${dna.scriptRules.structure}`,
     `- Abertura: ${dna.scriptRules.opening}`,
     `- CTA: ${dna.scriptRules.cta}`,
+    ...(generationPrompt
+      ? [
+          ``,
+          `MODELO DE ROTEIRO DESTE CANAL (obrigatório — siga à risca):`,
+          generationPrompt,
+        ]
+      : []),
     ``,
     `REGRAS:`,
     `- respeite o nicho;`,
     `- respeite o idioma;`,
     `- respeite o tom;`,
-    `- respeite a estrutura;`,
+    `- respeite a estrutura e o modelo de roteiro do canal;`,
     `- não saia da premissa editorial;`,
     `- não introduza assuntos não relacionados;`,
-    `- evite repetir literalmente roteiros anteriores.`,
+    `- evite repetir literalmente roteiros anteriores;`,
+    `- NÃO narrar meta-instruções (tom, ângulo editorial, "hoje vamos trabalhar em…") — só o texto falado ao espectador.`,
+    ...(durationMinutes && targetWords
+      ? [
+          `- a narração deve preencher cerca de ${durationMinutes} minutos (~${targetWords} palavras, tom calmo);`,
+          `- não encher com as mesmas frases em loop com conectores ("una vez más", "con calma"); desenvolva conteúdo real na duração.`,
+        ]
+      : []),
     ...(previousTitles.length
       ? [``, `TÍTULOS JÁ PRODUZIDOS (não repetir):`, ...previousTitles.map((t) => `- ${t}`)]
       : []),

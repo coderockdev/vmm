@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
         body.scriptRules?.structure ?? "introdução → preparação → conteúdo principal → reflexão → encerramento",
       cta: body.scriptRules?.cta ?? "CTA curto e natural quando apropriado",
       defaultDurationMinutes: body.scriptRules?.defaultDurationMinutes ?? 8,
+      generationPrompt: body.scriptRules?.generationPrompt ?? "",
       pauses: {
         betweenLines: body.scriptRules?.pauses?.betweenLines ?? 0.5,
         betweenSections: body.scriptRules?.pauses?.betweenSections ?? 1.5,

@@ -58,13 +58,14 @@ export class OpenAIScriptProvider implements ScriptProvider {
       channel: args.channel,
       topic: args.topic,
       previousTitles: args.previousScripts.slice(0, 5),
+      durationMinutes: args.durationMinutes,
     });
     const prompt = [
       context,
       ``,
       `IDEIA APROVADA: ${args.contentIdea.title} — ${args.contentIdea.angle}`,
       `Duração alvo da narração: ${args.durationMinutes} minutos.`,
-      scriptJsonInstructions(),
+      scriptJsonInstructions(args.durationMinutes),
     ].join("\n");
     const text = await complete(prompt);
     return parseScriptJson(text);

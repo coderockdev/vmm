@@ -24,6 +24,13 @@ export interface ChannelDNA {
     structure: string;
     cta: string;
     defaultDurationMinutes: number;
+    /**
+     * Channel-specific blueprint for how scripts must be written (beats,
+     * repetition style, what to say/avoid, section order, etc.). Injected
+     * verbatim into every script-generation prompt. Empty = only the short
+     * `structure` / opening / CTA rules above.
+     */
+    generationPrompt: string;
     /** Explicit narration pauses (seconds) — not estimated, part of the DNA. */
     pauses: {
       betweenLines: number;

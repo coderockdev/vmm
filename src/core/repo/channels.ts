@@ -14,14 +14,25 @@ interface ChannelRow {
   updated_at: string;
 }
 
+function normalizeDna(raw: ChannelDNA): ChannelDNA {
+  return {
+    ...raw,
+    scriptRules: {
+      ...raw.scriptRules,
+      generationPrompt: raw.scriptRules?.generationPrompt ?? "",
+    },
+  };
+}
+
 function rowToChannel(row: ChannelRow): Channel {
+  const parsed = typeof row.dna_json === "string" ? JSON.parse(row.dna_json) : (row.dna_json as ChannelDNA);
   return {
     id: row.id,
     name: row.name,
     niche: row.niche,
     coverColor: row.cover_color,
     coverRef: row.cover_ref ?? null,
-    dna: typeof row.dna_json === "string" ? JSON.parse(row.dna_json) : (row.dna_json as ChannelDNA),
+    dna: normalizeDna(parsed),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

@@ -17,13 +17,25 @@ export function contentPlanJsonInstructions(quantity: number): string {
   ].join("\n");
 }
 
-export function scriptJsonInstructions(): string {
+export function scriptJsonInstructions(durationMinutes?: number): string {
+  const targetWords =
+    durationMinutes && durationMinutes > 0 ? Math.round(durationMinutes * 140) : null;
+  // ~12–18 words per calm spoken line → rough line budget for the duration.
+  const targetLines =
+    durationMinutes && durationMinutes > 0 ? Math.max(12, Math.round(durationMinutes * 10)) : null;
+
   return [
     ``,
     `FORMATO DE RESPOSTA (responda APENAS com este JSON, sem markdown, sem comentários, sem texto fora do JSON):`,
     `{"lines":["primeira frase narrada","segunda frase narrada"],"sectionBreaks":[0,4]}`,
     `- Cada item de "lines" é UMA frase/linha narrada isoladamente, como seria falada em voz alta.`,
     `- "sectionBreaks" são índices (0-based) de "lines" após os quais deve haver uma pausa maior que o normal (fim de um bloco/seção). Pode ser [].`,
+    ...(durationMinutes && targetWords && targetLines
+      ? [
+          `- Duração alvo: ${durationMinutes} minutos de narração (~${targetWords} palavras no total, cerca de ${targetLines} linhas).`,
+          `- Varie o conteúdo ao longo da duração; não repita o mesmo bloco com prefixos mecânicos.`,
+        ]
+      : []),
   ].join("\n");
 }
 

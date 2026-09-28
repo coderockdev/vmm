@@ -12,7 +12,20 @@
  * already had *some* error surfaced; this makes that message actually say
  * what's going on instead of just the raw status/body.
  */
+function isBillingQuotaError(body: string): boolean {
+  const lower = body.toLowerCase();
+  return (
+    lower.includes("insufficient_quota") ||
+    lower.includes("exceeded your current quota") ||
+    lower.includes("billing_not_active") ||
+    lower.includes("you exceeded your current quota")
+  );
+}
+
 export function describeProviderError(providerLabel: string, status: number, body: string): string {
+  if (status === 429 && isBillingQuotaError(body)) {
+    return `${providerLabel} sem créditos/quota na conta (HTTP 429 insufficient_quota — não é bug do app). Coloque crédito em platform.openai.com (Billing) ou troque de IA no seletor (Claude/Gemini/Mock).`;
+  }
   if (status === 429) {
     return `${providerLabel} atingiu o limite de requisições no momento (não é um erro do app). Espere um pouco e tente de novo, ou troque de IA no seletor.`;
   }
@@ -33,7 +46,13 @@ export async function fetchWithRetry(
   let response: Response;
   for (let attempt = 0; ; attempt++) {
     response = await fetch(input, init);
-    const retryable = response.status === 429 || response.status >= 500;
+    // Billing/quota 429s never recover with retry — only true rate limits do.
+    let billingBlocked = false;
+    if (response.status === 429) {
+      const peek = await response.clone().text().catch(() => "");
+      billingBlocked = isBillingQuotaError(peek);
+    }
+    const retryable = !billingBlocked && (response.status === 429 || response.status >= 500);
     if (response.ok || !retryable || attempt >= retries) {
       return response;
     }

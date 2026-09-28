@@ -60,6 +60,9 @@ export function EditChannelForm({
   const [topics, setTopics] = useState(channel.dna.topics.join(", "));
   const [avoid, setAvoid] = useState(channel.dna.avoid.join(", "));
   const [structure, setStructure] = useState(channel.dna.scriptRules.structure);
+  const [generationPrompt, setGenerationPrompt] = useState(
+    channel.dna.scriptRules.generationPrompt ?? ""
+  );
   const [defaultDurationMinutes, setDefaultDurationMinutes] = useState(
     channel.dna.scriptRules.defaultDurationMinutes
   );
@@ -86,7 +89,12 @@ export function EditChannelForm({
             tone: tone.split(",").map((s) => s.trim()).filter(Boolean),
             topics: topics.split(",").map((s) => s.trim()).filter(Boolean),
             avoid: avoid.split(",").map((s) => s.trim()).filter(Boolean),
-            scriptRules: { ...channel.dna.scriptRules, structure, defaultDurationMinutes },
+            scriptRules: {
+              ...channel.dna.scriptRules,
+              structure,
+              generationPrompt,
+              defaultDurationMinutes,
+            },
             voice: { ...channel.dna.voice, ...voice },
           },
         }),
@@ -189,7 +197,7 @@ export function EditChannelForm({
           <input style={inputStyle} value={topics} onChange={(e) => setTopics(e.target.value)} />
           <label style={labelStyle}>Assuntos a evitar</label>
           <input style={inputStyle} value={avoid} onChange={(e) => setAvoid(e.target.value)} />
-          <label style={labelStyle}>Estrutura padrão</label>
+          <label style={labelStyle}>Estrutura padrão (resumo)</label>
           <input style={inputStyle} value={structure} onChange={(e) => setStructure(e.target.value)} />
           <label style={labelStyle}>Duração padrão (min)</label>
           <input
@@ -199,6 +207,24 @@ export function EditChannelForm({
             onChange={(e) => setDefaultDurationMinutes(Number(e.target.value))}
           />
         </section>
+
+        {channel.dna.usesScript && (
+          <section style={sectionStyle}>
+            <strong>MODELO DE ROTEIRO</strong>
+            <p style={{ fontSize: 13, color: "var(--text-dim)", marginTop: 8, marginBottom: 0, lineHeight: 1.45 }}>
+              Prompt específico deste canal: beats, estilo de repetição, o que falar/evitar, ordem das
+              seções. Toda geração de roteiro (Claude, ChatGPT, Gemini…) recebe este texto como regra
+              obrigatória, além da duração escolhida.
+            </p>
+            <label style={labelStyle}>Prompt / estrutura de geração</label>
+            <textarea
+              style={{ ...inputStyle, minHeight: 220, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 13, lineHeight: 1.45 }}
+              value={generationPrompt}
+              onChange={(e) => setGenerationPrompt(e.target.value)}
+              placeholder={`Exemplo para ${channel.name}:\n- Abertura emocional (30–45s)\n- Preparação / respiração\n- Bloco principal com afirmações variadas (não repetir o mesmo bloco)\n- Reflexão e fechamento com CTA suave\n- Idioma e tom do canal…`}
+            />
+          </section>
+        )}
 
         {channel.dna.usesNarration && (
           <section style={sectionStyle}>

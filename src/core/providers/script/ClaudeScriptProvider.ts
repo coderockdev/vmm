@@ -26,7 +26,9 @@ async function complete(prompt: string): Promise<string> {
   try {
     message = await client().messages.create({
       model: MODEL,
-      max_tokens: 4096,
+      // Sonnet/Opus 5 use adaptive thinking — keep headroom so the text
+      // block isn't truncated away after internal reasoning tokens.
+      max_tokens: 16000,
       messages: [{ role: "user", content: prompt }],
     });
   } catch (err) {
@@ -34,11 +36,18 @@ async function complete(prompt: string): Promise<string> {
     const body = err instanceof Error ? err.message : String(err);
     throw new Error(describeProviderError(`Claude (modelo "${MODEL}")`, status, body));
   }
-  const textBlock = message.content.find((block) => block.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
-    throw new Error("Claude response had no text content.");
+  const text = message.content
+    .filter((block): block is Anthropic.TextBlock => block.type === "text")
+    .map((block) => block.text)
+    .join("\n")
+    .trim();
+  if (!text) {
+    const types = message.content.map((b) => b.type).join(", ") || "(vazio)";
+    throw new Error(
+      `Claude response had no text content (stop_reason=${message.stop_reason ?? "?"}, blocks=[${types}]). Tente de novo ou troque o modelo em ANTHROPIC_SCRIPT_MODEL.`
+    );
   }
-  return textBlock.text;
+  return text;
 }
 
 /** Real Anthropic (Claude) script generation — one of the interchangeable AI_PROVIDER backends. */
@@ -58,13 +67,14 @@ export class ClaudeScriptProvider implements ScriptProvider {
       channel: args.channel,
       topic: args.topic,
       previousTitles: args.previousScripts.slice(0, 5),
+      durationMinutes: args.durationMinutes,
     });
     const prompt = [
       context,
       ``,
       `IDEIA APROVADA: ${args.contentIdea.title} — ${args.contentIdea.angle}`,
       `Duração alvo da narração: ${args.durationMinutes} minutos.`,
-      scriptJsonInstructions(),
+      scriptJsonInstructions(args.durationMinutes),
     ].join("\n");
     const text = await complete(prompt);
     return parseScriptJson(text);
