@@ -58,6 +58,8 @@ export interface Channel {
   name: string;
   niche: string; // short tagline shown on cards, e.g. "Amor • Relacionamentos"
   coverColor: string; // deterministic accent color for card art
+  /** AI-generated cover art reference — relative path (local storage) or full URL (remote storage). Null = no real cover yet. */
+  coverRef: string | null;
   dna: ChannelDNA;
   createdAt: string;
   updatedAt: string;
@@ -107,7 +109,7 @@ export interface Script {
 export interface AudioAsset {
   id: string;
   videoProjectId: string;
-  filePath: string; // relative to data dir
+  filePath: string; // relative to data dir (local storage) or full URL (remote storage)
   durationSeconds: number;
   provider: "local" | "cartesia" | "uploaded" | "elevenlabs";
   createdAt: string;
@@ -139,7 +141,7 @@ export interface VideoProject {
   ttsProviderOverride: "local" | "cartesia" | "elevenlabs" | "uploaded" | null;
   scriptId: string | null;
   audioAssetId: string | null;
-  renderPath: string | null; // relative path under data dir once completed
+  renderPath: string | null; // relative path under data dir (local storage) or full URL (remote storage), once completed
   renderDurationSeconds: number | null;
   createdAt: string;
   updatedAt: string;

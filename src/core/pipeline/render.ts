@@ -3,7 +3,7 @@ import fs from "fs";
 import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition } from "@remotion/renderer";
 import { NeonMeditationProps } from "../../remotion/NeonMeditationComposition";
-import { channelRendersDir } from "../paths";
+import { workingFilePath, persistFile, ensureLocalFile } from "../storage";
 import { RenderVideoArgs, RenderVideoResult } from "./renderTypes";
 
 export * from "./renderTypes";
@@ -54,10 +54,11 @@ async function renderVideoProjectLocal(args: RenderVideoArgs): Promise<RenderVid
     // per-render audio written to public/ afterwards is invisible to it —
     // it has to be written straight into the already-served bundle dir.
     if (audioAbsolutePath) {
+      const localAudioPath = await ensureLocalFile(channel.id, audioAbsolutePath, `narration${path.extname(audioAbsolutePath)}`);
       bundleRenderTmpDir = path.join(bundleLocation, "render-tmp");
       fs.mkdirSync(bundleRenderTmpDir, { recursive: true });
-      audioFileName = `${videoProjectId}${path.extname(audioAbsolutePath)}`;
-      fs.copyFileSync(audioAbsolutePath, path.join(bundleRenderTmpDir, audioFileName));
+      audioFileName = `${videoProjectId}${path.extname(localAudioPath)}`;
+      fs.copyFileSync(localAudioPath, path.join(bundleRenderTmpDir, audioFileName));
     }
 
     const compositionId = format === "short" ? "NeonMeditationShort" : "NeonMeditationVideo";
@@ -76,8 +77,8 @@ async function renderVideoProjectLocal(args: RenderVideoArgs): Promise<RenderVid
       inputProps,
     });
 
-    const outputDir = channelRendersDir(channel.id);
-    const outputPath = path.join(outputDir, `${videoProjectId}.mp4`);
+    const renderFileName = `${videoProjectId}.mp4`;
+    const outputPath = workingFilePath(channel.id, "render", renderFileName);
 
     args.onProgress?.(15, "Renderizando...");
     await renderMedia({
@@ -97,9 +98,10 @@ async function renderVideoProjectLocal(args: RenderVideoArgs): Promise<RenderVid
     });
 
     args.onProgress?.(98, "Finalizando...");
+    const ref = await persistFile(outputPath, channel.id, "render", renderFileName, "video/mp4");
     return {
       outputPath,
-      relativeRenderPath: path.join("renders", `${videoProjectId}.mp4`),
+      relativeRenderPath: ref,
       durationSeconds: durationInSeconds,
     };
   } finally {

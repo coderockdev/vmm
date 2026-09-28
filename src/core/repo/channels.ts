@@ -8,6 +8,7 @@ interface ChannelRow {
   name: string;
   niche: string;
   cover_color: string;
+  cover_ref: string | null;
   dna_json: string | object;
   created_at: string;
   updated_at: string;
@@ -19,6 +20,7 @@ function rowToChannel(row: ChannelRow): Channel {
     name: row.name,
     niche: row.niche,
     coverColor: row.cover_color,
+    coverRef: row.cover_ref ?? null,
     dna: typeof row.dna_json === "string" ? JSON.parse(row.dna_json) : (row.dna_json as ChannelDNA),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -95,6 +97,17 @@ export async function updateChannelDna(id: string, dna: ChannelDNA): Promise<Cha
   }
   getDb().prepare(`UPDATE channels SET dna_json = ?, updated_at = ? WHERE id = ?`).run(JSON.stringify(dna), now, id);
   return (await getChannel(id))!;
+}
+
+export async function updateChannelCoverRef(id: string, coverRef: string | null): Promise<void> {
+  const now = new Date().toISOString();
+  if (isSupabaseEnabled()) {
+    assertNoError(
+      await getSupabase().from("channels").update({ cover_ref: coverRef, updated_at: now }).eq("id", id)
+    );
+    return;
+  }
+  getDb().prepare(`UPDATE channels SET cover_ref = ?, updated_at = ? WHERE id = ?`).run(coverRef, now, id);
 }
 
 export async function updateChannelMeta(

@@ -4,7 +4,7 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client
 import { renderMediaOnLambda, getRenderProgress, presignUrl } from "@remotion/lambda/client";
 import { AwsRegion } from "@remotion/lambda";
 import { NeonMeditationProps } from "../../remotion/NeonMeditationComposition";
-import { channelRendersDir } from "../paths";
+import { workingFilePath, persistFile, resolveChannelRelativePath, isUrl } from "../storage";
 import { RenderVideoArgs, RenderVideoResult } from "./renderTypes";
 
 function getConfig() {
@@ -40,14 +40,20 @@ export async function renderVideoProjectLambda(args: RenderVideoArgs): Promise<R
   let audioUrl: string | null = null;
 
   try {
-    if (audioAbsolutePath) {
-      audioObjectKey = `audio-uploads/${videoProjectId}${path.extname(audioAbsolutePath)}`;
+    if (audioAbsolutePath && isUrl(audioAbsolutePath)) {
+      // Remote-storage mode: the narration audio already lives at a public
+      // URL (Supabase Storage) — Remotion Lambda can fetch it directly, no
+      // need to also upload it to Remotion's own S3 bucket.
+      audioUrl = audioAbsolutePath;
+    } else if (audioAbsolutePath) {
+      const localAudioPath = resolveChannelRelativePath(channel.id, audioAbsolutePath);
+      audioObjectKey = `audio-uploads/${videoProjectId}${path.extname(localAudioPath)}`;
       args.onProgress?.(8, "Enviando áudio para a nuvem...");
       await s3.send(
         new PutObjectCommand({
           Bucket: bucketName,
           Key: audioObjectKey,
-          Body: fs.readFileSync(audioAbsolutePath),
+          Body: fs.readFileSync(localAudioPath),
           ContentType: "audio/mpeg",
         })
       );
@@ -105,17 +111,18 @@ export async function renderVideoProjectLambda(args: RenderVideoArgs): Promise<R
     if (!outputUrl) throw new Error("Lambda render finished without an output file.");
 
     args.onProgress?.(96, "Baixando resultado...");
-    const outputDir = channelRendersDir(channel.id);
-    const outputPath = path.join(outputDir, `${videoProjectId}.mp4`);
+    const renderFileName = `${videoProjectId}.mp4`;
+    const outputPath = workingFilePath(channel.id, "render", renderFileName);
     const response = await fetch(outputUrl);
     if (!response.ok) throw new Error(`Failed to download rendered video: ${response.status}`);
     const arrayBuffer = await response.arrayBuffer();
     fs.writeFileSync(outputPath, Buffer.from(arrayBuffer));
 
     args.onProgress?.(98, "Finalizando...");
+    const ref = await persistFile(outputPath, channel.id, "render", renderFileName, "video/mp4");
     return {
       outputPath,
-      relativeRenderPath: path.join("renders", `${videoProjectId}.mp4`),
+      relativeRenderPath: ref,
       durationSeconds: durationInSeconds,
     };
   } finally {

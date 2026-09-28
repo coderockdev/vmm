@@ -7,13 +7,17 @@ export interface RenderVideoArgs {
   seed: number;
   durationInSeconds: number;
   format: Exclude<VideoFormat, "both">;
-  /** Absolute path to the final narration/ambient audio file, or null for silent. */
+  /**
+   * Narration/ambient audio reference, or null for silent — a relative path
+   * (local storage; resolve with storage.resolveChannelRelativePath) or a
+   * full URL (remote storage; directly fetchable). See storage/index.ts.
+   */
   audioAbsolutePath: string | null;
   onProgress?: (progress: number, message: string) => void;
 }
 
 export interface RenderVideoResult {
-  outputPath: string; // absolute path
-  relativeRenderPath: string; // relative to channel dir, e.g. "renders/xyz.mp4"
+  outputPath: string; // absolute local path
+  relativeRenderPath: string; // DB-storable ref: relative to channel dir (local storage) or a full URL (remote storage)
   durationSeconds: number;
 }

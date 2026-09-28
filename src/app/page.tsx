@@ -1,11 +1,9 @@
 import React from "react";
-import fs from "fs";
-import path from "path";
 import Link from "next/link";
 import { ensureSeeded } from "../core/seed";
 import { listChannels, getChannel } from "../core/repo/channels";
 import { listProjectsForChannel, listAllProjects } from "../core/repo/projects";
-import { channelDir } from "../core/paths";
+import { mediaUrl } from "../core/media";
 import {
   CalendarIcon,
   CarouselIcon,
@@ -128,7 +126,7 @@ export default async function HomePage() {
         shorts: projects.filter((p) => p.status === "completed" && p.format === "short").length,
         category: KNOWN_CATEGORY_OVERRIDES[channel.id] ?? channel.niche.split(" • ")[0],
         crop: KNOWN_COVER_CROPS[channel.id],
-        hasRealCover: fs.existsSync(path.join(channelDir(channel.id), "cover.png")),
+        coverUrl: mediaUrl(channel.id, channel.coverRef),
         description:
           channel.dna.description.length > 95
             ? channel.dna.description.slice(0, 95) + "…"
@@ -169,14 +167,14 @@ export default async function HomePage() {
       </section>
 
       <section className="channel-grid" aria-label="Seus canais">
-        {channelCards.map(({ channel, videos, shorts, category, crop, hasRealCover, description }) => {
+        {channelCards.map(({ channel, videos, shorts, category, crop, coverUrl, description }) => {
           return (
             <article className="channel-card" key={channel.id}>
               <div className="channel-cover">
-                {hasRealCover ? (
+                {coverUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={`/api/media/${channel.id}/cover.png`}
+                    src={coverUrl}
                     alt={`Capa do canal ${channel.name}`}
                     style={{ width: "100%", height: "100%", objectFit: "cover" }}
                   />
