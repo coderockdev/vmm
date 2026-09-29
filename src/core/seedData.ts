@@ -191,7 +191,7 @@ Cada guion debe sentirse escrito específicamente para su título y situación. 
 REGLA PRINCIPAL:
 AMOR AMOR EMPIEZA EN LA HERIDA Y TERMINA EN EL ALIVIO.
 No empieces en el alivio.`,
-        pauses: { betweenLines: 0.2, betweenSections: 1.1 },
+        pauses: { betweenLines: 0.55, betweenSections: 1.6 },
         wordsPerMinute: 145,
         charsPerWord: 6,
         performanceTags: {

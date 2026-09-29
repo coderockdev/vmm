@@ -16,12 +16,25 @@ export class LibraryMusicProvider implements MusicProvider {
   readonly name = "vmm-audio-library";
 
   async generate(args: GenerateMusicArgs & { scriptText?: string; channelId?: string }): Promise<GeneratedMusic> {
-    const moods = moodsFromScript(args.scriptText ?? args.instructions ?? "");
+    const channelId = args.channelId;
+    // Amor Amor = oración/amor: prefer soft spiritual/romantic beds, never meditation drones.
+    const baseMoods = moodsFromScript(args.scriptText ?? args.instructions ?? "");
+    const moods =
+      channelId === "amor-amor"
+        ? ["espiritual", "oracion", "romantico", "emocional", "esperanca", ...baseMoods.filter((m) => m !== "misterio" && m !== "tensao")]
+        : baseMoods;
+    const styleHint =
+      args.style === "espiritual" || args.style === "piano-emocional" || args.style === "romantico-cinematico"
+        ? args.style
+        : channelId === "amor-amor"
+          ? "espiritual"
+          : args.style;
+
     const entry = pickBestLibraryEntry("music", {
-      scriptText: args.scriptText ?? "",
+      scriptText: `${args.scriptText ?? ""} ${args.instructions ?? ""} ${styleHint}`,
       moods,
-      intensity: args.intensity,
-      channelId: args.channelId ?? args.channelId,
+      intensity: args.intensity ?? "soft",
+      channelId,
     });
     if (!entry) {
       throw new Error(
@@ -35,15 +48,15 @@ export class LibraryMusicProvider implements MusicProvider {
 
     const outPath = path.join(args.outDir, `${args.fileBaseName}.mp3`);
     ensureParentDir(outPath);
-    // Normalize the short library clip first (fast), then loop — never alter narration.
     const dur = Math.max(2, args.durationSeconds);
     const normalized = path.join(args.outDir, `${args.fileBaseName}-norm.mp3`);
+    // Keep bed soft — do NOT dynaudnorm/boost (that made placeholders harsh).
     await runFfmpeg("ffmpeg", [
       "-y",
       "-i",
       src,
       "-af",
-      "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono,dynaudnorm=f=75:g=12:p=0.95,volume=1.35,alimiter=limit=0.95",
+      "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono,volume=0.55,alimiter=limit=0.85",
       "-ar",
       "48000",
       "-ac",
@@ -63,7 +76,7 @@ export class LibraryMusicProvider implements MusicProvider {
       "-t",
       dur.toFixed(3),
       "-af",
-      `aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono,afade=t=in:st=0:d=1.5,afade=t=out:st=${Math.max(0.5, dur - 2.5).toFixed(3)}:d=2.5`,
+      `aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono,afade=t=in:st=0:d=2,afade=t=out:st=${Math.max(0.5, dur - 3).toFixed(3)}:d=3`,
       "-ar",
       "48000",
       "-ac",

@@ -61,9 +61,15 @@ export function validateScriptForVoice(
 }
 
 function convertBreaksForEleven(script: string): string {
-  return script.replace(BREAK_TAG_RE, (_m, secs) => {
+  // ElevenLabs v3 understands [pause] natively; map SSML breaks to real pauses.
+  return script.replace(BRACKET_TAG_RE, (tag) => {
+    const t = tag.toLowerCase();
+    if (t === "[pause]") return " ... [pause] ... ";
+    return tag;
+  }).replace(BREAK_TAG_RE, (_m, secs) => {
     const n = Number(secs);
-    if (n >= 2) return "\n\n... ...\n\n";
+    if (n >= 2) return "\n\n... [pause] ... [pause] ...\n\n";
+    if (n >= 1) return " ... [pause] ... ";
     return " ... ";
   });
 }

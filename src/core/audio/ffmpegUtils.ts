@@ -1,13 +1,71 @@
-import { spawn } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import path from "path";
 import fs from "fs";
+
+/** Prefer Homebrew ffmpeg-full (libass/drawtext) over the slim `ffmpeg` bottle. */
+let cachedFfmpeg: string | null = null;
+let cachedFfprobe: string | null = null;
+
+function resolveBinary(kind: "ffmpeg" | "ffprobe"): string {
+  if (kind === "ffmpeg" && cachedFfmpeg) return cachedFfmpeg;
+  if (kind === "ffprobe" && cachedFfprobe) return cachedFfprobe;
+
+  const envKey = kind === "ffmpeg" ? "FFMPEG_PATH" : "FFPROBE_PATH";
+  const fromEnv = process.env[envKey]?.trim();
+  if (fromEnv && fs.existsSync(fromEnv)) {
+    if (kind === "ffmpeg") cachedFfmpeg = fromEnv;
+    else cachedFfprobe = fromEnv;
+    return fromEnv;
+  }
+
+  const candidates =
+    kind === "ffmpeg"
+      ? [
+          "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg",
+          "/usr/local/opt/ffmpeg-full/bin/ffmpeg",
+          "ffmpeg",
+        ]
+      : [
+          "/opt/homebrew/opt/ffmpeg-full/bin/ffprobe",
+          "/usr/local/opt/ffmpeg-full/bin/ffprobe",
+          "ffprobe",
+        ];
+
+  for (const c of candidates) {
+    if (c.includes("/") && !fs.existsSync(c)) continue;
+    if (kind === "ffmpeg" && c.includes("/")) {
+      // Ensure this build has the ass filter (needed for scrolling text).
+      const check = spawnSync(c, ["-hide_banner", "-filters"], { encoding: "utf8" });
+      const out = `${check.stdout || ""}\n${check.stderr || ""}`;
+      if (!/\bass\b/.test(out)) continue;
+    }
+    if (kind === "ffmpeg") cachedFfmpeg = c;
+    else cachedFfprobe = c;
+    return c;
+  }
+
+  const fallback = kind;
+  if (kind === "ffmpeg") cachedFfmpeg = fallback;
+  else cachedFfprobe = fallback;
+  return fallback;
+}
+
+export function ffmpegBin(): string {
+  return resolveBinary("ffmpeg");
+}
+
+export function ffprobeBin(): string {
+  return resolveBinary("ffprobe");
+}
 
 export function runFfmpeg(
   cmd: string,
   args: string[]
 ): Promise<{ stdout: string; stderr: string }> {
+  const resolved =
+    cmd === "ffmpeg" ? ffmpegBin() : cmd === "ffprobe" ? ffprobeBin() : cmd;
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args);
+    const child = spawn(resolved, args);
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => (stdout += d.toString()));

@@ -44,6 +44,7 @@ export async function POST(req: NextRequest, { params }: { params: { channelId: 
           format,
           sceneCount,
           aiProviderOverride: body.aiProviderOverride ?? null,
+          includeManchete: body.includeManchete !== false,
           onProgress: (p) => {
             send({
               type: "progress",

@@ -23,27 +23,34 @@ import { randomUUID } from "crypto";
 export type AutoFlowStageHook = (message: string, progress: number) => void | Promise<void>;
 
 /**
- * After TTS: music + SFX → scrolling-text video → portada.
+ * After TTS: optional music/SFX → scrolling-text video → portada.
  * Failures in thumbnail are non-fatal (video still completes).
  */
 export async function finishAutoFlowAfterAudio(args: {
   channel: Channel;
   projectId: string;
   onProgress?: AutoFlowStageHook;
+  /** Skip bed entirely and mux narration only (voice + scrolling script). */
+  voiceOnly?: boolean;
 }): Promise<VideoProject> {
-  const { channel, projectId, onProgress } = args;
+  const { channel, projectId, onProgress, voiceOnly = true } = args;
   const report = async (message: string, progress: number) => {
     await onProgress?.(message, progress);
   };
 
-  await report("Gerando música e SFX…", 60);
-  await produceAudioBed({ projectId });
+  if (voiceOnly) {
+    await report("Pulando música/SFX (só voz)…", 60);
+    await produceAudioBed({ projectId, musicOff: true, sfxOff: true });
+  } else {
+    await report("Gerando música e SFX…", 60);
+    await produceAudioBed({ projectId });
+  }
 
   let project = await getVideoProject(projectId);
   if (!project) throw new Error("Project not found after audio bed");
 
   await report("Renderizando vídeo (texto rolante)…", 75);
-  await renderScrollingAutoVideo({ channel, project });
+  await renderScrollingAutoVideo({ channel, project, voiceOnly });
 
   project = (await getVideoProject(projectId))!;
 
@@ -63,8 +70,9 @@ export async function finishAutoFlowAfterAudio(args: {
 async function renderScrollingAutoVideo(args: {
   channel: Channel;
   project: VideoProject;
+  voiceOnly?: boolean;
 }): Promise<void> {
-  const { channel, project } = args;
+  const { channel, project, voiceOnly } = args;
   if (!project.audioAssetId) throw new Error("Sem áudio para renderizar.");
 
   const asset = await getAudioAsset(project.audioAssetId);
@@ -89,7 +97,8 @@ async function renderScrollingAutoVideo(args: {
     enabled: true,
   });
 
-  const audioRef = project.mixAudioRef || asset.filePath;
+  // Voice-only: never prefer a prior music mix.
+  const audioRef = voiceOnly ? asset.filePath : project.mixAudioRef || asset.filePath;
   const localAudio = await ensureLocalFile(
     channel.id,
     audioRef,

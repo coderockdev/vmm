@@ -65,7 +65,7 @@ export const JUAN_CARLOS_HEYGEN: VoiceProfile = {
   model: "elevenlabs_v3",
   language: "es",
   accent: "latin american",
-  speed: 0.9,
+  speed: 0.85,
   stability: 0.5,
   heygen_template_id: "c12ae661d2b6442bb079871a697ea4ef",
   capabilities: {
@@ -78,7 +78,7 @@ export const JUAN_CARLOS_HEYGEN: VoiceProfile = {
   notes:
     "Mesma voz ElevenLabs v3 (Juan Carlos — Warm, Calm and Deep) que o template HeyGen usa. " +
     "Vídeo: generate_from_template texto_oracion_1..4 SEM voice_id. " +
-    "Áudio do pipeline: ElevenLabs eleven_v3 + elevenlabs_voice_id, speed 0.9, stability 0.5.",
+    "Áudio do pipeline: ElevenLabs eleven_v3 + elevenlabs_voice_id, speed 0.85, stability 0.5.",
 };
 
 const EMPTY_CAPS: VoiceCapabilities = {
@@ -165,6 +165,8 @@ export function resolvePipelineAudioVoice(args: {
   channelProvider: TTSProviderName | VoiceProvider;
   channelVoiceId: string | null;
   profile?: VoiceProfile | null;
+  /** DNA / UI speed — preferred over profile default when set. */
+  channelSpeed?: number | null;
   ttsOverride?: TTSProviderName | null;
   ttsVoiceIdOverride?: string | null;
 }): { provider: TTSProviderName; voiceId: string | null; speed: number; stability: number | null } {
@@ -173,7 +175,12 @@ export function resolvePipelineAudioVoice(args: {
 
   let provider: TTSProviderName;
   let voiceId: string | null;
-  let speed = profile?.speed ?? 0.9;
+  const channelSpeed =
+    typeof args.channelSpeed === "number" && Number.isFinite(args.channelSpeed) && args.channelSpeed > 0
+      ? args.channelSpeed
+      : null;
+  // Prefer DNA voice.speed (0.85 Amor Amor) over stale profile defaults (was 0.9).
+  let speed = channelSpeed ?? profile?.speed ?? 0.85;
   let stability: number | null = profile?.stability ?? 0.5;
 
   if (override) {

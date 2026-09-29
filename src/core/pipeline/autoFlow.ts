@@ -46,11 +46,14 @@ export async function runAutoFlow(args: {
   format: VideoFormat;
   sceneCount?: number;
   aiProviderOverride?: string | null;
+  /** When false, skip YouTube headline/description step. Default true. */
+  includeManchete?: boolean;
   onProgress?: (p: AutoFlowProgress) => void;
 }): Promise<{ planId: string; projectIds: string[]; topic: string }> {
   const quantity = Math.max(1, Math.min(10, Math.round(args.quantity)));
   const topic = resolveAutoTopic(args.channel, args.topic);
   const fromDna = !args.topic.trim();
+  const includeManchete = args.includeManchete !== false;
 
   const report = (stage: string, extra?: Partial<AutoFlowProgress>) => {
     args.onProgress?.({
@@ -125,32 +128,38 @@ export async function runAutoFlow(args: {
       done: i,
       total: projectIds.length,
       projectId,
-      detail: `Manchete + descrição YT · ${project.title.slice(0, 40)}…`,
+      detail: includeManchete
+        ? `Manchete + descrição YT · ${project.title.slice(0, 40)}…`
+        : `A preparar produção · ${project.title.slice(0, 40)}…`,
     });
 
-    const script = project.scriptId ? await getScript(project.scriptId) : null;
-    const idea = project.contentIdeaId ? await getIdea(project.contentIdeaId) : null;
-    const copy = await generateYoutubeCopy({
-      channel: args.channel,
-      idea: idea ?? { title: project.title, angle: project.topic, objective: "" },
-      scriptText: script?.rawText ?? script?.lines.map((l) => l.text).join("\n") ?? project.title,
-      aiProviderOverride: args.aiProviderOverride,
-    });
+    if (includeManchete) {
+      const script = project.scriptId ? await getScript(project.scriptId) : null;
+      const idea = project.contentIdeaId ? await getIdea(project.contentIdeaId) : null;
+      const copy = await generateYoutubeCopy({
+        channel: args.channel,
+        idea: idea ?? { title: project.title, angle: project.topic, objective: "" },
+        scriptText: script?.rawText ?? script?.lines.map((l) => l.text).join("\n") ?? project.title,
+        aiProviderOverride: args.aiProviderOverride,
+      });
 
-    writeProjectPublish(projectId, {
-      headline: copy.headline,
-      youtubeDescription: copy.youtubeDescription,
-      autoFlow: true,
-    });
+      writeProjectPublish(projectId, {
+        headline: copy.headline,
+        youtubeDescription: copy.youtubeDescription,
+        autoFlow: true,
+      });
 
-    if (copy.usage) {
-      await insertUsageEvent({
-        channelId: args.channel.id,
-        contentIdeaId: project.contentIdeaId,
-        videoProjectId: projectId,
-        stage: "script",
-        snapshot: copy.usage,
-      }).catch(() => undefined);
+      if (copy.usage) {
+        await insertUsageEvent({
+          channelId: args.channel.id,
+          contentIdeaId: project.contentIdeaId,
+          videoProjectId: projectId,
+          stage: "script",
+          snapshot: copy.usage,
+        }).catch(() => undefined);
+      }
+    } else {
+      writeProjectPublish(projectId, { autoFlow: true });
     }
 
     report("audio", {

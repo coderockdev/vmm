@@ -141,6 +141,9 @@ export function ChannelWorkspace({
   const [autoStatus, setAutoStatus] = useState<string | null>(null);
   const [autoLog, setAutoLog] = useState<Array<{ id: string; stage: string; detail: string }>>([]);
   const [autoProjectIds, setAutoProjectIds] = useState<string[]>([]);
+  /** Option inside Manual / Automático — not a third create mode. */
+  const [includeManchete, setIncludeManchete] = useState(true);
+  const [mancheteBankSize] = useState((channel.dna.successfulTitles ?? []).length);
   const [plan, setPlan] = useState<ContentPlan | null>(initialPlans[0] ?? null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(
     new Set((initialPlans[0]?.items ?? []).filter((item) => item.status === "planned").map((item) => item.id))
@@ -276,14 +279,20 @@ export function ChannelWorkspace({
   }
 
   async function handleGenerateIdeas() {
-    if (!topic.trim()) return;
     setLoadingPlan(true);
     setIdeaError(null);
     try {
       const response = await fetch(`/api/channels/${channel.id}/content-plan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, quantity, durationMinutes, format, aiProviderOverride: ideaAiOverride || null }),
+        body: JSON.stringify({
+          topic: topic.trim(),
+          quantity,
+          durationMinutes,
+          format,
+          aiProviderOverride: ideaAiOverride || null,
+          includeManchete,
+        }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data.plan) {
@@ -325,6 +334,7 @@ export function ChannelWorkspace({
           format,
           sceneCount,
           aiProviderOverride: ideaAiOverride || null,
+          includeManchete,
         }),
       });
       if (!response.ok || !response.body) {
@@ -568,6 +578,15 @@ export function ChannelWorkspace({
   const videoProjects = projects.filter((p) => p.status === "completed" || p.status === "rendering" || p.status === "composing");
 
   function productionLabel(project: VideoProject, job?: { progress: number; statusMessage: string; status: string }) {
+    // Prefer live job progress — leaving Áudio must still show "Renderizando…".
+    if (job?.status === "rendering" || project.status === "rendering") {
+      const msg = job?.statusMessage?.trim() || "Renderizando vídeo…";
+      const pct = job?.progress ? ` · ${Math.round(job.progress)}%` : "";
+      return { text: `${msg}${pct}`, kind: "working" as const };
+    }
+    if (job?.status === "composing" || project.status === "composing") {
+      return { text: job?.statusMessage?.trim() || "Preparando composição…", kind: "working" as const };
+    }
     if (project.status === "failed") {
       // Audio may already exist when a later step crashed (e.g. broken .next chunk).
       if (project.audioAssetId) {
@@ -591,12 +610,6 @@ export function ChannelWorkspace({
     if (project.status === "timing" || job?.status === "timing") {
       return { text: msg || "Sincronizando texto…", kind: "working" as const };
     }
-    if (project.status === "composing" || job?.status === "composing") {
-      return { text: msg || "Preparando composição…", kind: "working" as const };
-    }
-    if (project.status === "rendering" || job?.status === "rendering") {
-      return { text: msg || "Renderizando vídeo…", kind: "working" as const };
-    }
     return { text: msg || "Em produção…", kind: "working" as const };
   }
 
@@ -614,6 +627,14 @@ export function ChannelWorkspace({
     const setter = usingSamples ? setSampleSelected : setSelectedIds;
     setter(checked ? new Set(visibleIdeas.map((idea) => idea.id)) : new Set());
   }
+
+  const videoBusyCount = projects.filter(
+    (p) => p.status === "rendering" || jobByProject[p.id]?.status === "rendering"
+  ).length;
+  const producingAnywhere =
+    audioBusyCount > 0 ||
+    videoBusyCount > 0 ||
+    projects.some((p) => PIPELINE_PRODUCING.includes(p.status));
 
   return (
     <div className="channel-workspace">
@@ -669,14 +690,41 @@ export function ChannelWorkspace({
           )}
         </button>
         <button type="button" className={activeTab === "audio" ? "active" : ""} onClick={() => setActiveTab("audio")}>
-          Áudio{audioBusyCount > 0 && <span className="tab-badge">{audioBusyCount}</span>}
+          Áudio{(audioBusyCount > 0 || videoBusyCount > 0) && (
+            <span className="tab-badge">{audioBusyCount + videoBusyCount}</span>
+          )}
         </button>
-        <button type="button" className={activeTab === "videos" ? "active" : ""} onClick={() => setActiveTab("videos")}>Vídeos</button>
+        <button type="button" className={activeTab === "videos" ? "active" : ""} onClick={() => setActiveTab("videos")}>
+          Vídeos
+          {videoBusyCount > 0 && <span className="tab-badge">{videoBusyCount}</span>}
+        </button>
         <button type="button" className={activeTab === "portadas" ? "active" : ""} onClick={() => setActiveTab("portadas")}>Portadas</button>
         <button type="button" className={activeTab === "custos" ? "active" : ""} onClick={() => setActiveTab("custos")}>Custos</button>
         <button type="button" disabled title="Ainda não implementado">Estatísticas</button>
         <button type="button" onClick={() => router.push(`/channels/${channel.id}/edit`)}>Configurações</button>
       </nav>
+
+      {producingAnywhere && (
+        <div className="production-banner workspace-global-progress" role="status" aria-live="polite">
+          <span className="production-spinner" aria-hidden />
+          {videoBusyCount > 0
+            ? `${videoBusyCount} vídeo${videoBusyCount > 1 ? "s" : ""} a renderizar — podes mudar de aba; o progresso continua.`
+            : `${audioBusyCount} produção${audioBusyCount > 1 ? "ões" : ""} em andamento — atualizando a cada 2s.`}
+          {projects
+            .filter((p) => PIPELINE_PRODUCING.includes(p.status) || jobByProject[p.id]?.status === "rendering")
+            .slice(0, 2)
+            .map((p) => {
+              const job = jobByProject[p.id];
+              const msg = job?.statusMessage || productionLabel(p, job).text;
+              return (
+                <span key={p.id} className="workspace-global-progress-item">
+                  {p.title.slice(0, 36)}{p.title.length > 36 ? "…" : ""}: {msg}
+                  {job?.progress ? ` (${Math.round(job.progress)}%)` : ""}
+                </span>
+              );
+            })}
+        </div>
+      )}
 
       {activeTab === "criar" && (
         <div className="creation-layout">
@@ -709,19 +757,17 @@ export function ChannelWorkspace({
                 maxLength={500}
                 onChange={(event) => setTopic(event.target.value)}
                 placeholder={
-                  createMode === "auto"
-                    ? channel.dna.language === "es"
-                      ? "Opcional — vacío = ideas desde el DNA del canal…"
-                      : "Opcional — vazio = ideias a partir do DNA do canal…"
-                    : topicPlaceholder
+                  channel.dna.language === "es"
+                    ? "Opcional — vacío = generar desde el DNA (títulos de éxito)…"
+                    : "Opcional — vazio = gerar a partir do DNA (títulos de sucesso)…"
                 }
-                aria-label="Assunto para geração de ideias"
+                aria-label="Assunto opcional para geração"
               />
               <span>{topic.length}/500</span>
             </div>
             {dnaTopicSuggestions.length > 0 && (
               <div className="dna-topic-suggestions" aria-label="Sugestões do DNA do canal">
-                <span className="dna-topic-suggestions-label">Sugestões do DNA</span>
+                <span className="dna-topic-suggestions-label">Sugestões do DNA (opcional)</span>
                 <div className="dna-topic-chips">
                   {dnaTopicSuggestions.map((suggestion) => (
                     <button
@@ -736,6 +782,20 @@ export function ChannelWorkspace({
                 </div>
               </div>
             )}
+
+            <label className="create-manchete-option">
+              <input
+                type="checkbox"
+                checked={includeManchete}
+                onChange={(e) => setIncludeManchete(e.target.checked)}
+              />
+              <span>
+                Gerar manchete YT automaticamente
+                <small>
+                  Padrão do DNA ({mancheteBankSize} títulos de sucesso). Tema opcional — sem texto, inventa sozinho.
+                </small>
+              </span>
+            </label>
 
             <div className="creation-controls">
               {createMode === "manual" ? (
@@ -785,9 +845,24 @@ export function ChannelWorkspace({
                 </div>
               </div>
               {createMode === "manual" ? (
-                <button type="button" className="generate-ideas-button" disabled={loadingPlan || !topic.trim()} onClick={handleGenerateIdeas}>
+                <button
+                  type="button"
+                  className="generate-ideas-button"
+                  disabled={loadingPlan}
+                  onClick={handleGenerateIdeas}
+                >
                   <MiniIcon name="sparkles" size={22} />
-                  {loadingPlan ? "Gerando ideias..." : "Gerar ideias de vídeos"}
+                  {loadingPlan
+                    ? includeManchete
+                      ? "Gerando ideias + manchetes…"
+                      : "Gerando ideias..."
+                    : topic.trim()
+                      ? includeManchete
+                        ? "Gerar ideias + manchetes YT"
+                        : "Gerar ideias de vídeos"
+                      : includeManchete
+                        ? "Gerar do DNA (ideias + manchetes)"
+                        : "Gerar ideias do DNA"}
                 </button>
               ) : (
                 <button
@@ -807,8 +882,14 @@ export function ChannelWorkspace({
             </div>
             {createMode === "auto" && (
               <p className="auto-flow-hint">
-                Um clique: manchete + descrição YT → roteiro → voz Juan Carlos → música + SFX → vídeo (texto rolante) → portada.
-                Podes deixar o tópico vazio: usa os temas do DNA do canal.
+                Um clique: {includeManchete ? "manchete + descrição YT → " : ""}roteiro → voz Juan Carlos → vídeo (texto rolante) → portada.
+                Tema opcional — vazio usa o DNA do canal.
+              </p>
+            )}
+            {createMode === "manual" && (
+              <p className="auto-flow-hint">
+                Gera ideias{includeManchete ? " com manchetes no padrão do DNA" : ""} e segue para a aba Ideias → Roteiros.
+                Tema opcional.
               </p>
             )}
             {(loadingAuto || autoLog.length > 0 || autoStatus) && createMode === "auto" && (
@@ -1208,9 +1289,69 @@ export function ChannelWorkspace({
                       )}
                     </div>
                     {openUrl ? (
-                      <a className="review-queue-action" href={openUrl} target="_blank" rel="noreferrer">
-                        {project.mixAudioRef ? "Abrir mix" : "Abrir áudio"}
-                      </a>
+                      <div className="review-queue-action-pair">
+                        <a className="review-queue-action" href={openUrl} target="_blank" rel="noreferrer">
+                          {project.mixAudioRef ? "Abrir mix" : "Abrir áudio"}
+                        </a>
+                        <button
+                          type="button"
+                          className="review-queue-action review-queue-action-video"
+                          disabled={Boolean(bedBusy) || generatingAudio}
+                          onClick={() => {
+                            setBedBusyByProject((prev) => ({ ...prev, [project.id]: "A renderizar vídeo…" }));
+                            // Optimistic: keep progress visible on any tab via poll.
+                            setProjects((previous) =>
+                              previous.map((p) =>
+                                p.id === project.id ? { ...p, status: "rendering", errorMessage: null } : p
+                              )
+                            );
+                            setJobByProject((prev) => ({
+                              ...prev,
+                              [project.id]: {
+                                progress: 10,
+                                statusMessage: "Renderizando vídeo (só voz)…",
+                                status: "rendering",
+                              },
+                            }));
+                            void fetch(`/api/videos/${project.id}/render-style`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                styleId: "scrolling-text",
+                                presetId: "amor-amor",
+                                aspectRatio: "9:16",
+                                audioSource: "voice",
+                              }),
+                            })
+                              .then(async (res) => {
+                                const data = await res.json().catch(() => ({}));
+                                if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+                                if (data.project) {
+                                  setProjects((previous) =>
+                                    previous.map((p) => (p.id === data.project.id ? data.project : p))
+                                  );
+                                }
+                                setAudioActionMsg(`Vídeo gerado: ${project.title.slice(0, 40)}`);
+                                setActiveTab("videos");
+                              })
+                              .catch((err) => {
+                                setAudioActionMsg(
+                                  err instanceof Error ? err.message : "Falha ao gerar vídeo"
+                                );
+                                void refreshProjects();
+                                void refreshJobs();
+                              })
+                              .finally(() => {
+                                setBedBusyByProject((prev) => ({ ...prev, [project.id]: null }));
+                              });
+                          }}
+                          title="Gera o vídeo com texto rolante usando só a voz (sem música)"
+                        >
+                          {bedBusy?.includes("vídeo") || bedBusy?.includes("render")
+                            ? "A gerar…"
+                            : "Gerar vídeo"}
+                        </button>
+                      </div>
                     ) : asset ? (
                       <span className="review-queue-action review-queue-action-muted" title="Arquivo só existia no disco da máquina que gerou; gere de novo para subir ao Supabase.">
                         Indisponível

@@ -11,11 +11,12 @@ import {
 import { getChannel } from "../repo/channels";
 import { insertUsageEvent } from "../repo/usage";
 import { synthesizeNarration } from "./narration";
-import { renderVideoProject } from "./render";
 import { finishAutoFlowAfterAudio } from "./finishAutoFlow";
 import { RawLine, normalizeSceneBreaks } from "../scriptLines";
 import { VideoFormat } from "../types";
 import { UsageProvider } from "../usage/types";
+
+// Lazy: avoid pulling Remotion/AWS into every page that seeds/reconciles jobs.
 
 /**
  * Executes the heavy part of a single video's pipeline (audio → timing →
@@ -139,6 +140,7 @@ export async function runProject(jobId: string): Promise<void> {
 
     const format: Exclude<VideoFormat, "both"> = project.format === "short" ? "short" : "video";
 
+    const { renderVideoProject } = await import("./render");
     const result = await renderVideoProject({
       channel,
       videoProjectId: project.id,

@@ -356,9 +356,9 @@ export function VoicePicker({
               key: "juan-carlos",
               title: "Juan Carlos — HeyGen (ElevenLabs v3)",
               subtitle: "Voz masculina madura e calorosa, com emoções. Aprovada pelo cliente.",
-              profile: { ...JUAN_CARLOS_HEYGEN, speed: localSpeed || 0.9 },
+              profile: { ...JUAN_CARLOS_HEYGEN, speed: localSpeed || 0.85 },
               freePreviewHeygen: true,
-              warning: "Velocidade real está no template HeyGen (0.9). Mudar aqui exige atualizar o template.",
+              warning: "Padrão Amor Amor: speed 0.85 no áudio ElevenLabs. Mudar aqui atualiza o DNA.",
             })}
           {validatedCurated.map((v) =>
             renderCard({

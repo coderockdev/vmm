@@ -153,11 +153,14 @@ export function pickBestLibraryEntry(
 export function moodsFromScript(scriptText: string): string[] {
   const t = scriptText.toLowerCase();
   const moods: string[] = [];
-  if (/silencio|noche|oscur|mister/.test(t)) moods.push("misterio", "tensao");
-  if (/llorar|dolor|herid|abandono|bloqueo/.test(t)) moods.push("emocional", "melancolico");
-  if (/amor|coraz[oó]n|besar|románt/.test(t)) moods.push("romantico", "emocional");
+  if (/oración|oracion|amén|amen|dios|virgen|santo|arcángel|arcangel|pomba|cipriano/.test(t)) {
+    moods.push("espiritual", "oracion", "romantico");
+  }
+  if (/silencio|noche|oscur|mister/.test(t)) moods.push("espiritual", "emocional");
+  if (/llorar|dolor|herid|abandono|bloqueo/.test(t)) moods.push("emocional", "romantico");
+  if (/amor|coraz[oó]n|besar|románt|regres|vuelve|llame/.test(t)) moods.push("romantico", "emocional", "espiritual");
   if (/esperanza|perdón|perdon|amén|paz|gracias/.test(t)) moods.push("esperanca", "espiritual");
-  if (/llam|tel[eé]fono|mensaje/.test(t)) moods.push("tensao", "emocional");
-  if (moods.length === 0) moods.push("emocional", "espiritual");
+  // Avoid pushing "misterio"/"tensao" as primary — those beds sound like meditation drones.
+  if (moods.length === 0) moods.push("espiritual", "oracion", "romantico");
   return [...new Set(moods)];
 }

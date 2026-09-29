@@ -65,20 +65,22 @@ export interface MusicalDna {
 
 export const DEFAULT_AMOR_AMOR_MUSICAL: MusicalDna = {
   useMusicByDefault: true,
-  defaultStyle: "romantico-cinematico",
+  defaultStyle: "espiritual",
   intensity: "soft",
-  volume: 0.12,
-  sfxVolume: 0.5,
+  /** Soft under voice — oración, never meditation drone competing with Juan Carlos. */
+  volume: 0.06,
+  /** SFX must cut through voice briefly. */
+  sfxVolume: 0.72,
   ducking: true,
   adaptToScript: true,
   bedMode: "continuous",
   useSfx: true,
   sfxMode: "auto",
-  sfxIntensity: "soft",
+  sfxIntensity: "medium",
   allowedSfx: ["phone_vibrate", "phone_ring", "message", "wind", "night", "heartbeat", "whoosh", "impact", "silence"],
-  forbiddenSfx: ["thunder", "city", "footsteps"],
+  forbiddenSfx: ["thunder", "city", "footsteps", "birds", "fire"],
   customMusicInstructions:
-    "Trilha 100% instrumental: piano + pads + cordas suaves. Mistério → tensão → esperança → paz. Sem vocal, letra, bateria agressiva ou melodia que dispute com a oração.",
+    "Canal de ORACIÓN y AMOR (no meditación). Trilha 100% instrumental, SUAVE, piano/pad espiritual romântico sob a voz. Sem drone ambient de mindfulness, sem bateria, sem melodia agressiva, sem vocal. Volume discreto — a oração manda.",
 };
 
 export const DEFAULT_MUSICAL_DNA: MusicalDna = {

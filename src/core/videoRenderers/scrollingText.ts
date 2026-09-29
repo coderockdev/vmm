@@ -136,10 +136,12 @@ export async function renderScrollingText(
     const color = solidColorHex(settings);
     const overlay = Math.min(1, Math.max(0, settings.background.overlayOpacity ?? 0.35));
     // Base color + optional darken overlay via eq, then burn ASS subtitles.
+    // Named `filename=` + quotes avoids FFmpeg filter-option parse errors on absolute paths.
+    const assEscaped = assPath.replace(/\\/g, "/").replace(/'/g, "\\'");
     const vf = [
       `color=c=0x${color}:s=${size.width}x${size.height}:d=${duration.toFixed(3)}:r=${settings.fps}[base]`,
       `[base]eq=brightness=${(-overlay * 0.15).toFixed(3)}[dim]`,
-      `[dim]ass=${assPath.replace(/\\/g, "/").replace(/:/g, "\\:")}[v]`,
+      `[dim]ass=filename='${assEscaped}'[v]`,
     ].join(";");
 
     onProgress?.(40, "Renderizando vídeo (FFmpeg)…");

@@ -11,6 +11,19 @@ import { channelTmpDir } from "../paths";
 import { workingFilePath, persistFile } from "../storage";
 import { softCharLimitForProvider, splitTextForTts } from "../providers/tts/ttsLimits";
 
+const OPENING_TAG_RE = /^\s*\[/;
+
+/** Ensure first spoken beat of a scene carries performance direction (Amor Amor naturalness). */
+function ensureOpeningPerformance(text: string, isFirstScene: boolean): string {
+  const trimmed = text.trim();
+  if (!trimmed) return text;
+  if (OPENING_TAG_RE.test(trimmed) || /<break\b/i.test(trimmed)) return text;
+  if (isFirstScene) {
+    return `[softly] [pause] ${trimmed}`;
+  }
+  return `[warmly] ${trimmed}`;
+}
+
 export interface NarrationResult {
   filePath: string;
   durationSeconds: number;
@@ -60,6 +73,7 @@ export async function synthesizeNarration(args: {
     channelProvider: channel.dna.voice.provider,
     channelVoiceId: channel.dna.voice.voiceId,
     profile: channel.dna.voice.profile,
+    channelSpeed: channel.dna.voice.speed,
     ttsOverride: args.ttsOverride,
     ttsVoiceIdOverride: args.ttsVoiceIdOverride,
   });
@@ -109,16 +123,20 @@ export async function synthesizeNarration(args: {
 
     for (let i = 0; i < sceneLines.length; i++) {
       const line = sceneLines[i];
+      const withOpening =
+        i === 0 && profile.capabilities.emotion_tags
+          ? ensureOpeningPerformance(line.text, s === 0)
+          : line.text;
       let spoken: string;
       try {
-        spoken = compileForVoice(line.text, profile);
+        spoken = compileForVoice(withOpening, profile);
       } catch (err) {
         if (err instanceof VoiceCompileError) {
           throw new Error(`Cena ${s + 1}, linha ${i + 1}: ${err.message}`);
         }
         throw err;
       }
-      compiled.push({ line, spoken });
+      compiled.push({ line: { ...line, text: withOpening }, spoken });
       characters += spoken.length;
     }
 

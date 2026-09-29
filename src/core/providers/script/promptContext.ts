@@ -69,6 +69,8 @@ export function buildScriptGenerationContext(args: {
     const approxEvery = Math.max(1, Math.round(1000 / density / 12)); // rough: ~12 words/phrase
     voiceRules.push(
       `- OBRIGATÓRIO para naturalidade desta voz: espalhe tags de emoção/pausa válidas no texto falado.`,
+      `- A PRIMEIRA frase falada do roteiro (cena 1) DEVE começar com direção emocional — ex. [softly], [emotional], [sighs] ou [pause] — nunca abrir sem tags.`,
+      `- Em CADA cena, as 1–2 primeiras frases também devem ter tags; continue no meio e no clímax (não concentre só no final).`,
       `- Pode usar APENAS estas tags de interpretação: ${allowedTags.join(", ")}.`,
       `- Densidade alvo: ~${density} tags de emoção/pausa por 1.000 palavras (pouco≈20, médio≈35, muito≈50). Não saturar; espalhar ao longo do roteiro (cerca de 1 tag a cada ~${approxEvery} frases curtas).`,
       voiceProfile.capabilities.break_tags ||

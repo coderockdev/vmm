@@ -32,9 +32,10 @@ export async function mixNarrationWithBed(args: MixNarrationBedArgs): Promise<{
   const hasMusic = Boolean(args.musicPath);
   const hasSfx = Boolean(args.sfxPath);
   const uiMusic = Math.min(1, Math.max(0, args.musicVolume));
-  // UI 12% → ~0.54 — clearly audible in pauses, still under voice.
-  const musicVol = Math.min(0.65, Math.max(0.35, uiMusic * 4.5));
-  const sfxVol = Math.min(0.8, Math.max(0.28, args.sfxVolume ?? 0.5));
+  // Soft bed under oración: UI 6% → ~0.07, 10% → ~0.11, hard-capped so it never fights the voice.
+  const musicVol = Math.min(0.14, Math.max(0.04, uiMusic * 1.15));
+  // SFX one-shots must be clearly audible for a second or two.
+  const sfxVol = Math.min(0.95, Math.max(0.55, args.sfxVolume ?? 0.72));
   const musicVolStr = musicVol.toFixed(3);
   const sfxVolStr = sfxVol.toFixed(3);
 
@@ -65,18 +66,17 @@ export async function mixNarrationWithBed(args: MixNarrationBedArgs): Promise<{
 
   let musicLabel: string | null = null;
   if (hasMusic) {
-    // dynaudnorm here so remisturar also fixes beds gerados antes (muito baixos).
+    // Soft pad only — no dynaudnorm pump (that made meditation-like beds loud/harsh).
     parts.push(
-      `[1:a]${FMT},asetpts=PTS-STARTPTS,dynaudnorm=f=75:g=10:p=0.9,volume=${musicVolStr},apad=whole_dur=${narrDur.toFixed(3)}[musraw]`
+      `[1:a]${FMT},asetpts=PTS-STARTPTS,volume=${musicVolStr},apad=whole_dur=${narrDur.toFixed(3)}[musraw]`
     );
     if (args.ducking) {
       parts.push(`[voice]asplit=2[v][sc]`);
       parts.push(
-        // Gentle duck — music must remain audible in pauses (release fast enough).
-        `[musraw][sc]sidechaincompress=threshold=0.08:ratio=2.2:attack=80:release=450:level_sc=1:makeup=1.1[mus]`
+        // Strong duck under voice — bed almost disappears while Juan Carlos speaks.
+        `[musraw][sc]sidechaincompress=threshold=0.05:ratio=4:attack=40:release=350:level_sc=1:makeup=1[mus]`
       );
       musicLabel = "mus";
-      // voice for mix is [v] after split
     } else {
       musicLabel = "musraw";
     }

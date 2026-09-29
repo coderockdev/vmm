@@ -30,7 +30,7 @@ export class LibrarySfxProvider implements SFXProvider {
     const allowed = new Set(args.allowed.filter((k) => !args.forbidden.includes(k)));
     if (allowed.size === 0) return [];
 
-    const vol = args.intensity === "intense" ? 0.9 : args.intensity === "soft" ? 0.7 : 0.8;
+    const vol = args.intensity === "intense" ? 1.0 : args.intensity === "soft" ? 0.85 : 0.95;
     const usedKinds = new Set<SfxKind>();
     const events: SfxEvent[] = [];
     const minGap = 12; // seconds between cues
@@ -148,13 +148,13 @@ export class LibrarySfxProvider implements SFXProvider {
       const useDur = Math.min(clipDur, ev.kind === "night" || ev.kind === "wind" || ev.kind === "rain" ? 2.2 : 1.4);
       const fadeOutStart = Math.max(0.05, useDur - 0.25);
       const delayMs = Math.max(0, Math.round(ev.atSeconds * 1000));
-      const vol = Math.min(0.75, ev.volume * 0.85);
+      const vol = Math.min(1.4, Math.max(0.85, ev.volume * 1.25));
       const label = `s${inputIndex}`;
       // atrim → fade → asetpts → adelay on a clean PCM timeline (no double-pad).
       filterParts.push(
         `[${inputIndex}:a]${FMT},atrim=0:${useDur.toFixed(3)},asetpts=PTS-STARTPTS,` +
           `volume=${vol.toFixed(3)},` +
-          `afade=t=in:d=0.04,afade=t=out:st=${fadeOutStart.toFixed(3)}:d=0.22,` +
+          `afade=t=in:d=0.03,afade=t=out:st=${fadeOutStart.toFixed(3)}:d=0.18,` +
           `adelay=${delayMs}|${delayMs}[${label}]`
       );
       mixLabels.push(`[${label}]`);
