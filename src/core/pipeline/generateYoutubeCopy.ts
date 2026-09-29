@@ -1,5 +1,4 @@
 import { Channel, ContentIdea } from "../types";
-import { getScriptProvider } from "../providers/script";
 import { fetchWithRetry, describeProviderError } from "../httpRetry";
 import { UsageSnapshot } from "../usage/types";
 
@@ -158,6 +157,3 @@ function parseCopy(text: string, usage: UsageSnapshot): YoutubeCopy {
     usage,
   };
 }
-
-// silence unused import lint if tree-shaken
-void getScriptProvider;

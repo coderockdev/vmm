@@ -29,12 +29,14 @@ import {
 
 const CHANNEL_PAGE_REFERENCE_SRC = "/reference/canal-page.png";
 const QUANTITIES = [1, 3, 5, 10];
+const AUTO_QUANTITIES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const SCENE_COUNTS = [3, 4, 5, 6, 7, 8] as const;
 // "script" = script generated, awaiting human review in the Roteiros tab — it
 // sits there until a person acts, so it's not part of the auto-poll set.
 const ACTIVE_STATUSES: JobStatus[] = ["planned", "audio", "timing", "composing", "rendering"];
 const PIPELINE_PRODUCING: JobStatus[] = ["planned", "audio", "timing", "composing", "rendering"];
-type WorkspaceTab = "criar" | "ideias" | "roteiros" | "audio" | "videos" | "portadas" | "custos";
+type WorkspaceTab = "criar" | "ideias" | "roteiros" | "descricoes" | "audio" | "videos" | "portadas" | "custos";
+type CreateMode = "manual" | "auto";
 
 type Crop = { x: number; y: number; width: number; height: number };
 
@@ -108,8 +110,10 @@ export function ChannelWorkspace({
   const display = channelDisplay(channel);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("criar");
   const [portadasFocusId, setPortadasFocusId] = useState<string | null>(null);
+  const [createMode, setCreateMode] = useState<CreateMode>("manual");
   const [topic, setTopic] = useState("");
   const [quantity, setQuantity] = useState(5);
+  const [autoQuantity, setAutoQuantity] = useState(3);
   const [durationKey, setDurationKey] = useState("default");
   const [sceneCount, setSceneCount] = useState(
     channel.dna.scriptRules.defaultSceneCount ?? 4
@@ -117,6 +121,9 @@ export function ChannelWorkspace({
   const [format, setFormat] = useState<VideoFormat>("video");
   const [ideaAiOverride, setIdeaAiOverride] = useState<"" | "mock" | "anthropic" | "openai" | "gemini">("");
   const [scriptAiOverride, setScriptAiOverride] = useState<"" | "mock" | "anthropic" | "openai" | "gemini">("");
+  const [loadingAuto, setLoadingAuto] = useState(false);
+  const [autoError, setAutoError] = useState<string | null>(null);
+  const [autoStatus, setAutoStatus] = useState<string | null>(null);
   const [plan, setPlan] = useState<ContentPlan | null>(initialPlans[0] ?? null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(
     new Set((initialPlans[0]?.items ?? []).filter((item) => item.status === "planned").map((item) => item.id))
@@ -162,7 +169,7 @@ export function ChannelWorkspace({
   }, [hasActive]);
 
   useEffect(() => {
-    if (activeTab === "audio" || activeTab === "roteiros" || activeTab === "videos") {
+    if (activeTab === "audio" || activeTab === "roteiros" || activeTab === "videos" || activeTab === "descricoes") {
       void refreshProjects();
       void refreshJobs();
     }
@@ -240,6 +247,48 @@ export function ChannelWorkspace({
       );
     } finally {
       setLoadingPlan(false);
+    }
+  }
+
+  async function handleAutoFlow() {
+    if (!topic.trim()) return;
+    setLoadingAuto(true);
+    setAutoError(null);
+    setAutoStatus(`A gerar ${autoQuantity} vídeo(s) completo(s): ideias → roteiros → descrição YT → áudio…`);
+    try {
+      const response = await fetch(`/api/channels/${channel.id}/auto-flow`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic,
+          quantity: autoQuantity,
+          durationMinutes,
+          format,
+          sceneCount,
+          aiProviderOverride: ideaAiOverride || null,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error ?? `Falha no fluxo automático (HTTP ${response.status})`);
+      }
+      setAutoStatus(
+        data.message ??
+          `${data.projectIds?.length ?? autoQuantity} na fila — a acompanhar áudio → música/SFX → vídeo → portada`
+      );
+      await refreshProjects();
+      await refreshJobs();
+      setActiveTab("audio");
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : String(err);
+      setAutoError(
+        /fetch failed|network|failed to fetch/i.test(raw)
+          ? "Falha de rede no fluxo automático. Espera 2s e tenta de novo."
+          : raw
+      );
+      setAutoStatus(null);
+    } finally {
+      setLoadingAuto(false);
     }
   }
 
@@ -384,6 +433,7 @@ export function ChannelWorkspace({
       // after Aprovar — user can reopen and retry.
       (p.status === "failed" && Boolean(p.scriptId))
   );
+  const publishProjects = projects.filter((p) => Boolean(p.headline || p.youtubeDescription));
   const projectsByIdeaId = new Map(
     projects.filter((p) => p.contentIdeaId).map((p) => [p.contentIdeaId!, p])
   );
@@ -496,6 +546,12 @@ export function ChannelWorkspace({
             <span className="tab-badge">{scriptBusyCount > 0 ? scriptBusyCount : reviewProjects.length}</span>
           )}
         </button>
+        <button type="button" className={activeTab === "descricoes" ? "active" : ""} onClick={() => setActiveTab("descricoes")}>
+          Descrições YT
+          {publishProjects.length > 0 && (
+            <span className="tab-badge">{publishProjects.length}</span>
+          )}
+        </button>
         <button type="button" className={activeTab === "audio" ? "active" : ""} onClick={() => setActiveTab("audio")}>
           Áudio{audioBusyCount > 0 && <span className="tab-badge">{audioBusyCount}</span>}
         </button>
@@ -513,6 +569,24 @@ export function ChannelWorkspace({
               <h2>O que vamos criar hoje?</h2>
               <p>Sugestões e ideias geradas a partir do DNA deste canal ({channel.name}).</p>
             </div>
+
+            <div className="create-mode-toggle" role="group" aria-label="Modo de criação">
+              <button
+                type="button"
+                className={createMode === "manual" ? "active" : ""}
+                onClick={() => setCreateMode("manual")}
+              >
+                Manual (passo a passo)
+              </button>
+              <button
+                type="button"
+                className={createMode === "auto" ? "active" : ""}
+                onClick={() => setCreateMode("auto")}
+              >
+                Automático (1–10 vídeos)
+              </button>
+            </div>
+
             <div className="topic-field">
               <textarea
                 value={topic}
@@ -542,12 +616,25 @@ export function ChannelWorkspace({
             )}
 
             <div className="creation-controls">
-              <label>
-                <span>Quantidade de vídeos</span>
-                <select value={quantity} onChange={(event) => setQuantity(Number(event.target.value))}>
-                  {QUANTITIES.map((value) => <option key={value} value={value}>{value}</option>)}
-                </select>
-              </label>
+              {createMode === "manual" ? (
+                <label>
+                  <span>Quantidade de vídeos</span>
+                  <select value={quantity} onChange={(event) => setQuantity(Number(event.target.value))}>
+                    {QUANTITIES.map((value) => <option key={value} value={value}>{value}</option>)}
+                  </select>
+                </label>
+              ) : (
+                <label>
+                  <span>Vídeos automáticos</span>
+                  <select value={autoQuantity} onChange={(event) => setAutoQuantity(Number(event.target.value))}>
+                    {AUTO_QUANTITIES.map((value) => (
+                      <option key={value} value={value}>
+                        {value} vídeo{value > 1 ? "s" : ""} completo{value > 1 ? "s" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label>
                 <span>Duração por vídeo</span>
                 <select value={durationKey} onChange={(event) => setDurationKey(event.target.value)}>
@@ -575,11 +662,33 @@ export function ChannelWorkspace({
                   <button type="button" className={format === "both" ? "active" : ""} onClick={() => setFormat("both")}><CarouselIcon size={18} /> Vídeo + Short</button>
                 </div>
               </div>
-              <button type="button" className="generate-ideas-button" disabled={loadingPlan || !topic.trim()} onClick={handleGenerateIdeas}>
-                <MiniIcon name="sparkles" size={22} />
-                {loadingPlan ? "Gerando ideias..." : "Gerar ideias de vídeos"}
-              </button>
+              {createMode === "manual" ? (
+                <button type="button" className="generate-ideas-button" disabled={loadingPlan || !topic.trim()} onClick={handleGenerateIdeas}>
+                  <MiniIcon name="sparkles" size={22} />
+                  {loadingPlan ? "Gerando ideias..." : "Gerar ideias de vídeos"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="generate-ideas-button generate-auto-button"
+                  disabled={loadingAuto || !topic.trim()}
+                  onClick={() => { void handleAutoFlow(); }}
+                >
+                  <MiniIcon name="sparkles" size={22} />
+                  {loadingAuto
+                    ? "A gerar fluxo automático…"
+                    : `Gerar ${autoQuantity} vídeo${autoQuantity > 1 ? "s" : ""} completo${autoQuantity > 1 ? "s" : ""}`}
+                </button>
+              )}
             </div>
+            {createMode === "auto" && (
+              <p className="auto-flow-hint">
+                Um clique: manchete + descrição YT → roteiro → voz Juan Carlos → música + SFX → vídeo (texto rolante) → portada.
+                Acompanha o progresso nas abas Áudio / Vídeos / Descrições YT.
+              </p>
+            )}
+            {autoStatus && <div className="production-banner" role="status"><span className="production-spinner" aria-hidden />{autoStatus}</div>}
+            {autoError && <div className="generation-error">{autoError}</div>}
             {ideaError && <div className="generation-error">{ideaError}</div>}
 
             <div className="voice-row">
@@ -783,6 +892,73 @@ export function ChannelWorkspace({
                       {project.thumbnailRef ? "Ver portada" : "Gerar portada"}
                     </button>
                   </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {activeTab === "descricoes" && (
+        <section className="review-queue-section">
+          <div className="workspace-section-title">
+            <h2>Descrições YouTube</h2>
+            <p>Manchete (título) e descrição geradas no fluxo automático — copia para colar no YT.</p>
+          </div>
+          {publishProjects.length === 0 ? (
+            <div className="review-empty-state">
+              Ainda sem descrições. Usa{" "}
+              <button type="button" onClick={() => { setCreateMode("auto"); setActiveTab("criar"); }}>
+                Criar → Automático
+              </button>{" "}
+              para gerar manchete + descrição com cada vídeo.
+            </div>
+          ) : (
+            <div className="yt-desc-list">
+              {publishProjects.map((project) => (
+                <article className="yt-desc-card" key={project.id}>
+                  <header>
+                    <h3>{project.title}</h3>
+                    <span className={`workspace-rendered ${project.status === "completed" ? "done" : project.status === "failed" ? "failed" : "working"}`}>
+                      <i /> {project.status}
+                    </span>
+                  </header>
+                  <label className="yt-desc-field">
+                    <span>Manchete (título YT)</span>
+                    <textarea
+                      readOnly
+                      rows={2}
+                      value={project.headline ?? ""}
+                      onFocus={(e) => e.currentTarget.select()}
+                    />
+                    <button
+                      type="button"
+                      className="yt-copy-btn"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(project.headline ?? "");
+                      }}
+                    >
+                      Copiar manchete
+                    </button>
+                  </label>
+                  <label className="yt-desc-field">
+                    <span>Descrição</span>
+                    <textarea
+                      readOnly
+                      rows={8}
+                      value={project.youtubeDescription ?? ""}
+                      onFocus={(e) => e.currentTarget.select()}
+                    />
+                    <button
+                      type="button"
+                      className="yt-copy-btn"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(project.youtubeDescription ?? "");
+                      }}
+                    >
+                      Copiar descrição
+                    </button>
+                  </label>
                 </article>
               ))}
             </div>

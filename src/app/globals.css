@@ -1627,6 +1627,112 @@ body:has(.channel-workspace) .main-content {
   opacity: 0.55;
 }
 
+.create-mode-toggle {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.create-mode-toggle button {
+  flex: 1;
+  height: 40px;
+  padding: 0 12px;
+  color: #3a3f4a;
+  font-size: 13px;
+  font-weight: 560;
+  background: #f3f4f6;
+  border: 1px solid #e2e4e8;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.create-mode-toggle button.active {
+  color: #fff;
+  background: #17181c;
+  border-color: #17181c;
+}
+
+.generate-auto-button {
+  background: linear-gradient(105deg, #1a3a2a, #243d30) !important;
+}
+
+.auto-flow-hint {
+  margin: 12px 0 0;
+  color: #5a6372;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.yt-desc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.yt-desc-card {
+  padding: 18px 20px;
+  background: #fff;
+  border: 1px solid #e6e8ec;
+  border-radius: 14px;
+}
+
+.yt-desc-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.yt-desc-card header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 620;
+}
+
+.yt-desc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.yt-desc-field > span {
+  color: #4a5160;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.yt-desc-field textarea {
+  width: 100%;
+  padding: 10px 12px;
+  color: #1a1c22;
+  font-size: 13px;
+  line-height: 1.4;
+  background: #f7f8fa;
+  border: 1px solid #e2e4e8;
+  border-radius: 10px;
+  resize: vertical;
+}
+
+.yt-copy-btn {
+  align-self: flex-start;
+  height: 34px;
+  padding: 0 12px;
+  color: #1a1c22;
+  font-size: 12px;
+  font-weight: 560;
+  background: #ebecef;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.yt-copy-btn:hover {
+  background: #e0e2e6;
+}
+
 .voice-row {
   display: flex;
   align-items: center;

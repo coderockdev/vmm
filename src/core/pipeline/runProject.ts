@@ -12,6 +12,7 @@ import { getChannel } from "../repo/channels";
 import { insertUsageEvent } from "../repo/usage";
 import { synthesizeNarration } from "./narration";
 import { renderVideoProject } from "./render";
+import { finishAutoFlowAfterAudio } from "./finishAutoFlow";
 import { RawLine, normalizeSceneBreaks } from "../scriptLines";
 import { VideoFormat } from "../types";
 import { UsageProvider } from "../usage/types";
@@ -20,6 +21,8 @@ import { UsageProvider } from "../usage/types";
  * Executes the heavy part of a single video's pipeline (audio → timing →
  * composing → rendering). Script generation already happened synchronously
  * before the job was enqueued.
+ *
+ * When project.autoFlow is set: after TTS runs music/SFX + scrolling-text + portada.
  */
 export async function runProject(jobId: string): Promise<void> {
   const job = await getJob(jobId);
@@ -50,7 +53,6 @@ export async function runProject(jobId: string): Promise<void> {
         channel.dna.scriptRules.pauses
       );
 
-      // Persist normalized breaks so the review UI shows 4–6 cenas, not 19.
       if (project.scriptId) {
         const normalizedScriptLines = rawLines.map((l, i) => ({
           ...lines[i],
@@ -105,6 +107,28 @@ export async function runProject(jobId: string): Promise<void> {
 
       await updateJob(job.id, { status: "timing", progress: 55, statusMessage: "Sincronizando texto..." });
       await updateProjectStatus(project.id, "timing");
+    }
+
+    // Auto-flow: music/SFX → FFmpeg scrolling text → portada (skip Remotion).
+    if (project.autoFlow) {
+      await updateJob(job.id, { status: "composing", progress: 60, statusMessage: "Música e SFX..." });
+      await updateProjectStatus(project.id, "composing");
+      await finishAutoFlowAfterAudio({
+        channel,
+        projectId: project.id,
+        onProgress: async (message, progress) => {
+          await updateJob(job.id, {
+            status: progress >= 75 ? "rendering" : "composing",
+            progress: Math.min(98, progress),
+            statusMessage: message,
+          }).catch(() => undefined);
+          if (progress >= 75) {
+            await updateProjectStatus(project.id, "rendering").catch(() => undefined);
+          }
+        },
+      });
+      await updateJob(job.id, { status: "completed", progress: 100, statusMessage: "Vídeo pronto (auto)" });
+      return;
     }
 
     await updateJob(job.id, { status: "composing", progress: 65, statusMessage: "Preparando composição..." });
