@@ -89,9 +89,9 @@ textarea {
 /* Manually toggled via the collapse button — same visual treatment the
    narrow-viewport media queries already use, just available at any width. */
 .sidebar.collapsed {
-  flex-basis: 82px;
-  width: 82px;
-  padding-inline: 10px;
+  flex-basis: 68px;
+  width: 68px;
+  padding-inline: 6px;
 }
 
 .sidebar.collapsed .brand-row {
@@ -3198,10 +3198,10 @@ body:has(.channel-workspace) .main-content {
 }
 
 @media (max-width: 940px) {
-  body:has(.wizard-stage-one) .sidebar,
-  body:has(.wizard-stage-two) .sidebar {
-    flex-basis: 82px;
-    width: 82px;
+  body:has(.wizard-stage-one) .sidebar:not(.collapsed),
+  body:has(.wizard-stage-two) .sidebar:not(.collapsed) {
+    flex-basis: 255px;
+    width: 255px;
   }
 }
 
@@ -3975,6 +3975,13 @@ body:has(.wizard-stage-two) .sidebar {
   width: 240px;
 }
 
+body:has(.wizard-stage-one) .sidebar.collapsed,
+body:has(.wizard-stage-two) .sidebar.collapsed {
+  flex-basis: 68px;
+  width: 68px;
+  padding-inline: 6px;
+}
+
 body:has(.wizard-stage-two) .main-content {
   padding-left: 24px;
 }
@@ -4166,7 +4173,8 @@ body:has(.wizard-stage-two) .main-content {
 }
 
 .wizard-stage-one > .wizard-card {
-  min-height: 676px;
+  min-height: 0;
+  padding: 20px 22px;
 }
 
 .wizard-stage-two > .wizard-card {
@@ -4200,8 +4208,8 @@ body:has(.wizard-stage-two) .main-content {
 .wizard-name-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 178px;
-  gap: 22px;
-  margin-top: 31px;
+  gap: 16px;
+  margin-top: 18px;
 }
 
 .wizard-name-row label,
@@ -4241,7 +4249,7 @@ body:has(.wizard-stage-two) .main-content {
 }
 
 .wizard-description-field {
-  margin-top: 40px;
+  margin-top: 18px;
 }
 
 .wizard-description-field textarea {
@@ -4303,12 +4311,12 @@ body:has(.wizard-stage-two) .main-content {
 .wizard-media-fields {
   display: grid;
   grid-template-columns: minmax(0, .74fr) minmax(0, 1fr);
-  gap: 16px;
-  margin-top: 23px;
+  gap: 12px;
+  margin-top: 16px;
 }
 
 .wizard-field-label {
-  min-height: 73px;
+  min-height: 56px;
 }
 
 .wizard-field-label strong {
@@ -4341,7 +4349,7 @@ body:has(.wizard-stage-two) .main-content {
 
 .wizard-upload-square,
 .wizard-upload-banner {
-  height: 190px;
+  height: 160px;
 }
 
 .wizard-upload input {
@@ -4458,8 +4466,8 @@ body:has(.wizard-stage-two) .main-content {
 .reference-links-list {
   display: flex;
   flex-direction: column;
-  gap: 19px;
-  margin-top: 14px;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .reference-link-row {
@@ -4524,8 +4532,8 @@ body:has(.wizard-stage-two) .main-content {
   justify-content: center;
   gap: 11px;
   width: calc(100% - 53px);
-  height: 52px;
-  margin-top: 20px;
+  height: 46px;
+  margin-top: 12px;
   color: #101216;
   font-size: 16px;
   background: linear-gradient(100deg, #f5f6f8, #f1f3f6);
@@ -5040,6 +5048,23 @@ body:has(.wizard-stage-three) .wizard-actions {
   background: #f6f7f9;
 }
 
+/* Tablet: when the full sidebar is open, give the wizard the full content
+   width and place the right-hand card below the first one. */
+@media (max-width: 1180px) {
+  body:has(.new-channel-wizard) .sidebar:not(.collapsed) + .app-content .wizard-stage-one,
+  body:has(.new-channel-wizard) .sidebar:not(.collapsed) + .app-content .wizard-stage-two,
+  body:has(.new-channel-wizard) .sidebar:not(.collapsed) + .app-content .wizard-stage-three {
+    grid-template-columns: 1fr;
+  }
+
+  body:has(.new-channel-wizard) .sidebar:not(.collapsed) + .app-content .wizard-stage-one > .wizard-card,
+  body:has(.new-channel-wizard) .sidebar:not(.collapsed) + .app-content .wizard-stage-two > .wizard-card,
+  body:has(.new-channel-wizard) .sidebar:not(.collapsed) + .app-content .wizard-stage-three > .wizard-card,
+  body:has(.new-channel-wizard) .sidebar:not(.collapsed) + .app-content .review-right-column {
+    min-height: 0;
+  }
+}
+
 @media (max-width: 1240px) {
   .channel-stepper {
     min-width: 0;
@@ -5169,7 +5194,7 @@ body:has(.wizard-stage-three) .wizard-actions {
   }
 
   .wizard-name-row {
-    gap: 25px;
+    gap: 16px;
   }
 
   .wizard-name-row .field-counter {
@@ -5181,12 +5206,12 @@ body:has(.wizard-stage-three) .wizard-actions {
   }
 
   .wizard-description-field {
-    margin-top: 24px;
+    margin-top: 18px;
   }
 
   .wizard-media-fields {
-    gap: 24px;
-    margin-top: 28px;
+    gap: 16px;
+    margin-top: 20px;
   }
 
   .wizard-upload-square,

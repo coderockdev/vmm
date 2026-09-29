@@ -12,14 +12,6 @@ const LANGUAGES: Array<{ value: Language; label: string }> = [
   { value: "en", label: "English" },
 ];
 
-const INITIAL_REFERENCES: ChannelReference[] = [
-  { platform: "youtube", url: "" },
-  { platform: "tiktok", url: "" },
-  { platform: "instagram", url: "" },
-  { platform: "facebook", url: "" },
-  { platform: "website", url: "" },
-];
-
 const REFERENCE_PLACEHOLDERS: Record<ChannelReferencePlatform, string> = {
   youtube: "https://www.youtube.com/@exemplo",
   tiktok: "https://www.tiktok.com/@exemplo",
@@ -30,6 +22,21 @@ const REFERENCE_PLACEHOLDERS: Record<ChannelReferencePlatform, string> = {
 
 type UploadKind = "square" | "banner" | "reference";
 type FieldErrors = Partial<Record<"name" | "description" | "channelImage", string>>;
+
+function detectReferencePlatform(value: string): ChannelReferencePlatform {
+  const raw = value.trim();
+  if (!raw) return "website";
+  try {
+    const hostname = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).hostname.toLowerCase();
+    if (hostname === "youtube.com" || hostname.endsWith(".youtube.com") || hostname === "youtu.be") return "youtube";
+    if (hostname === "tiktok.com" || hostname.endsWith(".tiktok.com")) return "tiktok";
+    if (hostname === "instagram.com" || hostname.endsWith(".instagram.com")) return "instagram";
+    if (hostname === "facebook.com" || hostname.endsWith(".facebook.com")) return "facebook";
+  } catch {
+    // Keep the generic website icon while the user is still typing.
+  }
+  return "website";
+}
 
 function Arrow({ direction = "right" }: { direction?: "left" | "right" }) {
   return <span aria-hidden="true" className={`wizard-arrow wizard-arrow-${direction}`}>→</span>;
@@ -167,7 +174,7 @@ export default function NewChannelPage() {
   const [channelImagePreview, setChannelImagePreview] = useState<string | null>(null);
   const [channelBanner, setChannelBanner] = useState<File | null>(null);
   const [channelBannerPreview, setChannelBannerPreview] = useState<string | null>(null);
-  const [references, setReferences] = useState<ChannelReference[]>(INITIAL_REFERENCES);
+  const [references, setReferences] = useState<ChannelReference[]>([]);
 
   const [visualReference, setVisualReference] = useState<File | null>(null);
   const [visualReferencePreview, setVisualReferencePreview] = useState<string | null>(null);
@@ -209,7 +216,9 @@ export default function NewChannelPage() {
   }
 
   function updateReference(index: number, url: string) {
-    setReferences((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, url } : item));
+    setReferences((current) => current.map((item, itemIndex) => itemIndex === index
+      ? { platform: detectReferencePlatform(url), url }
+      : item));
   }
 
   async function copyInstruction() {
