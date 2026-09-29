@@ -1663,6 +1663,74 @@ body:has(.channel-workspace) .main-content {
   line-height: 1.4;
 }
 
+.auto-progress-panel {
+  margin-top: 14px;
+  padding: 14px 16px;
+  background: #f7f4ea;
+  border: 1px solid #e8dfc4;
+  border-radius: 12px;
+}
+
+.auto-progress-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.auto-progress-head strong {
+  font-size: 13px;
+  font-weight: 650;
+  color: #2a2c31;
+}
+
+.auto-progress-current {
+  flex: 1 1 220px;
+  color: #4a5160;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.auto-progress-log {
+  margin: 0;
+  padding: 0 0 0 18px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.auto-progress-log li {
+  margin: 0 0 6px;
+  color: #3a3f4a;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.auto-progress-stage {
+  display: inline-block;
+  min-width: 62px;
+  margin-right: 8px;
+  color: #6b5a2a;
+  font-weight: 650;
+}
+
+.auto-progress-follow {
+  margin: 10px 0 0;
+  color: #5a6372;
+  font-size: 12px;
+}
+
+.auto-progress-follow button {
+  padding: 0;
+  color: #1a1c22;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
 .yt-desc-list {
   display: flex;
   flex-direction: column;

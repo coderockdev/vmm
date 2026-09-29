@@ -38,6 +38,21 @@ const PIPELINE_PRODUCING: JobStatus[] = ["planned", "audio", "timing", "composin
 type WorkspaceTab = "criar" | "ideias" | "roteiros" | "descricoes" | "audio" | "videos" | "portadas" | "custos";
 type CreateMode = "manual" | "auto";
 
+function stageLabel(stage: string): string {
+  const map: Record<string, string> = {
+    start: "Início",
+    ideas: "Ideias",
+    scripts: "Roteiro",
+    youtube: "YouTube",
+    audio: "Áudio",
+    queued: "Fila",
+    music: "Música",
+    render: "Vídeo",
+    thumbnail: "Portada",
+  };
+  return map[stage] || stage;
+}
+
 type Crop = { x: number; y: number; width: number; height: number };
 
 function ReferenceCrop({ crop, alt }: { crop: Crop; alt: string }) {
@@ -124,6 +139,8 @@ export function ChannelWorkspace({
   const [loadingAuto, setLoadingAuto] = useState(false);
   const [autoError, setAutoError] = useState<string | null>(null);
   const [autoStatus, setAutoStatus] = useState<string | null>(null);
+  const [autoLog, setAutoLog] = useState<Array<{ id: string; stage: string; detail: string }>>([]);
+  const [autoProjectIds, setAutoProjectIds] = useState<string[]>([]);
   const [plan, setPlan] = useState<ContentPlan | null>(initialPlans[0] ?? null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(
     new Set((initialPlans[0]?.items ?? []).filter((item) => item.status === "planned").map((item) => item.id))
@@ -175,6 +192,43 @@ export function ChannelWorkspace({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  // After auto-flow queues jobs, keep showing live production status on Criar.
+  useEffect(() => {
+    if (autoProjectIds.length === 0) return;
+    const tick = () => {
+      void refreshProjects();
+      void refreshJobs();
+    };
+    tick();
+    const id = window.setInterval(tick, 2000);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoProjectIds.join(",")]);
+
+  useEffect(() => {
+    if (autoProjectIds.length === 0) return;
+    const lines: string[] = [];
+    for (const id of autoProjectIds) {
+      const project = projects.find((p) => p.id === id);
+      const job = jobByProject[id];
+      if (!project) continue;
+      const title = project.title.slice(0, 36);
+      if (job?.statusMessage) {
+        lines.push(`${title}: ${job.statusMessage}${job.progress ? ` (${Math.round(job.progress)}%)` : ""}`);
+      } else if (project.status === "completed") {
+        lines.push(`${title}: pronto`);
+      } else if (project.status === "failed") {
+        lines.push(`${title}: falhou — ${project.errorMessage?.slice(0, 60) || "erro"}`);
+      } else {
+        lines.push(`${title}: ${project.status}`);
+      }
+    }
+    if (lines.length > 0) {
+      setAutoStatus(lines.join(" · "));
+    }
+  }, [autoProjectIds, projects, jobByProject]);
+
 
   async function refreshProjects() {
     try {
@@ -251,10 +305,15 @@ export function ChannelWorkspace({
   }
 
   async function handleAutoFlow() {
-    if (!topic.trim()) return;
     setLoadingAuto(true);
     setAutoError(null);
-    setAutoStatus(`A gerar ${autoQuantity} vídeo(s) completo(s): ideias → roteiros → descrição YT → áudio…`);
+    setAutoLog([]);
+    setAutoProjectIds([]);
+    setAutoStatus(
+      topic.trim()
+        ? `A iniciar fluxo automático (${autoQuantity})…`
+        : `Sem tópico — a gerar a partir do DNA do canal (${autoQuantity})…`
+    );
     try {
       const response = await fetch(`/api/channels/${channel.id}/auto-flow`, {
         method: "POST",
@@ -268,17 +327,75 @@ export function ChannelWorkspace({
           aiProviderOverride: ideaAiOverride || null,
         }),
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
+      if (!response.ok || !response.body) {
+        const data = await response.json().catch(() => ({}));
         throw new Error(data.error ?? `Falha no fluxo automático (HTTP ${response.status})`);
       }
-      setAutoStatus(
-        data.message ??
-          `${data.projectIds?.length ?? autoQuantity} na fila — a acompanhar áudio → música/SFX → vídeo → portada`
-      );
-      await refreshProjects();
-      await refreshJobs();
-      setActiveTab("audio");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finished = false;
+
+      while (!finished) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          let event: {
+            type?: string;
+            stage?: string;
+            detail?: string;
+            done?: number;
+            total?: number;
+            projectId?: string | null;
+            projectIds?: string[];
+            message?: string;
+            error?: string;
+            topic?: string;
+          };
+          try {
+            event = JSON.parse(trimmed);
+          } catch {
+            continue;
+          }
+          if (event.type === "progress") {
+            const detail = event.detail || event.stage || "…";
+            setAutoStatus(detail);
+            setAutoLog((prev) => {
+              const next = [
+                ...prev,
+                {
+                  id: `${Date.now()}-${prev.length}`,
+                  stage: event.stage || "step",
+                  detail,
+                },
+              ];
+              return next.slice(-40);
+            });
+          } else if (event.type === "done") {
+            finished = true;
+            setAutoProjectIds(event.projectIds ?? []);
+            setAutoStatus(event.message ?? "Na fila de produção");
+            setAutoLog((prev) => [
+              ...prev,
+              {
+                id: `${Date.now()}-done`,
+                stage: "queued",
+                detail: event.message ?? "Na fila",
+              },
+            ]);
+            await refreshProjects();
+            await refreshJobs();
+          } else if (event.type === "error") {
+            throw new Error(event.error ?? "Erro no fluxo automático");
+          }
+        }
+      }
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);
       setAutoError(
@@ -286,7 +403,6 @@ export function ChannelWorkspace({
           ? "Falha de rede no fluxo automático. Espera 2s e tenta de novo."
           : raw
       );
-      setAutoStatus(null);
     } finally {
       setLoadingAuto(false);
     }
@@ -592,7 +708,13 @@ export function ChannelWorkspace({
                 value={topic}
                 maxLength={500}
                 onChange={(event) => setTopic(event.target.value)}
-                placeholder={topicPlaceholder}
+                placeholder={
+                  createMode === "auto"
+                    ? channel.dna.language === "es"
+                      ? "Opcional — vacío = ideas desde el DNA del canal…"
+                      : "Opcional — vazio = ideias a partir do DNA do canal…"
+                    : topicPlaceholder
+                }
                 aria-label="Assunto para geração de ideias"
               />
               <span>{topic.length}/500</span>
@@ -671,23 +793,51 @@ export function ChannelWorkspace({
                 <button
                   type="button"
                   className="generate-ideas-button generate-auto-button"
-                  disabled={loadingAuto || !topic.trim()}
+                  disabled={loadingAuto}
                   onClick={() => { void handleAutoFlow(); }}
                 >
                   <MiniIcon name="sparkles" size={22} />
                   {loadingAuto
                     ? "A gerar fluxo automático…"
-                    : `Gerar ${autoQuantity} vídeo${autoQuantity > 1 ? "s" : ""} completo${autoQuantity > 1 ? "s" : ""}`}
+                    : topic.trim()
+                      ? `Gerar ${autoQuantity} vídeo${autoQuantity > 1 ? "s" : ""} completo${autoQuantity > 1 ? "s" : ""}`
+                      : `Gerar ${autoQuantity} do DNA (sem tópico)`}
                 </button>
               )}
             </div>
             {createMode === "auto" && (
               <p className="auto-flow-hint">
                 Um clique: manchete + descrição YT → roteiro → voz Juan Carlos → música + SFX → vídeo (texto rolante) → portada.
-                Acompanha o progresso nas abas Áudio / Vídeos / Descrições YT.
+                Podes deixar o tópico vazio: usa os temas do DNA do canal.
               </p>
             )}
-            {autoStatus && <div className="production-banner" role="status"><span className="production-spinner" aria-hidden />{autoStatus}</div>}
+            {(loadingAuto || autoLog.length > 0 || autoStatus) && createMode === "auto" && (
+              <div className="auto-progress-panel" role="status" aria-live="polite">
+                <div className="auto-progress-head">
+                  {loadingAuto && <span className="production-spinner" aria-hidden />}
+                  <strong>{loadingAuto ? "Em progresso" : "Último fluxo"}</strong>
+                  {autoStatus && <span className="auto-progress-current">{autoStatus}</span>}
+                </div>
+                {autoLog.length > 0 && (
+                  <ol className="auto-progress-log">
+                    {autoLog.slice(-12).map((item) => (
+                      <li key={item.id}>
+                        <span className="auto-progress-stage">{stageLabel(item.stage)}</span>
+                        <span>{item.detail}</span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+                {autoProjectIds.length > 0 && !loadingAuto && (
+                  <p className="auto-progress-follow">
+                    Produção a correr — podes abrir{" "}
+                    <button type="button" onClick={() => setActiveTab("audio")}>Áudio</button>,{" "}
+                    <button type="button" onClick={() => setActiveTab("videos")}>Vídeos</button> ou{" "}
+                    <button type="button" onClick={() => setActiveTab("descricoes")}>Descrições YT</button>.
+                  </p>
+                )}
+              </div>
+            )}
             {autoError && <div className="generation-error">{autoError}</div>}
             {ideaError && <div className="generation-error">{ideaError}</div>}
 

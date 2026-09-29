@@ -7,6 +7,7 @@ import { getVideoProject, getScript } from "../repo/projects";
 import { writeProjectPublish } from "../repo/projectPublish";
 import { insertUsageEvent } from "../repo/usage";
 import { JUAN_CARLOS_ELEVENLABS_VOICE_ID } from "../providers/tts/voiceCapabilities";
+import { suggestTopicsFromDna } from "../providers/script/ideaSuggestions";
 
 export type AutoFlowProgress = {
   stage: string;
@@ -16,9 +17,20 @@ export type AutoFlowProgress = {
   total: number;
 };
 
+/** Topic from UI, or DNA themes/chips when the user leaves it empty. */
+export function resolveAutoTopic(channel: Channel, topicRaw: string): string {
+  const trimmed = topicRaw.trim();
+  if (trimmed) return trimmed;
+  const themes = (channel.dna.topics ?? []).map((t) => t.trim()).filter(Boolean);
+  if (themes.length > 0) return themes.slice(0, 5).join(", ");
+  const chips = suggestTopicsFromDna(channel, 4);
+  if (chips.length > 0) return chips.slice(0, 3).join(" / ");
+  return channel.niche?.trim() || channel.name;
+}
+
 /**
  * One-click: ideas → scripts → YT copy → approve/enqueue audio (Juan Carlos).
- * Music/SFX run after TTS when autoFlow flag is set (see runProject).
+ * Music/SFX + scrolling video + portada run after TTS when autoFlow is set (runProject).
  */
 export async function runAutoFlow(args: {
   channel: Channel;
@@ -29,8 +41,11 @@ export async function runAutoFlow(args: {
   sceneCount?: number;
   aiProviderOverride?: string | null;
   onProgress?: (p: AutoFlowProgress) => void;
-}): Promise<{ planId: string; projectIds: string[] }> {
+}): Promise<{ planId: string; projectIds: string[]; topic: string }> {
   const quantity = Math.max(1, Math.min(10, Math.round(args.quantity)));
+  const topic = resolveAutoTopic(args.channel, args.topic);
+  const fromDna = !args.topic.trim();
+
   const report = (stage: string, extra?: Partial<AutoFlowProgress>) => {
     args.onProgress?.({
       stage,
@@ -41,10 +56,16 @@ export async function runAutoFlow(args: {
     });
   };
 
-  report("ideas", { detail: `A gerar ${quantity} ideias…` });
+  report("start", {
+    detail: fromDna
+      ? `Sem tópico: a usar DNA do canal («${topic.slice(0, 80)}${topic.length > 80 ? "…" : ""}»)`
+      : `Tema: «${topic.slice(0, 80)}${topic.length > 80 ? "…" : ""}»`,
+  });
+
+  report("ideas", { detail: `A gerar ${quantity} ideia(s) com o DNA…` });
   const plan = await generateContentPlanForChannel({
     channel: args.channel,
-    topic: args.topic,
+    topic,
     quantity,
     durationMinutes: args.durationMinutes,
     format: args.format,
@@ -52,16 +73,36 @@ export async function runAutoFlow(args: {
   });
 
   const ideas = plan.items.filter((item) => item.status === "planned");
+  report("ideas", {
+    done: ideas.length,
+    total: quantity,
+    detail: `${ideas.length} ideia(s) prontas`,
+  });
 
-  report("scripts", { detail: "A gerar roteiros…" });
-  const projectIds = await generateScriptsForIdeas({
-    channel: args.channel,
-    topic: args.topic,
-    durationMinutes: args.durationMinutes,
-    format: args.format,
-    ideas,
-    aiProviderOverride: args.aiProviderOverride,
-    sceneCount: args.sceneCount,
+  const projectIds: string[] = [];
+  for (let i = 0; i < ideas.length; i++) {
+    const idea = ideas[i];
+    report("scripts", {
+      done: i,
+      total: ideas.length,
+      detail: `Roteiro ${i + 1}/${ideas.length}: ${idea.title.slice(0, 48)}…`,
+    });
+    const ids = await generateScriptsForIdeas({
+      channel: args.channel,
+      topic,
+      durationMinutes: args.durationMinutes,
+      format: args.format,
+      ideas: [idea],
+      aiProviderOverride: args.aiProviderOverride,
+      sceneCount: args.sceneCount,
+    });
+    projectIds.push(...ids);
+  }
+
+  report("scripts", {
+    done: projectIds.length,
+    total: projectIds.length,
+    detail: `${projectIds.length} roteiro(s) gerado(s)`,
   });
 
   const voiceId =
@@ -78,7 +119,7 @@ export async function runAutoFlow(args: {
       done: i,
       total: projectIds.length,
       projectId,
-      detail: `Descrição YT · ${project.title.slice(0, 40)}…`,
+      detail: `Manchete + descrição YT · ${project.title.slice(0, 40)}…`,
     });
 
     const script = project.scriptId ? await getScript(project.scriptId) : null;
@@ -110,21 +151,17 @@ export async function runAutoFlow(args: {
       done: i,
       total: projectIds.length,
       projectId,
-      detail: `A enfileirar áudio · ${project.title.slice(0, 40)}…`,
+      detail: `A enfileirar voz (Juan Carlos) · ${project.title.slice(0, 40)}…`,
     });
 
-    await approveScriptAndProduce(
-      projectId,
-      "elevenlabs",
-      voiceId
-    );
+    await approveScriptAndProduce(projectId, "elevenlabs", voiceId);
   }
 
   report("queued", {
     done: projectIds.length,
     total: projectIds.length,
-    detail: `${projectIds.length} vídeos na fila (áudio → música/SFX automático)`,
+    detail: `${projectIds.length} na fila — a seguir: voz → música/SFX → vídeo → portada (atualiza sozinho)`,
   });
 
-  return { planId: plan.id, projectIds };
+  return { planId: plan.id, projectIds, topic };
 }
