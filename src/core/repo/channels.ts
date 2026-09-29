@@ -201,6 +201,14 @@ export async function updateChannelMeta(
   return (await getChannel(id))!;
 }
 
+export async function deleteChannel(id: string): Promise<void> {
+  if (isSupabaseEnabled()) {
+    assertNoError(await getSupabase().from("channels").delete().eq("id", id));
+    return;
+  }
+  getDb().prepare(`DELETE FROM channels WHERE id = ?`).run(id);
+}
+
 export async function slugify(name: string): Promise<string> {
   const base = name
     .normalize("NFD")

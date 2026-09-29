@@ -4,6 +4,7 @@ import { ensureSeeded } from "../core/seed";
 import { listChannels, getChannel } from "../core/repo/channels";
 import { listProjectsForChannel, listAllProjects } from "../core/repo/projects";
 import { mediaUrl } from "../core/media";
+import { ChannelCardMenu } from "./ChannelCardMenu";
 import {
   CalendarIcon,
   CarouselIcon,
@@ -183,10 +184,8 @@ export default async function HomePage() {
                 ) : (
                   <GradientCover color={channel.coverColor} initial={channel.name.charAt(0)} />
                 )}
-                <button className="round-menu" aria-label={`Mais opções para ${channel.name}`} type="button">
-                  <span>•••</span>
-                </button>
               </div>
+              <ChannelCardMenu channelId={channel.id} channelName={channel.name} />
 
               <div className="channel-body">
                 <div className="channel-heading">
