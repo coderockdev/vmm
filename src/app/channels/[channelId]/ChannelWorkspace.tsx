@@ -105,6 +105,7 @@ export function ChannelWorkspace({
   const router = useRouter();
   const display = channelDisplay(channel);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("criar");
+  const [portadasFocusId, setPortadasFocusId] = useState<string | null>(null);
   const [topic, setTopic] = useState("");
   const [quantity, setQuantity] = useState(5);
   const [durationKey, setDurationKey] = useState("default");
@@ -658,14 +659,33 @@ export function ChannelWorkspace({
               ))}
               {reviewProjects.map((project) => (
                 <article className="review-queue-card" key={project.id}>
-                  <div className="review-queue-icon"><MiniIcon name="doc" size={22} /></div>
+                  {project.thumbnailRef ? (
+                    <div className="review-queue-thumb">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={mediaUrl(channel.id, project.thumbnailRef) ?? undefined} alt="" />
+                    </div>
+                  ) : (
+                    <div className="review-queue-icon"><MiniIcon name="doc" size={22} /></div>
+                  )}
                   <div className="review-queue-copy">
                     <h3>{project.title}</h3>
                     <p>{project.topic} · {project.durationMinutes} min · {project.format}</p>
                     <span className="workspace-rendered done"><i /> Pronto para revisar</span>
                     <ProjectCostLabel project={project} alwaysShow />
                   </div>
-                  <button type="button" onClick={() => setReviewingProject(project)}>Ler e revisar</button>
+                  <div className="review-queue-actions-stack">
+                    <button type="button" onClick={() => setReviewingProject(project)}>Ler e revisar</button>
+                    <button
+                      type="button"
+                      className="review-queue-secondary"
+                      onClick={() => {
+                        setPortadasFocusId(project.id);
+                        setActiveTab("portadas");
+                      }}
+                    >
+                      {project.thumbnailRef ? "Ver portada" : "Gerar portada"}
+                    </button>
+                  </div>
                 </article>
               ))}
             </div>
@@ -701,7 +721,14 @@ export function ChannelWorkspace({
                 const listenUrl = asset ? mediaUrl(channel.id, asset.filePath) : null;
                 return (
                   <article className={`review-queue-card review-queue-card-audio${generatingAudio ? " is-producing" : ""}`} key={project.id}>
-                    <div className="review-queue-icon"><MiniIcon name="mic" size={22} /></div>
+                    {project.thumbnailRef ? (
+                      <div className="review-queue-thumb">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={mediaUrl(channel.id, project.thumbnailRef) ?? undefined} alt="" />
+                      </div>
+                    ) : (
+                      <div className="review-queue-icon"><MiniIcon name="mic" size={22} /></div>
+                    )}
                     <div className="review-queue-copy">
                       <h3>{project.title}</h3>
                       <p>
@@ -774,6 +801,7 @@ export function ChannelWorkspace({
         <PortadasPanel
           channel={channel}
           projects={projects}
+          focusProjectId={portadasFocusId}
           onProjectUpdated={(updated) => {
             setProjects((previous) => previous.map((p) => (p.id === updated.id ? updated : p)));
           }}
@@ -822,11 +850,12 @@ function ProjectRow({
   onRegenerate: (id: string) => void;
 }) {
   const isComplete = project.status === "completed";
+  const durationLabel = project.renderDurationSeconds
+    ? formatDuration(project.renderDurationSeconds)
+    : `${project.durationMinutes}:00`;
   return (
     <article className="workspace-video-card">
-      <div className="workspace-video-thumb workspace-video-thumb-plain">
-        <span>{project.renderDurationSeconds ? formatDuration(project.renderDurationSeconds) : `${project.durationMinutes}:00`}</span>
-      </div>
+      <ProjectThumbnail channelId={channel.id} project={project} durationLabel={durationLabel} />
       <div className="workspace-video-copy">
         <h3>{project.title}</h3>
         <p>{new Date(project.createdAt).toLocaleDateString("pt-BR")} · {channel.name}</p>
@@ -841,6 +870,36 @@ function ProjectRow({
         </div>
       </details>
     </article>
+  );
+}
+
+function projectThumbUrl(channelId: string, project: VideoProject): string | null {
+  return project.thumbnailRef ? mediaUrl(channelId, project.thumbnailRef) : null;
+}
+
+function ProjectThumbnail({
+  channelId,
+  project,
+  durationLabel,
+}: {
+  channelId: string;
+  project: VideoProject;
+  durationLabel?: string;
+}) {
+  const url = projectThumbUrl(channelId, project);
+  if (url) {
+    return (
+      <div className="workspace-video-thumb workspace-video-thumb-photo">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt="" />
+        {durationLabel ? <span>{durationLabel}</span> : null}
+      </div>
+    );
+  }
+  return (
+    <div className="workspace-video-thumb workspace-video-thumb-plain">
+      <span>{durationLabel ?? "Sem capa"}</span>
+    </div>
   );
 }
 

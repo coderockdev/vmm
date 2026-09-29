@@ -5,6 +5,8 @@ import { estimateUsd } from "../usage/pricing";
 import {
   CostBreakdown,
   emptyBreakdown,
+  normalizeBreakdown,
+  sumBreakdown,
   UsageEvent,
   UsageSnapshot,
   UsageStage,
@@ -96,16 +98,11 @@ async function stampProjectCostFallback(
         : project.cost_breakdown_json && typeof project.cost_breakdown_json === "object"
           ? (project.cost_breakdown_json as CostBreakdown)
           : emptyBreakdown();
-    const breakdown: CostBreakdown = {
-      ideas: Number(prev.ideas) || 0,
-      script: Number(prev.script) || 0,
-      audio: Number(prev.audio) || 0,
-      render: Number(prev.render) || 0,
-    };
+    const breakdown = normalizeBreakdown(prev);
     if (stage in breakdown) {
       breakdown[stage as keyof CostBreakdown] += estimatedUsd;
     }
-    const total = breakdown.ideas + breakdown.script + breakdown.audio + breakdown.render;
+    const total = sumBreakdown(breakdown);
     const now = new Date().toISOString();
     if (isSupabaseEnabled()) {
       await getSupabase()
@@ -400,7 +397,7 @@ export async function recomputeProjectCost(videoProjectId: string): Promise<{
   }
 
   const breakdown = breakdownFromEvents(events);
-  const total = breakdown.ideas + breakdown.script + breakdown.audio + breakdown.render;
+  const total = sumBreakdown(breakdown);
   const now = new Date().toISOString();
 
   if (isSupabaseEnabled()) {

@@ -34,7 +34,7 @@ export async function POST(req: NextRequest, { params }: { params: { videoProjec
         channelId: channel.id,
         contentIdeaId: project.contentIdeaId,
         videoProjectId: project.id,
-        stage: "ideas",
+        stage: "thumbnail",
         snapshot: usage,
       }).catch(() => undefined);
     }

@@ -12,6 +12,8 @@ import { UsageSnapshot } from "./types";
  *   PRICING_CARTESIA_PER_1K_CHARS=0.015
  *   PRICING_ELEVENLABS_PER_1K_CHARS=0.12
  *   PRICING_LAMBDA_PER_MIN=0.05
+ *   PRICING_OPENAI_IMAGE_PER_IMAGE=0.04
+ *   PRICING_GEMINI_IMAGE_PER_IMAGE=0.04
  */
 function numEnv(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -30,6 +32,10 @@ const PRICES = {
   cartesiaPer1kChars: () => numEnv("PRICING_CARTESIA_PER_1K_CHARS", 0.015),
   elevenlabsPer1kChars: () => numEnv("PRICING_ELEVENLABS_PER_1K_CHARS", 0.12),
   lambdaPerMin: () => numEnv("PRICING_LAMBDA_PER_MIN", 0.05),
+  /** gpt-image-1 medium / typical single image estimate. */
+  openaiImagePerImage: () => numEnv("PRICING_OPENAI_IMAGE_PER_IMAGE", 0.04),
+  /** Imagen 3 / Gemini image generation per image. */
+  geminiImagePerImage: () => numEnv("PRICING_GEMINI_IMAGE_PER_IMAGE", 0.04),
 };
 
 function tokensUsd(input: number, output: number, inPerM: number, outPerM: number): number {
@@ -42,13 +48,16 @@ export function estimateUsd(snapshot: UsageSnapshot): number {
   const output = snapshot.outputTokens ?? 0;
   const chars = snapshot.characters ?? 0;
   const minutes = (snapshot.durationSeconds ?? 0) / 60;
+  const images = snapshot.images ?? 0;
 
   switch (snapshot.provider) {
     case "anthropic":
       return tokensUsd(input, output, PRICES.anthropicInputPerMTok(), PRICES.anthropicOutputPerMTok());
     case "openai":
+      if (images > 0) return images * PRICES.openaiImagePerImage();
       return tokensUsd(input, output, PRICES.openaiInputPerMTok(), PRICES.openaiOutputPerMTok());
     case "gemini":
+      if (images > 0) return images * PRICES.geminiImagePerImage();
       return tokensUsd(input, output, PRICES.geminiInputPerMTok(), PRICES.geminiOutputPerMTok());
     case "cartesia":
       return (chars / 1000) * PRICES.cartesiaPer1kChars();
@@ -57,6 +66,7 @@ export function estimateUsd(snapshot: UsageSnapshot): number {
       return (chars / 1000) * PRICES.elevenlabsPer1kChars();
     case "remotion-lambda":
       return minutes * PRICES.lambdaPerMin();
+    case "pollinations":
     case "local":
     case "mock":
     case "uploaded":

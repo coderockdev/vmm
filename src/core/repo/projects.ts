@@ -41,6 +41,7 @@ function parseBreakdown(raw: string | object | null | undefined): VideoProject["
     script: Number(o.script) || 0,
     audio: Number(o.audio) || 0,
     render: Number(o.render) || 0,
+    thumbnail: Number(o.thumbnail) || 0,
   };
 }
 

@@ -1,4 +1,4 @@
-export type UsageStage = "ideas" | "script" | "audio" | "render";
+export type UsageStage = "ideas" | "script" | "audio" | "render" | "thumbnail";
 
 export type UsageProvider =
   | "anthropic"
@@ -8,6 +8,7 @@ export type UsageProvider =
   | "elevenlabs"
   | "heygen"
   | "remotion-lambda"
+  | "pollinations"
   | "local"
   | "mock"
   | "uploaded";
@@ -20,6 +21,8 @@ export interface UsageSnapshot {
   outputTokens?: number | null;
   characters?: number | null;
   durationSeconds?: number | null;
+  /** Number of generated images (OpenAI Images / Gemini Imagen / Pollinations). */
+  images?: number | null;
   /** Unprocessed usage object from the provider response. */
   raw?: unknown;
 }
@@ -29,6 +32,7 @@ export interface CostBreakdown {
   script: number;
   audio: number;
   render: number;
+  thumbnail: number;
 }
 
 export interface UsageEvent {
@@ -51,7 +55,22 @@ export interface UsageEvent {
 }
 
 export function emptyBreakdown(): CostBreakdown {
-  return { ideas: 0, script: 0, audio: 0, render: 0 };
+  return { ideas: 0, script: 0, audio: 0, render: 0, thumbnail: 0 };
+}
+
+/** Normalize partial/legacy breakdowns (pre-thumbnail) into a full CostBreakdown. */
+export function normalizeBreakdown(raw: Partial<CostBreakdown> | null | undefined): CostBreakdown {
+  return {
+    ideas: Number(raw?.ideas) || 0,
+    script: Number(raw?.script) || 0,
+    audio: Number(raw?.audio) || 0,
+    render: Number(raw?.render) || 0,
+    thumbnail: Number(raw?.thumbnail) || 0,
+  };
+}
+
+export function sumBreakdown(b: CostBreakdown): number {
+  return b.ideas + b.script + b.audio + b.render + b.thumbnail;
 }
 
 export function formatUsd(amount: number): string {

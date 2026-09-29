@@ -11,20 +11,40 @@ import { mediaUrl } from "../../../core/media";
 
 type FormatChoice = string | "auto" | "invent";
 
+type ProviderOption = {
+  id: ImageProviderName;
+  label: string;
+  free: boolean;
+  available: boolean;
+  reason?: string;
+  hint?: string;
+};
+
+const FALLBACK_PROVIDERS: ProviderOption[] = [
+  { id: "pollinations", label: "Pollinations Flux", free: true, available: true, hint: "Melhor qualidade grátis" },
+  { id: "pollinations-turbo", label: "Pollinations Turbo", free: true, available: true, hint: "Mais rápido" },
+  { id: "pollinations-gptimage", label: "Pollinations GPT-Image", free: true, available: true, hint: "Texto na imagem" },
+  { id: "openai", label: "OpenAI Images", free: false, available: true, hint: "Mais completo com chave" },
+  { id: "gemini", label: "Gemini / Imagen", free: false, available: true, hint: "16:9 nativo" },
+];
+
 export function PortadasPanel({
   channel,
   projects,
   onProjectUpdated,
+  focusProjectId,
 }: {
   channel: Channel;
   projects: VideoProject[];
   onProjectUpdated: (project: VideoProject) => void;
+  /** When opening from Roteiros/Áudio “Gerar portada”, pre-select that video. */
+  focusProjectId?: string | null;
 }) {
   const cover = useMemo(() => normalizeCoverDna(channel.dna.visual?.cover), [channel.dna.visual?.cover]);
   const formats = cover.formats.filter((f) => f.enabled !== false);
 
   const eligible = projects.filter((p) => p.status !== "planned");
-  const [selectedId, setSelectedId] = useState(eligible[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState(focusProjectId || eligible[0]?.id || "");
   const selected = projects.find((p) => p.id === selectedId) ?? eligible[0] ?? null;
 
   const [formatChoice, setFormatChoice] = useState<FormatChoice>("auto");
@@ -32,10 +52,31 @@ export function PortadasPanel({
   const [thumbnailText, setThumbnailText] = useState("");
   const [thumbnailScene, setThumbnailScene] = useState("");
   const [imageProvider, setImageProvider] = useState<ImageProviderName>("pollinations");
+  const [providerOptions, setProviderOptions] = useState<ProviderOption[]>([]);
   const [concept, setConcept] = useState<VideoConcept | null>(null);
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState<"concept" | "image" | "save" | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!focusProjectId) return;
+    if (projects.some((p) => p.id === focusProjectId && p.status !== "planned")) {
+      setSelectedId(focusProjectId);
+    }
+  }, [focusProjectId, projects]);
+
+  useEffect(() => {
+    void fetch("/api/image-providers")
+      .then((r) => r.json())
+      .then((data) => {
+        const opts = (data.options ?? []) as ProviderOption[];
+        setProviderOptions(opts.length ? opts : FALLBACK_PROVIDERS);
+        if (data.default) setImageProvider(data.default as ImageProviderName);
+      })
+      .catch(() => {
+        setProviderOptions(FALLBACK_PROVIDERS);
+      });
+  }, []);
 
   useEffect(() => {
     if (!selected) return;
@@ -158,6 +199,7 @@ export function PortadasPanel({
         >
           {eligible.map((p) => (
             <option key={p.id} value={p.id}>
+              {p.thumbnailRef ? "[capa] " : ""}
               {p.title}
             </option>
           ))}
@@ -217,9 +259,27 @@ export function PortadasPanel({
               value={imageProvider}
               onChange={(e) => setImageProvider(e.target.value as ImageProviderName)}
             >
-              <option value="pollinations">Pollinations (grátis)</option>
-              <option value="openai">OpenAI Images</option>
-              <option value="gemini">Gemini / Imagen</option>
+              <optgroup label="Grátis (sem chave)">
+                {(providerOptions.length ? providerOptions : FALLBACK_PROVIDERS)
+                  .filter((opt) => opt.free)
+                  .map((opt) => (
+                    <option key={opt.id} value={opt.id} disabled={!opt.available}>
+                      {opt.label}
+                      {opt.hint ? ` — ${opt.hint}` : " · grátis"}
+                    </option>
+                  ))}
+              </optgroup>
+              <optgroup label="Com chave (mais completo)">
+                {(providerOptions.length ? providerOptions : FALLBACK_PROVIDERS)
+                  .filter((opt) => !opt.free)
+                  .map((opt) => (
+                    <option key={opt.id} value={opt.id} disabled={!opt.available}>
+                      {opt.label}
+                      {opt.available && opt.hint ? ` — ${opt.hint}` : ""}
+                      {!opt.available && opt.reason ? ` — ${opt.reason}` : ""}
+                    </option>
+                  ))}
+              </optgroup>
             </select>
           </label>
 

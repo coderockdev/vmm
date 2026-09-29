@@ -64,10 +64,16 @@ export async function POST(req: NextRequest, { params }: { params: { videoProjec
       channelId: channel.id,
       contentIdeaId: project.contentIdeaId,
       videoProjectId: project.id,
-      stage: "render",
+      stage: "thumbnail",
       snapshot: {
-        provider: provider.name === "openai" ? "openai" : provider.name === "gemini" ? "gemini" : "mock",
+        provider:
+          provider.name === "openai"
+            ? "openai"
+            : provider.name === "gemini"
+              ? "gemini"
+              : "pollinations",
         model: provider.name,
+        images: 1,
         characters: prompt.length,
       },
     }).catch(() => undefined);

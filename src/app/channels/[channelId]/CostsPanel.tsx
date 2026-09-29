@@ -50,6 +50,7 @@ const STAGE_ROWS: { key: keyof CostBreakdown; label: string }[] = [
   { key: "ideas", label: "Ideias" },
   { key: "script", label: "Roteiros" },
   { key: "audio", label: "Áudio" },
+  { key: "thumbnail", label: "Portadas" },
   { key: "render", label: "Vídeo / render" },
 ];
 
@@ -84,7 +85,7 @@ export function CostsPanel({ channelId }: { channelId: string }) {
       <div className="costs-heading">
         <div className="workspace-section-title">
           <h2>Custos de geração</h2>
-          <p>Estimativa por etapa (ideias, roteiro, áudio, vídeo), por projeto e por período.</p>
+          <p>Estimativa por etapa (ideias, roteiro, áudio, portadas, vídeo), por projeto e por período.</p>
         </div>
         <div className="costs-period-pills" role="group" aria-label="Período">
           {PERIODS.map((item) => (
@@ -164,6 +165,7 @@ export function CostsPanel({ channelId }: { channelId: string }) {
                     <span>Ideias</span>
                     <span>Roteiro</span>
                     <span>Áudio</span>
+                    <span>Portada</span>
                     <span>Vídeo</span>
                     <span>Total</span>
                   </div>
@@ -178,6 +180,7 @@ export function CostsPanel({ channelId }: { channelId: string }) {
                       <span>{formatUsd(p.breakdown.ideas)}</span>
                       <span>{formatUsd(p.breakdown.script)}</span>
                       <span>{formatUsd(p.breakdown.audio)}</span>
+                      <span>{formatUsd(p.breakdown.thumbnail ?? 0)}</span>
                       <span>{formatUsd(p.breakdown.render)}</span>
                       <span className="costs-total-cell">{formatUsd(p.totalUsd)}</span>
                     </div>

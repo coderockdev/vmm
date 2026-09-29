@@ -1,4 +1,9 @@
-export type ImageProviderName = "openai" | "pollinations" | "gemini";
+export type ImageProviderName =
+  | "openai"
+  | "gemini"
+  | "pollinations"
+  | "pollinations-turbo"
+  | "pollinations-gptimage";
 
 export interface GenerateImageArgs {
   prompt: string;

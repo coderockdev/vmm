@@ -2031,7 +2031,7 @@ body:has(.channel-workspace) .main-content {
 .costs-table-head,
 .costs-table-row {
   display: grid;
-  grid-template-columns: minmax(0, 2.2fr) repeat(4, minmax(52px, 0.7fr)) minmax(64px, 0.8fr);
+  grid-template-columns: minmax(0, 2fr) repeat(5, minmax(48px, 0.65fr)) minmax(60px, 0.75fr);
   gap: 8px;
   align-items: center;
   padding: 8px 4px;
@@ -2343,6 +2343,59 @@ body:has(.channel-workspace) .main-content {
   justify-content: flex-end;
   background: #1c1f26;
   padding: 8px;
+}
+
+.workspace-video-thumb-photo {
+  background: #111;
+}
+
+.workspace-video-thumb-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.workspace-video-thumb-photo > span {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 1;
+  padding: 2px 6px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 650;
+  background: rgba(0, 0, 0, 0.65);
+  border-radius: 6px;
+}
+
+.review-queue-thumb {
+  flex: 0 0 88px;
+  width: 88px;
+  height: 50px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #111;
+}
+
+.review-queue-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.review-queue-actions-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.review-queue-secondary {
+  height: 32px !important;
+  padding: 0 10px !important;
+  color: #3d4453 !important;
+  font-size: 11px !important;
+  background: #eef0f5 !important;
 }
 
 .workspace-video-thumb-plain > span {

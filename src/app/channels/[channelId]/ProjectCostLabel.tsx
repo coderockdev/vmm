@@ -21,6 +21,7 @@ export function ProjectCostLabel({
     if (b.ideas > 0) parts.push(`ideias ${formatUsd(b.ideas)}`);
     if (b.script > 0) parts.push(`roteiro ${formatUsd(b.script)}`);
     if (b.audio > 0) parts.push(`áudio ${formatUsd(b.audio)}`);
+    if (b.thumbnail > 0) parts.push(`portada ${formatUsd(b.thumbnail)}`);
     if (b.render > 0) parts.push(`render ${formatUsd(b.render)}`);
   }
   const title = hasCost

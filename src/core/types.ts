@@ -203,10 +203,16 @@ export interface VideoProject {
   audioAssetId: string | null;
   renderPath: string | null; // relative path under data dir (local storage) or full URL (remote storage), once completed
   renderDurationSeconds: number | null;
-  /** Sum of estimated USD for ideas+script+audio+render attributed to this project. */
+  /** Sum of estimated USD for ideas+script+audio+render+thumbnail attributed to this project. */
   costUsdTotal: number | null;
-  /** Per-stage USD snapshot { ideas, script, audio, render }. */
-  costBreakdown: { ideas: number; script: number; audio: number; render: number } | null;
+  /** Per-stage USD snapshot { ideas, script, audio, render, thumbnail }. */
+  costBreakdown: {
+    ideas: number;
+    script: number;
+    audio: number;
+    render: number;
+    thumbnail: number;
+  } | null;
   /** Joint title+thumbnail creative concept. */
   thumbnailConcept: VideoConcept | null;
   /** Generated thumbnail image path/URL. */

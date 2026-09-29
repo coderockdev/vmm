@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getChannel } from "../../../../../core/repo/channels";
 import { listProjectsForChannel } from "../../../../../core/repo/projects";
 import { listUsageForChannel } from "../../../../../core/repo/usage";
-import { CostBreakdown, emptyBreakdown, UsageEvent, UsageStage } from "../../../../../core/usage/types";
+import {
+  CostBreakdown,
+  emptyBreakdown,
+  normalizeBreakdown,
+  sumBreakdown,
+  UsageEvent,
+  UsageStage,
+} from "../../../../../core/usage/types";
 
 export type CostPeriod = "7d" | "30d" | "90d" | "all";
 
@@ -60,13 +67,14 @@ export async function GET(req: NextRequest, { params }: { params: { channelId: s
         byStage.script += b.script || 0;
         byStage.audio += b.audio || 0;
         byStage.render += b.render || 0;
+        byStage.thumbnail += b.thumbnail || 0;
       } else if (p.costUsdTotal != null && p.costUsdTotal > 0) {
         byStage.script += p.costUsdTotal;
       }
     }
   }
 
-  const totalUsd = byStage.ideas + byStage.script + byStage.audio + byStage.render;
+  const totalUsd = sumBreakdown(byStage);
 
   const videosCreated = projectsInPeriod.filter(
     (p) => p.status === "completed" || Boolean(p.renderPath)
@@ -80,7 +88,7 @@ export async function GET(req: NextRequest, { params }: { params: { channelId: s
     .map((p) => {
       if (p.costUsdTotal != null && p.costUsdTotal > 0) return p.costUsdTotal;
       const b = p.costBreakdown;
-      return b ? b.ideas + b.script + b.audio + b.render : 0;
+      return b ? sumBreakdown(normalizeBreakdown(b)) : 0;
     });
   const avgCompletedProjectCost =
     completedCosts.length > 0
@@ -96,11 +104,9 @@ export async function GET(req: NextRequest, { params }: { params: { channelId: s
           if (e.stage in breakdown) breakdown[e.stage as keyof CostBreakdown] += e.estimatedUsd;
         }
       } else if (p.costBreakdown) {
-        breakdown = { ...p.costBreakdown };
+        breakdown = normalizeBreakdown(p.costBreakdown);
       }
-      const total =
-        breakdown.ideas + breakdown.script + breakdown.audio + breakdown.render ||
-        (p.costUsdTotal ?? 0);
+      const total = sumBreakdown(breakdown) || (p.costUsdTotal ?? 0);
       return {
         id: p.id,
         title: p.title,
@@ -118,6 +124,7 @@ export async function GET(req: NextRequest, { params }: { params: { channelId: s
     script: "Roteiros",
     audio: "Áudio",
     render: "Vídeo / render",
+    thumbnail: "Portadas / thumbnail",
   };
 
   const recentEvents = events.slice(0, 40).map((e: UsageEvent) => ({

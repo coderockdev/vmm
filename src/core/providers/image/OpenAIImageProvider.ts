@@ -28,7 +28,8 @@ export class OpenAIImageProvider implements ImageProvider {
       body: JSON.stringify({
         model: MODEL,
         prompt: args.prompt,
-        size: "1024x1024",
+        // Prefer landscape for YouTube thumbs when the model allows it.
+        size: MODEL.includes("gpt-image") ? "1536x1024" : "1024x1024",
         n: 1,
       }),
     });
