@@ -329,6 +329,18 @@ textarea {
   padding: 0 34px;
 }
 
+/* Home and onboarding already expose navigation/account actions through the
+   sidebar. Keep those surfaces focused and reclaim the header's vertical
+   space instead of rendering duplicate controls. */
+body:has(.dashboard-page) .topbar,
+body:has(.new-channel-wizard) .topbar {
+  display: none;
+}
+
+body:has(.dashboard-page) .main-content {
+  padding-top: 25px;
+}
+
 .icon-button,
 .header-profile,
 .round-menu,
