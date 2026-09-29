@@ -7,6 +7,7 @@ import { Channel, ContentPlan, VideoProject, VideoFormat, JobStatus, AudioAsset 
 import { ProjectCostLabel } from "./ProjectCostLabel";
 import { CostsPanel } from "./CostsPanel";
 import { PortadasPanel } from "./PortadasPanel";
+import { BooksPanel } from "./BooksPanel";
 import { AudioBedControls } from "./AudioBedControls";
 import { formatUsd } from "../../../core/usage/types";
 import { findVoice } from "../../../core/providers/tts/voiceCatalog";
@@ -35,7 +36,16 @@ const SCENE_COUNTS = [3, 4, 5, 6, 7, 8] as const;
 // sits there until a person acts, so it's not part of the auto-poll set.
 const ACTIVE_STATUSES: JobStatus[] = ["planned", "audio", "timing", "composing", "rendering"];
 const PIPELINE_PRODUCING: JobStatus[] = ["planned", "audio", "timing", "composing", "rendering"];
-type WorkspaceTab = "criar" | "ideias" | "roteiros" | "descricoes" | "audio" | "videos" | "portadas" | "custos";
+type WorkspaceTab =
+  | "criar"
+  | "ideias"
+  | "roteiros"
+  | "descricoes"
+  | "audio"
+  | "videos"
+  | "portadas"
+  | "custos"
+  | "livros";
 type CreateMode = "manual" | "auto";
 
 function stageLabel(stage: string): string {
@@ -123,7 +133,8 @@ export function ChannelWorkspace({
 }) {
   const router = useRouter();
   const display = channelDisplay(channel);
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>("criar");
+  const isAudiobook = channel.dna.mode === "audiobook";
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(isAudiobook ? "livros" : "criar");
   const [portadasFocusId, setPortadasFocusId] = useState<string | null>(null);
   const [createMode, setCreateMode] = useState<CreateMode>("manual");
   const [topic, setTopic] = useState("");
@@ -675,31 +686,53 @@ export function ChannelWorkspace({
       </header>
 
       <nav className="workspace-tabs" aria-label="Seções do canal">
-        <button type="button" className={activeTab === "criar" ? "active" : ""} onClick={() => setActiveTab("criar")}>Criar conteúdo</button>
-        <button type="button" className={activeTab === "ideias" ? "active" : ""} onClick={() => setActiveTab("ideias")}>Ideias</button>
-        <button type="button" className={activeTab === "roteiros" ? "active" : ""} onClick={() => setActiveTab("roteiros")}>
-          Roteiros
-          {(scriptBusyCount > 0 || reviewProjects.length > 0) && (
-            <span className="tab-badge">{scriptBusyCount > 0 ? scriptBusyCount : reviewProjects.length}</span>
-          )}
-        </button>
-        <button type="button" className={activeTab === "descricoes" ? "active" : ""} onClick={() => setActiveTab("descricoes")}>
-          Descrições YT
-          {publishProjects.length > 0 && (
-            <span className="tab-badge">{publishProjects.length}</span>
-          )}
-        </button>
-        <button type="button" className={activeTab === "audio" ? "active" : ""} onClick={() => setActiveTab("audio")}>
-          Áudio{(audioBusyCount > 0 || videoBusyCount > 0) && (
-            <span className="tab-badge">{audioBusyCount + videoBusyCount}</span>
-          )}
-        </button>
-        <button type="button" className={activeTab === "videos" ? "active" : ""} onClick={() => setActiveTab("videos")}>
-          Vídeos
-          {videoBusyCount > 0 && <span className="tab-badge">{videoBusyCount}</span>}
-        </button>
-        <button type="button" className={activeTab === "portadas" ? "active" : ""} onClick={() => setActiveTab("portadas")}>Portadas</button>
-        <button type="button" className={activeTab === "custos" ? "active" : ""} onClick={() => setActiveTab("custos")}>Custos</button>
+        {isAudiobook ? (
+          <>
+            <button type="button" className={activeTab === "livros" ? "active" : ""} onClick={() => setActiveTab("livros")}>
+              Livros
+            </button>
+            <button type="button" className={activeTab === "audio" ? "active" : ""} onClick={() => setActiveTab("audio")}>
+              Áudio
+            </button>
+            <button type="button" className={activeTab === "videos" ? "active" : ""} onClick={() => setActiveTab("videos")}>
+              Vídeos
+            </button>
+            <button type="button" className={activeTab === "portadas" ? "active" : ""} onClick={() => setActiveTab("portadas")}>
+              Portadas
+            </button>
+            <button type="button" className={activeTab === "custos" ? "active" : ""} onClick={() => setActiveTab("custos")}>
+              Custos
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" className={activeTab === "criar" ? "active" : ""} onClick={() => setActiveTab("criar")}>Criar conteúdo</button>
+            <button type="button" className={activeTab === "ideias" ? "active" : ""} onClick={() => setActiveTab("ideias")}>Ideias</button>
+            <button type="button" className={activeTab === "roteiros" ? "active" : ""} onClick={() => setActiveTab("roteiros")}>
+              Roteiros
+              {(scriptBusyCount > 0 || reviewProjects.length > 0) && (
+                <span className="tab-badge">{scriptBusyCount > 0 ? scriptBusyCount : reviewProjects.length}</span>
+              )}
+            </button>
+            <button type="button" className={activeTab === "descricoes" ? "active" : ""} onClick={() => setActiveTab("descricoes")}>
+              Descrições YT
+              {publishProjects.length > 0 && (
+                <span className="tab-badge">{publishProjects.length}</span>
+              )}
+            </button>
+            <button type="button" className={activeTab === "audio" ? "active" : ""} onClick={() => setActiveTab("audio")}>
+              Áudio{(audioBusyCount > 0 || videoBusyCount > 0) && (
+                <span className="tab-badge">{audioBusyCount + videoBusyCount}</span>
+              )}
+            </button>
+            <button type="button" className={activeTab === "videos" ? "active" : ""} onClick={() => setActiveTab("videos")}>
+              Vídeos
+              {videoBusyCount > 0 && <span className="tab-badge">{videoBusyCount}</span>}
+            </button>
+            <button type="button" className={activeTab === "portadas" ? "active" : ""} onClick={() => setActiveTab("portadas")}>Portadas</button>
+            <button type="button" className={activeTab === "custos" ? "active" : ""} onClick={() => setActiveTab("custos")}>Custos</button>
+          </>
+        )}
         <button type="button" disabled title="Ainda não implementado">Estatísticas</button>
         <button type="button" onClick={() => router.push(`/channels/${channel.id}/edit`)}>Configurações</button>
       </nav>
@@ -1423,6 +1456,8 @@ export function ChannelWorkspace({
       )}
 
       {activeTab === "custos" && <CostsPanel channelId={channel.id} />}
+
+      {activeTab === "livros" && <BooksPanel channelId={channel.id} />}
 
       {reviewingProject && (
         <ScriptReviewModal

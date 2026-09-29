@@ -1,5 +1,7 @@
 import React from "react";
 import { isRemoteStorageEnabled } from "../../core/storage";
+import { getAppUser } from "../../core/auth/session";
+import { SettingsLogoutButton } from "./SettingsLogoutButton";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +13,7 @@ const rowStyle: React.CSSProperties = {
 };
 
 export default function SettingsPage() {
+  const user = getAppUser();
   const aiProvider = process.env.AI_PROVIDER ?? "mock";
   const ttsProvider = process.env.TTS_PROVIDER ?? "cartesia";
   const renderProvider = process.env.RENDER_PROVIDER ?? "local";
@@ -28,6 +31,28 @@ export default function SettingsPage() {
   return (
     <div style={{ maxWidth: 640 }}>
       <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 20 }}>Configurações</h1>
+
+      <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 20, marginBottom: 20 }}>
+        <div style={{ fontWeight: 700, marginBottom: 12 }}>Perfil</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
+          <span
+            className="header-avatar"
+            style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", background: "#1b1d22", color: "#fff" }}
+          >
+            {user.initial}
+          </span>
+          <div>
+            <div style={{ fontWeight: 700 }}>{user.name}</div>
+            <div style={{ fontSize: 13, color: "var(--text-dim)" }}>{user.email}</div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>{user.plan}</div>
+          </div>
+        </div>
+        <SettingsLogoutButton />
+        <p style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 12, marginBottom: 0 }}>
+          Perfil via <code>VMM_USER_NAME</code> / <code>VMM_USER_EMAIL</code> / <code>VMM_USER_PLAN</code>.
+          Senha opcional: <code>VMM_APP_PASSWORD</code>.
+        </p>
+      </section>
 
       <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 20, marginBottom: 20 }}>
         <div style={{ fontWeight: 700, marginBottom: 8 }}>Provedores (variáveis de ambiente)</div>

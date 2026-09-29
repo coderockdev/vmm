@@ -43,12 +43,19 @@ function BrandMark() {
  * error inside a route's content never has any code path that could affect
  * the sidebar's own render — they're fully independent trees.
  */
-export function Sidebar() {
+export function Sidebar({
+  user,
+}: {
+  user?: { name: string; plan: string; initial: string };
+}) {
   const pathname = usePathname();
   // "/channels/..." routes are also part of the "Canais" section.
   const isCanaisActive = pathname === "/" || pathname.startsWith("/channels");
 
   const [collapsed, setCollapsed] = useState(false);
+  const profileName = user?.name ?? "Dev";
+  const profilePlan = user?.plan ?? "Plano Local";
+  const profileInitial = user?.initial ?? "D";
 
   // Read the saved preference after mount only — localStorage isn't
   // available during SSR, and defaulting to "expanded" there avoids a
@@ -129,10 +136,10 @@ export function Sidebar() {
       </nav>
 
       <div className="profile-block">
-        <span className="avatar">D</span>
+        <span className="avatar">{profileInitial}</span>
         <span className="profile-copy">
-          <strong>Dev</strong>
-          <small>Plano Local</small>
+          <strong>{profileName}</strong>
+          <small>{profilePlan}</small>
         </span>
         <ChevronRightIcon size={19} color="#f5f6f8" />
       </div>

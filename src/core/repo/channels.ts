@@ -68,6 +68,7 @@ function normalizeDna(raw: ChannelDNA, channelId?: string): ChannelDNA {
   return {
     ...raw,
     successfulTitles,
+    mode: raw.mode === "audiobook" ? "audiobook" : "viral",
     scriptRules: {
       ...raw.scriptRules,
       generationPrompt: raw.scriptRules?.generationPrompt ?? "",
