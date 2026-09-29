@@ -33,6 +33,49 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* 1080p desktop: the dashboard is designed with generous spacing, which can
+   feel oversized on a 1920x1080 workspace. Scale the complete app uniformly
+   only on a wide, pointer-based desktop; tablet and mobile keep their normal
+   responsive sizing and touch targets. */
+@media (min-width: 1440px) and (max-height: 1100px) and (pointer: fine) {
+  html {
+    /* Keep the document root tied to the real viewport. Expanding html to
+       compensate for zoom leaves an artificial footer-sized gap below the
+       scaled app. */
+    height: 100vh;
+    min-height: 100vh;
+  }
+
+  body {
+    height: calc(100vh / .9);
+    min-height: calc(100vh / .9);
+    overflow-x: hidden;
+    zoom: .9;
+  }
+
+  .app-shell {
+    /* Let the shell grow with long pages so the sticky sidebar's containing
+       block is not shorter than the document being scrolled. */
+    height: auto;
+    min-height: calc(100vh / .9);
+  }
+
+  .app-content {
+    height: auto;
+    min-height: calc(100vh / .9);
+  }
+
+  .sidebar {
+    height: calc(100vh / .9) !important;
+  }
+
+  /* The dashboard content already ends inside the viewport at this scale;
+     avoid creating a second, empty scroll page from the base bottom padding. */
+  body:has(.dashboard-page) .main-content {
+    padding-bottom: 19px;
+  }
+}
+
 a {
   color: inherit;
   text-decoration: none;
@@ -327,6 +370,19 @@ textarea {
   gap: 28px;
   height: 77px;
   padding: 0 34px;
+}
+
+/* Home and onboarding already expose navigation/account actions through the
+   sidebar. Keep those surfaces focused and reclaim the header's vertical
+   space instead of rendering duplicate controls. */
+body:has(.dashboard-page) .topbar,
+body:has(.new-channel-wizard) .topbar,
+body:has(.channel-edit-page) .topbar {
+  display: none;
+}
+
+body:has(.dashboard-page) .main-content {
+  padding-top: 25px;
 }
 
 .icon-button,
