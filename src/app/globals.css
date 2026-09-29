@@ -3149,15 +3149,33 @@ body:has(.channel-workspace) .main-content {
   margin-top: 14px;
 }
 
-.workspace-inline-feedback {
-  margin: 0;
-  padding: 10px 14px;
-  font-size: 13px;
-  line-height: 1.4;
-  color: var(--text);
-  background: color-mix(in srgb, var(--text) 6%, transparent);
-  border: 1px solid var(--border);
+.audio-bed-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.audio-bed-block {
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  border: 1px solid var(--border, #e8eaed);
   border-radius: 10px;
+}
+
+.audio-bed-block h4 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.audio-bed-preview {
+  width: 100%;
+  max-width: 280px;
+  margin-top: 8px;
+  border-radius: 10px;
+  background: #000;
 }
 
 .workspace-inline-feedback.is-error {

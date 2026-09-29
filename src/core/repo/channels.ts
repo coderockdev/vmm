@@ -7,6 +7,7 @@ import { clampSceneCount, DEFAULT_SCENE_COUNT } from "../providers/tts/ttsLimits
 import { findVoice } from "../providers/tts/voiceCatalog";
 import { profileFromLegacyVoice } from "../providers/tts/voiceCapabilities";
 import { normalizeCoverDna } from "../providers/image/coverFormats";
+import { normalizeMusicalDna } from "../providers/music/musicalDna";
 
 interface ChannelRow {
   id: string;
@@ -74,6 +75,7 @@ function normalizeDna(raw: ChannelDNA): ChannelDNA {
       ...raw.visual,
       cover: normalizeCoverDna(raw.visual?.cover),
     },
+    musical: normalizeMusicalDna(raw.musical),
   };
 }
 

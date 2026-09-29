@@ -122,7 +122,10 @@ export async function GET(req: NextRequest, { params }: { params: { channelId: s
   const stageLabels: Record<UsageStage, string> = {
     ideas: "Ideias",
     script: "Roteiros",
-    audio: "Áudio",
+    audio: "Voz",
+    music: "Música",
+    sfx: "SFX",
+    transcription: "Transcrição/sync",
     render: "Vídeo / render",
     thumbnail: "Portadas / thumbnail",
   };

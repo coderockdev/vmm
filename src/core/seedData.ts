@@ -1,5 +1,6 @@
 import { ChannelDNA } from "./types";
 import { defaultAmorAmorCoverDna } from "./providers/image/coverFormats";
+import { DEFAULT_AMOR_AMOR_MUSICAL } from "./providers/music/musicalDna";
 
 export interface SeedChannel {
   id: string;
@@ -218,6 +219,7 @@ No empieces en el alivio.`,
         textPreset: "bold-scroll",
         cover: defaultAmorAmorCoverDna(),
       },
+      musical: DEFAULT_AMOR_AMOR_MUSICAL,
       voice: {
         provider: "heygen",
         voiceId: null,

@@ -13,6 +13,8 @@ export type {
 } from "./providers/tts/voiceCapabilities";
 
 import type { VoiceProfile } from "./providers/tts/voiceCapabilities";
+import type { MusicalDna } from "./providers/music/musicalDna";
+import type { VideoStyleChoice } from "./videoRenderers/types";
 
 /**
  * ChannelDNA is the permanent editorial identity of a channel.
@@ -80,6 +82,8 @@ export interface ChannelDNA {
     textPreset: TextPresetId;
     /** YouTube thumbnail creative engine (formats + style rules). */
     cover?: CoverVisualDna;
+    /** Default FFmpeg/Remotion video style for this channel. */
+    defaultVideoStyle?: VideoStyleChoice | null;
   };
 
   voice: {
@@ -90,6 +94,9 @@ export interface ChannelDNA {
     /** Full voice selection (provider, capabilities, HeyGen template, etc.). */
     profile?: VoiceProfile;
   };
+
+  /** Instrumental bed + SFX identity. */
+  musical?: MusicalDna;
 
   /** Whether this channel's pipeline needs a script/narration at all. */
   usesScript: boolean;
@@ -210,6 +217,9 @@ export interface VideoProject {
     ideas: number;
     script: number;
     audio: number;
+    music: number;
+    sfx: number;
+    transcription: number;
     render: number;
     thumbnail: number;
   } | null;
@@ -217,6 +227,20 @@ export interface VideoProject {
   thumbnailConcept: VideoConcept | null;
   /** Generated thumbnail image path/URL. */
   thumbnailRef: string | null;
+  /**
+   * Chosen video style for FFmpeg/Remotion render (scrolling text, etc.).
+   * Null = legacy neon-meditation Remotion path.
+   */
+  videoStyle: VideoStyleChoice | null;
+  /** Instrumental bed ref (path/URL) — never overwrites narration asset. */
+  musicRef: string | null;
+  musicStyle: string | null;
+  /** Mixed SFX bed ref. */
+  sfxRef: string | null;
+  /** Final mix (narration+music+sfx) used for video render when present. */
+  mixAudioRef: string | null;
+  /** Production SFX markers (never shown on screen / never spoken). */
+  productionMarkers: string[] | null;
   createdAt: string;
   updatedAt: string;
 }

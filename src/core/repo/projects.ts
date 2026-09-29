@@ -27,6 +27,8 @@ interface ProjectRow {
   cost_breakdown_json?: string | object | null;
   thumbnail_json?: string | object | null;
   thumbnail_ref?: string | null;
+  video_style_json?: string | object | null;
+  audio_bed_json?: string | object | null;
   created_at: string;
   updated_at: string;
 }
@@ -40,6 +42,9 @@ function parseBreakdown(raw: string | object | null | undefined): VideoProject["
     ideas: Number(o.ideas) || 0,
     script: Number(o.script) || 0,
     audio: Number(o.audio) || 0,
+    music: Number(o.music) || 0,
+    sfx: Number(o.sfx) || 0,
+    transcription: Number(o.transcription) || 0,
     render: Number(o.render) || 0,
     thumbnail: Number(o.thumbnail) || 0,
   };
@@ -52,7 +57,26 @@ function parseThumbnailConcept(raw: string | object | null | undefined): VideoCo
   return obj as VideoConcept;
 }
 
+function parseJsonObject<T>(raw: string | object | null | undefined): T | null {
+  if (raw == null) return null;
+  const obj = typeof raw === "string" ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
+  if (!obj || typeof obj !== "object") return null;
+  return obj as T;
+}
+
+type AudioBedJson = {
+  musicRef?: string | null;
+  musicStyle?: string | null;
+  musicLibraryId?: string | null;
+  sfxRef?: string | null;
+  mixAudioRef?: string | null;
+  productionMarkers?: string[] | null;
+  attributionText?: string | null;
+};
+
 function rowToProject(row: ProjectRow): VideoProject {
+  const style = parseJsonObject<NonNullable<VideoProject["videoStyle"]>>(row.video_style_json);
+  const bed = parseJsonObject<AudioBedJson>(row.audio_bed_json);
   return {
     id: row.id,
     channelId: row.channel_id,
@@ -74,6 +98,12 @@ function rowToProject(row: ProjectRow): VideoProject {
     costBreakdown: parseBreakdown(row.cost_breakdown_json),
     thumbnailConcept: parseThumbnailConcept(row.thumbnail_json),
     thumbnailRef: row.thumbnail_ref ?? null,
+    videoStyle: style,
+    musicRef: bed?.musicRef ?? null,
+    musicStyle: bed?.musicStyle ?? null,
+    sfxRef: bed?.sfxRef ?? null,
+    mixAudioRef: bed?.mixAudioRef ?? null,
+    productionMarkers: bed?.productionMarkers ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -636,4 +666,65 @@ export async function listAudioAssetsForChannel(channelId: string): Promise<Audi
     )
     .all(channelId) as AudioRow[];
   return rows.map(rowToAudio);
+}
+
+export async function updateProjectVideoStyle(
+  projectId: string,
+  videoStyle: VideoProject["videoStyle"]
+): Promise<void> {
+  const now = new Date().toISOString();
+  if (isSupabaseEnabled()) {
+    const res = await getSupabase()
+      .from("video_projects")
+      .update({ video_style_json: videoStyle, updated_at: now })
+      .eq("id", projectId);
+    if (res.error && /video_style/i.test(res.error.message)) {
+      console.warn("[projects] video_style_json missing — run supabase/schema_video_styles.sql");
+      return;
+    }
+    assertNoError(res);
+    return;
+  }
+  try {
+    getDb()
+      .prepare(`UPDATE video_projects SET video_style_json = ?, updated_at = ? WHERE id = ?`)
+      .run(videoStyle ? JSON.stringify(videoStyle) : null, now, projectId);
+  } catch {
+    /* column may be missing locally */
+  }
+}
+
+export async function updateProjectAudioBed(
+  projectId: string,
+  bed: AudioBedJson
+): Promise<void> {
+  const now = new Date().toISOString();
+  const existing = await getVideoProject(projectId);
+  const merged: AudioBedJson = {
+    musicRef: existing?.musicRef,
+    musicStyle: existing?.musicStyle,
+    sfxRef: existing?.sfxRef,
+    mixAudioRef: existing?.mixAudioRef,
+    productionMarkers: existing?.productionMarkers,
+    ...bed,
+  };
+  if (isSupabaseEnabled()) {
+    const res = await getSupabase()
+      .from("video_projects")
+      .update({ audio_bed_json: merged, updated_at: now })
+      .eq("id", projectId);
+    if (res.error && /audio_bed/i.test(res.error.message)) {
+      console.warn("[projects] audio_bed_json missing — add column via SQL");
+      return;
+    }
+    assertNoError(res);
+    return;
+  }
+  try {
+    getDb()
+      .prepare(`UPDATE video_projects SET audio_bed_json = ?, updated_at = ? WHERE id = ?`)
+      .run(JSON.stringify(merged), now, projectId);
+  } catch {
+    /* column may be missing locally */
+  }
 }

@@ -2,7 +2,10 @@ import { spawn } from "child_process";
 import path from "path";
 import fs from "fs";
 
-function run(cmd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+export function runFfmpeg(
+  cmd: string,
+  args: string[]
+): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args);
     let stdout = "";
@@ -18,7 +21,7 @@ function run(cmd: string, args: string[]): Promise<{ stdout: string; stderr: str
 }
 
 export async function ffprobeDuration(filePath: string): Promise<number> {
-  const { stdout } = await run("ffprobe", [
+  const { stdout } = await runFfmpeg("ffprobe", [
     "-v",
     "error",
     "-show_entries",
@@ -33,7 +36,7 @@ export async function ffprobeDuration(filePath: string): Promise<number> {
 }
 
 export async function renderSilence(durationSeconds: number, outPath: string): Promise<void> {
-  await run("ffmpeg", [
+  await runFfmpeg("ffmpeg", [
     "-y",
     "-f",
     "lavfi",
@@ -55,7 +58,7 @@ export async function renderSilence(durationSeconds: number, outPath: string): P
  */
 export async function concatAudioFiles(inputPaths: string[], outPath: string): Promise<void> {
   if (inputPaths.length === 1) {
-    await run("ffmpeg", ["-y", "-i", inputPaths[0], outPath]);
+    await runFfmpeg("ffmpeg", ["-y", "-i", inputPaths[0], outPath]);
     return;
   }
   const args: string[] = ["-y"];
@@ -68,9 +71,38 @@ export async function concatAudioFiles(inputPaths: string[], outPath: string): P
     "[out]",
     outPath
   );
-  await run("ffmpeg", args);
+  await runFfmpeg("ffmpeg", args);
 }
 
 export function ensureParentDir(filePath: string) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
+}
+
+/** Trim media to the first `seconds` (re-encode audio/video as needed). */
+export async function trimMedia(
+  inputPath: string,
+  outputPath: string,
+  seconds: number
+): Promise<void> {
+  ensureParentDir(outputPath);
+  await runFfmpeg("ffmpeg", [
+    "-y",
+    "-i",
+    inputPath,
+    "-t",
+    Math.max(0.5, seconds).toFixed(3),
+    "-c",
+    "copy",
+    outputPath,
+  ]).catch(async () => {
+    // copy can fail on odd containers — re-encode
+    await runFfmpeg("ffmpeg", [
+      "-y",
+      "-i",
+      inputPath,
+      "-t",
+      Math.max(0.5, seconds).toFixed(3),
+      outputPath,
+    ]);
+  });
 }

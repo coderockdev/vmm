@@ -1,4 +1,12 @@
-export type UsageStage = "ideas" | "script" | "audio" | "render" | "thumbnail";
+export type UsageStage =
+  | "ideas"
+  | "script"
+  | "audio"
+  | "music"
+  | "sfx"
+  | "transcription"
+  | "render"
+  | "thumbnail";
 
 export type UsageProvider =
   | "anthropic"
@@ -9,6 +17,8 @@ export type UsageProvider =
   | "heygen"
   | "remotion-lambda"
   | "pollinations"
+  | "ffmpeg-ambient"
+  | "ffmpeg-lavfi-sfx"
   | "local"
   | "mock"
   | "uploaded";
@@ -31,6 +41,9 @@ export interface CostBreakdown {
   ideas: number;
   script: number;
   audio: number;
+  music: number;
+  sfx: number;
+  transcription: number;
   render: number;
   thumbnail: number;
 }
@@ -55,22 +68,43 @@ export interface UsageEvent {
 }
 
 export function emptyBreakdown(): CostBreakdown {
-  return { ideas: 0, script: 0, audio: 0, render: 0, thumbnail: 0 };
+  return {
+    ideas: 0,
+    script: 0,
+    audio: 0,
+    music: 0,
+    sfx: 0,
+    transcription: 0,
+    render: 0,
+    thumbnail: 0,
+  };
 }
 
-/** Normalize partial/legacy breakdowns (pre-thumbnail) into a full CostBreakdown. */
+/** Normalize partial/legacy breakdowns into a full CostBreakdown. */
 export function normalizeBreakdown(raw: Partial<CostBreakdown> | null | undefined): CostBreakdown {
   return {
     ideas: Number(raw?.ideas) || 0,
     script: Number(raw?.script) || 0,
     audio: Number(raw?.audio) || 0,
+    music: Number(raw?.music) || 0,
+    sfx: Number(raw?.sfx) || 0,
+    transcription: Number(raw?.transcription) || 0,
     render: Number(raw?.render) || 0,
     thumbnail: Number(raw?.thumbnail) || 0,
   };
 }
 
 export function sumBreakdown(b: CostBreakdown): number {
-  return b.ideas + b.script + b.audio + b.render + b.thumbnail;
+  return (
+    b.ideas +
+    b.script +
+    b.audio +
+    b.music +
+    b.sfx +
+    b.transcription +
+    b.render +
+    b.thumbnail
+  );
 }
 
 export function formatUsd(amount: number): string {

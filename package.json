@@ -8,6 +8,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "seed": "tsx src/core/seed.ts",
+    "seed:audio-library": "tsx scripts/seed-audio-library.ts",
     "test:pipeline": "tsx src/core/test-pipeline.ts",
     "remotion:studio": "remotion studio src/remotion/index.ts"
   },

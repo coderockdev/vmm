@@ -49,7 +49,10 @@ const PERIODS: { id: CostPeriod; label: string }[] = [
 const STAGE_ROWS: { key: keyof CostBreakdown; label: string }[] = [
   { key: "ideas", label: "Ideias" },
   { key: "script", label: "Roteiros" },
-  { key: "audio", label: "Áudio" },
+  { key: "audio", label: "Voz" },
+  { key: "music", label: "Música" },
+  { key: "sfx", label: "SFX" },
+  { key: "transcription", label: "Transcrição/sync" },
   { key: "thumbnail", label: "Portadas" },
   { key: "render", label: "Vídeo / render" },
 ];

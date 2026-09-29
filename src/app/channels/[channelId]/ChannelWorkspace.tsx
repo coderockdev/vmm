@@ -7,6 +7,7 @@ import { Channel, ContentPlan, VideoProject, VideoFormat, JobStatus, AudioAsset 
 import { ProjectCostLabel } from "./ProjectCostLabel";
 import { CostsPanel } from "./CostsPanel";
 import { PortadasPanel } from "./PortadasPanel";
+import { AudioBedControls } from "./AudioBedControls";
 import { formatUsd } from "../../../core/usage/types";
 import { findVoice } from "../../../core/providers/tts/voiceCatalog";
 import { TTSProviderName } from "../../../core/providers/tts/TTSProvider";
@@ -852,6 +853,17 @@ export function ChannelWorkspace({
                         <audio className="review-queue-audio" controls preload="metadata" src={listenUrl}>
                           Seu navegador não reproduz áudio embutido.
                         </audio>
+                      )}
+                      {asset && (
+                        <AudioBedControls
+                          channelId={channel.id}
+                          project={project}
+                          onUpdated={(updated) => {
+                            setProjects((previous) =>
+                              previous.map((p) => (p.id === updated.id ? updated : p))
+                            );
+                          }}
+                        />
                       )}
                     </div>
                     {listenUrl ? (
