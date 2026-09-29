@@ -1,6 +1,7 @@
 import { getChannel, createChannel, updateChannelDna } from "./repo/channels";
 import { SEED_CHANNELS } from "./seedData";
 import { reconcileStuckJobs } from "./pipeline/reconcile";
+import { isSupabaseEnabled } from "./supabaseClient";
 
 /**
  * Idempotent by design: every page that reads channel data calls this first.
@@ -15,9 +16,16 @@ import { reconcileStuckJobs } from "./pipeline/reconcile";
  * Set FORCE_SEED_DNA=1 to overwrite DNA on existing seed channels from
  * seedData (use when Supabase drifted / generationPrompt empty).
  */
-export async function ensureSeeded(): Promise<void> {
+export async function ensureSeeded(options: { allowRemoteSeed?: boolean } = {}): Promise<void> {
   await reconcileStuckJobs();
   const forceDna = process.env.FORCE_SEED_DNA === "1" || process.env.FORCE_SEED_DNA === "true";
+
+  // Supabase is the user's persistent source of truth. Recreating demo rows
+  // on every page load makes an intentional DELETE look like it failed.
+  // Remote seed creation now happens only through the explicit seed command
+  // (or the existing FORCE_SEED_DNA maintenance override).
+  if (isSupabaseEnabled() && !options.allowRemoteSeed && !forceDna) return;
+
   for (const seed of SEED_CHANNELS) {
     const existing = await getChannel(seed.id);
     if (!existing) {
@@ -46,5 +54,5 @@ export async function ensureSeeded(): Promise<void> {
 }
 
 if (require.main === module) {
-  ensureSeeded().then(() => console.log("Seed complete."));
+  ensureSeeded({ allowRemoteSeed: true }).then(() => console.log("Seed complete."));
 }

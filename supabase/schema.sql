@@ -9,11 +9,28 @@ create table if not exists channels (
   cover_color text not null,
   dna_json jsonb not null,
   cover_ref text,
+  channel_image_ref text,
+  channel_banner_ref text,
+  visual_reference_ref text,
+  reference_links_json jsonb not null default '[]'::jsonb,
+  visual_style_description text not null default '',
+  script_skill text not null default '',
+  creation_request_id uuid unique,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 alter table channels add column if not exists cover_ref text;
+alter table channels add column if not exists channel_image_ref text;
+alter table channels add column if not exists channel_banner_ref text;
+alter table channels add column if not exists visual_reference_ref text;
+alter table channels add column if not exists reference_links_json jsonb not null default '[]'::jsonb;
+alter table channels add column if not exists visual_style_description text not null default '';
+alter table channels add column if not exists script_skill text not null default '';
+alter table channels add column if not exists creation_request_id uuid;
+create unique index if not exists channels_creation_request_id_key
+  on channels (creation_request_id)
+  where creation_request_id is not null;
 
 create table if not exists content_plans (
   id uuid primary key default gen_random_uuid(),

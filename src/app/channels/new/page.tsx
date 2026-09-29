@@ -1,249 +1,560 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ChevronRightIcon, HomeIcon, PencilIcon } from "../../icons";
+import type { ChannelReference, ChannelReferencePlatform, Language } from "../../../core/types";
 
-const PALETTES = ["cosmic", "night-sky", "warm-story", "rain-blue"] as const;
-const LANGUAGES = [
+const LANGUAGES: Array<{ value: Language; label: string }> = [
   { value: "pt", label: "Português" },
   { value: "es", label: "Español" },
   { value: "en", label: "English" },
-] as const;
+];
 
-const inputStyle: React.CSSProperties = { width: "100%" };
-const sectionStyle: React.CSSProperties = {
-  background: "var(--surface)",
-  border: "1px solid var(--border)",
-  borderRadius: 14,
-  padding: 20,
-  marginBottom: 16,
+const INITIAL_REFERENCES: ChannelReference[] = [
+  { platform: "youtube", url: "" },
+  { platform: "tiktok", url: "" },
+  { platform: "instagram", url: "" },
+  { platform: "facebook", url: "" },
+  { platform: "website", url: "" },
+];
+
+const REFERENCE_PLACEHOLDERS: Record<ChannelReferencePlatform, string> = {
+  youtube: "https://www.youtube.com/@exemplo",
+  tiktok: "https://www.tiktok.com/@exemplo",
+  instagram: "https://www.instagram.com/@exemplo",
+  facebook: "https://www.facebook.com/exemplo",
+  website: "https://exemplo.com",
 };
-const labelStyle: React.CSSProperties = {
-  display: "block",
-  fontSize: 13,
-  color: "var(--text-dim)",
-  marginBottom: 6,
-  marginTop: 14,
-};
+
+type UploadKind = "square" | "banner" | "reference";
+type FieldErrors = Partial<Record<"name" | "description" | "channelImage", string>>;
+
+function Arrow({ direction = "right" }: { direction?: "left" | "right" }) {
+  return <span aria-hidden="true" className={`wizard-arrow wizard-arrow-${direction}`}>→</span>;
+}
+
+function UploadGlyph() {
+  return (
+    <span className="wizard-upload-glyph" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <rect x="3.5" y="4" width="17" height="16" rx="2" />
+        <circle cx="9" cy="9" r="1.5" />
+        <path d="m5.5 17 4.2-4 3.1 2.7 2.6-2.4 3.1 3" />
+      </svg>
+      <i>+</i>
+    </span>
+  );
+}
+
+function SiteIcon({ platform }: { platform: ChannelReferencePlatform }) {
+  if (platform === "youtube") {
+    return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="4" fill="currentColor"/><path d="m10 9 5 3-5 3Z" fill="#fff"/></svg>;
+  }
+  if (platform === "tiktok") {
+    return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 3c.4 2.6 1.8 4 4.5 4.3v3a10 10 0 0 1-4.5-1.4v6.2a6.1 6.1 0 1 1-5.2-6V12a3 3 0 1 0 2 2.8V3Z" fill="currentColor"/></svg>;
+  }
+  if (platform === "instagram") {
+    return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>;
+  }
+  if (platform === "facebook") {
+    return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="currentColor"/><path d="M13.7 21v-7h2.4l.4-2.8h-2.8V9.4c0-.8.2-1.4 1.4-1.4h1.5V5.5a19 19 0 0 0-2.2-.1c-2.2 0-3.7 1.3-3.7 3.8v2H8.2V14h2.5v7Z" fill="#fff"/></svg>;
+  }
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>;
+}
+
+function ImageUpload({
+  id,
+  kind,
+  preview,
+  prompt,
+  subprompt,
+  onChange,
+}: {
+  id: string;
+  kind: UploadKind;
+  preview: string | null;
+  prompt: string;
+  subprompt?: string;
+  onChange: (file: File | null, preview: string | null) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function chooseFile(file: File | undefined) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => onChange(file, String(reader.result));
+    reader.readAsDataURL(file);
+  }
+
+  return (
+    <div className={`wizard-upload wizard-upload-${kind}${preview ? " has-preview" : ""}`}>
+      <input
+        ref={inputRef}
+        id={id}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        onChange={(event) => chooseFile(event.target.files?.[0])}
+      />
+      {preview ? (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={preview} alt="Prévia da imagem selecionada" />
+          <button
+            type="button"
+            className="wizard-image-remove"
+            aria-label="Remover imagem"
+            onClick={() => {
+              if (inputRef.current) inputRef.current.value = "";
+              onChange(null, null);
+            }}
+          >
+            ×
+          </button>
+          {kind === "reference" && (
+            <button type="button" className="wizard-image-change" onClick={() => inputRef.current?.click()}>
+              ↻ <span>Trocar imagem</span>
+            </button>
+          )}
+        </>
+      ) : (
+        <label htmlFor={id}>
+          <UploadGlyph />
+          <span>{prompt}</span>
+          {subprompt && <small>{subprompt}</small>}
+        </label>
+      )}
+    </div>
+  );
+}
+
+function Stepper({ step }: { step: number }) {
+  const labels = ["Informações", "Estilo e conteúdo", "Revisar"];
+  return (
+    <ol className="channel-stepper" aria-label={`Etapa ${step} de 3`}>
+      {labels.map((label, index) => {
+        const number = index + 1;
+        const done = number < step;
+        return (
+          <React.Fragment key={label}>
+            <li className={number === step ? "active" : done ? "done" : ""}>
+              <span>{done ? "✓" : number}</span>
+              <small>{label}</small>
+            </li>
+            {number < labels.length && <i aria-hidden="true"><ChevronRightIcon size={16} /></i>}
+          </React.Fragment>
+        );
+      })}
+    </ol>
+  );
+}
 
 export default function NewChannelPage() {
   const router = useRouter();
+  const submittingRef = useRef(false);
+  const creationRequestIdRef = useRef<string | null>(null);
+  const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [copied, setCopied] = useState(false);
 
   const [name, setName] = useState("");
-  const [niche, setNiche] = useState("");
-  const [coverColor, setCoverColor] = useState("#ff5a2e");
-
+  const [language, setLanguage] = useState<Language>("pt");
   const [description, setDescription] = useState("");
-  const [purpose, setPurpose] = useState("");
-  const [audience, setAudience] = useState("");
-  const [language, setLanguage] = useState<"pt" | "es" | "en">("pt");
-  const [tone, setTone] = useState("");
-  const [topics, setTopics] = useState("");
-  const [avoid, setAvoid] = useState("");
-  const [structure, setStructure] = useState(
-    "introdução → preparação → conteúdo principal → reflexão → encerramento"
-  );
-  const [defaultDurationMinutes, setDefaultDurationMinutes] = useState(8);
+  const [channelImage, setChannelImage] = useState<File | null>(null);
+  const [channelImagePreview, setChannelImagePreview] = useState<string | null>(null);
+  const [channelBanner, setChannelBanner] = useState<File | null>(null);
+  const [channelBannerPreview, setChannelBannerPreview] = useState<string | null>(null);
+  const [references, setReferences] = useState<ChannelReference[]>(INITIAL_REFERENCES);
 
-  const [palette, setPalette] = useState<(typeof PALETTES)[number]>("cosmic");
-  const [textPreset, setTextPreset] = useState<"bold-scroll" | "none">("bold-scroll");
+  const [visualReference, setVisualReference] = useState<File | null>(null);
+  const [visualReferencePreview, setVisualReferencePreview] = useState<string | null>(null);
+  const [visualStyleDescription, setVisualStyleDescription] = useState("");
+  const [scriptSkill, setScriptSkill] = useState("");
 
-  const [voiceProvider, setVoiceProvider] = useState<"local" | "elevenlabs">("local");
-  const [voiceSpeed, setVoiceSpeed] = useState(1);
-  const [usesNarration, setUsesNarration] = useState(true);
+  const pageCopy = step === 3
+    ? {
+        title: "Revisar e criar canal",
+        subtitle: "Confira todas as informações do seu canal. Se estiver tudo certo, clique em Criar canal para finalizar.",
+      }
+    : step === 2
+      ? {
+          title: "Criar novo canal",
+          subtitle: "Defina o estilo visual e o skill de roteiro do seu canal. Esses dados serão usados pela IA para criar roteiros, áudios e vídeos com o estilo certo para o seu público.",
+        }
+      : {
+          title: "Criar novo canal",
+          subtitle: "Defina as informações iniciais do seu canal. Esses dados serão usados pela IA para gerar roteiros, áudios e vídeos com o estilo certo para o seu público.",
+        };
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  const skillInstruction = useMemo(() => {
+    return `Crie um skill completo de roteiro para o canal “${name || "[nome do canal]"}”.\n\nContexto do canal:\n${description || "[descrição do canal]"}\n\nEstilo visual desejado:\n${visualStyleDescription || "[descreva ou analise a imagem de referência]"}\n\nO skill deve ser escrito em Markdown e incluir: identidade, público, tom, estrutura dos vídeos, regras de abertura, desenvolvimento, encerramento, CTA, linguagem e itens a evitar.`;
+  }, [description, name, visualStyleDescription]);
+
+  function validateStepOne() {
+    const next: FieldErrors = {};
+    if (!name.trim()) next.name = "Informe o nome do canal.";
+    if (!description.trim()) next.description = "Descreva o canal.";
+    if (!channelImage) next.channelImage = "Adicione a imagem do canal.";
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  }
+
+  function continueFromStepOne() {
+    if (!validateStepOne()) return;
+    setStep(2);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function updateReference(index: number, url: string) {
+    setReferences((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, url } : item));
+  }
+
+  async function copyInstruction() {
+    await navigator.clipboard.writeText(skillInstruction);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  }
+
+  async function createChannelFromReview() {
+    // Channel creation is intentionally exclusive to the explicit action on
+    // step 3. Form fields can trigger an implicit submit (for example by
+    // pressing Enter), so this function must never be used as form.onSubmit.
+    if (step !== 3) return;
+    if (submittingRef.current) return;
+    if (!validateStepOne()) {
+      setStep(1);
+      return;
+    }
+    if (!channelImage) return;
+
+    submittingRef.current = true;
     setSaving(true);
+    setSubmitError(null);
     try {
-      const res = await fetch("/api/channels", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          niche,
-          coverColor,
-          description,
-          purpose,
-          audience,
-          language,
-          tone: tone.split(",").map((s) => s.trim()).filter(Boolean),
-          topics: topics.split(",").map((s) => s.trim()).filter(Boolean),
-          avoid: avoid.split(",").map((s) => s.trim()).filter(Boolean),
-          scriptRules: {
-            opening: "criar conexão com o espectador rapidamente",
-            structure,
-            cta: "CTA curto e natural quando apropriado",
-            defaultDurationMinutes,
-            defaultSceneCount: 4,
-            generationPrompt: "",
-            pauses: { betweenLines: 0.5, betweenSections: 1.5 },
-          },
-          visual: { palette, textPreset },
-          voice: { provider: voiceProvider, speed: voiceSpeed, volume: 1 },
-          usesScript: true,
-          usesNarration,
-        }),
-      });
-      const data = await res.json();
-      if (data.channel) router.push(`/channels/${data.channel.id}`);
-    } finally {
+      creationRequestIdRef.current ??= crypto.randomUUID();
+      const form = new FormData();
+      form.append("payload", JSON.stringify({
+        creationRequestId: creationRequestIdRef.current,
+        name: name.trim(),
+        language,
+        description: description.trim(),
+        referenceLinks: references.filter((reference) => reference.url.trim()),
+        visualStyleDescription: visualStyleDescription.trim(),
+        scriptSkill: scriptSkill.trim(),
+      }));
+      form.append("channelImage", channelImage);
+      if (channelBanner) form.append("channelBanner", channelBanner);
+      if (visualReference) form.append("visualReference", visualReference);
+
+      const response = await fetch("/api/channels", { method: "POST", body: form });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error ?? "Não foi possível criar o canal.");
+      router.replace(`/channels/${data.channel.id}`);
+    } catch (error) {
+      submittingRef.current = false;
+      setSubmitError(error instanceof Error ? error.message : "Não foi possível criar o canal.");
       setSaving(false);
     }
   }
 
   return (
-    <div style={{ maxWidth: 640 }}>
-      <h1 style={{ fontSize: 26, fontWeight: 800, marginBottom: 4 }}>Novo Canal</h1>
-      <p style={{ color: "var(--text-dim)", marginBottom: 24 }}>
-        Isso vira o Channel DNA — o contexto permanente que vai governar tudo que esse canal produzir.
-      </p>
+    <div className="new-channel-wizard">
+      <nav className="channel-breadcrumb wizard-breadcrumb" aria-label="Navegação estrutural">
+        <Link href="/"><HomeIcon size={17} /> <span>Canais</span></Link>
+        <ChevronRightIcon size={17} />
+        <strong>Novo canal</strong>
+      </nav>
 
-      <form onSubmit={handleSubmit}>
-        <section style={sectionStyle}>
-          <strong>IDENTIDADE</strong>
-          <label style={labelStyle}>Nome do canal</label>
-          <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} required />
+      <header className="wizard-header">
+        <div>
+          <h1>{pageCopy.title}</h1>
+          <p>{pageCopy.subtitle}</p>
+        </div>
+        <Stepper step={step} />
+      </header>
 
-          <label style={labelStyle}>Tagline curta (aparece no card)</label>
-          <input
-            style={inputStyle}
-            value={niche}
-            onChange={(e) => setNiche(e.target.value)}
-            placeholder="Ex: Amor • Relacionamentos"
-          />
+      <form onSubmit={(event) => event.preventDefault()} noValidate>
+        {step === 1 && (
+          <div className="wizard-stage wizard-stage-one">
+            <section className="wizard-card basic-information-card">
+              <div className="wizard-card-heading">
+                <h2>Informações básicas</h2>
+                <p>Defina a identidade e o tema do seu canal.</p>
+              </div>
 
-          <label style={labelStyle}>Cor de destaque</label>
-          <input
-            type="color"
-            value={coverColor}
-            onChange={(e) => setCoverColor(e.target.value)}
-            style={{ width: 60, height: 36, padding: 2 }}
-          />
-        </section>
+              <div className="wizard-name-row">
+                <label className={errors.name ? "has-error" : ""}>
+                  <span>Nome do canal</span>
+                  <input
+                    value={name}
+                    maxLength={50}
+                    onChange={(event) => {
+                      setName(event.target.value);
+                      if (errors.name) setErrors((current) => ({ ...current, name: undefined }));
+                    }}
+                    aria-invalid={Boolean(errors.name)}
+                  />
+                  <small className="field-counter">{name.length}/50</small>
+                  {errors.name && <small className="field-error">{errors.name}</small>}
+                </label>
+                <label>
+                  <span>Idioma principal</span>
+                  <select value={language} onChange={(event) => setLanguage(event.target.value as Language)}>
+                    {LANGUAGES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  </select>
+                </label>
+              </div>
 
-        <section style={sectionStyle}>
-          <strong>CONTEÚDO</strong>
+              <label className={`wizard-description-field${errors.description ? " has-error" : ""}`}>
+                <span>Descrição do canal</span>
+                <textarea
+                  value={description}
+                  maxLength={500}
+                  onChange={(event) => {
+                    setDescription(event.target.value);
+                    if (errors.description) setErrors((current) => ({ ...current, description: undefined }));
+                  }}
+                  aria-invalid={Boolean(errors.description)}
+                />
+                <small className="field-counter">{description.length}/500</small>
+                {errors.description && <small className="field-error">{errors.description}</small>}
+              </label>
 
-          <label style={labelStyle}>Sobre o que é este canal?</label>
-          <textarea
-            style={{ ...inputStyle, minHeight: 60 }}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
+              <div className="wizard-media-fields">
+                <div className={errors.channelImage ? "has-error" : ""}>
+                  <div className="wizard-field-label">
+                    <strong>Imagem do canal</strong>
+                    <span>Usada como avatar do canal<br />em todas as plataformas.</span>
+                  </div>
+                  <ImageUpload
+                    id="channel-image"
+                    kind="square"
+                    preview={channelImagePreview}
+                    prompt="Adicionar imagem"
+                    subprompt="(quadrado)"
+                    onChange={(file, preview) => {
+                      setChannelImage(file);
+                      setChannelImagePreview(preview);
+                      if (file) setErrors((current) => ({ ...current, channelImage: undefined }));
+                    }}
+                  />
+                  {errors.channelImage && <small className="field-error upload-error">{errors.channelImage}</small>}
+                </div>
+                <div>
+                  <div className="wizard-field-label">
+                    <strong>Capa do canal <em>(opcional)</em></strong>
+                    <span>Usada na identidade visual do canal.</span>
+                  </div>
+                  <ImageUpload
+                    id="channel-banner"
+                    kind="banner"
+                    preview={channelBannerPreview}
+                    prompt="Adicionar capa"
+                    subprompt="(formato 16:9)"
+                    onChange={(file, preview) => {
+                      setChannelBanner(file);
+                      setChannelBannerPreview(preview);
+                    }}
+                  />
+                </div>
+              </div>
+            </section>
 
-          <label style={labelStyle}>Objetivo — que tipo de conteúdo queremos produzir?</label>
-          <textarea
-            style={{ ...inputStyle, minHeight: 50 }}
-            value={purpose}
-            onChange={(e) => setPurpose(e.target.value)}
-          />
+            <section className="wizard-card reference-links-card">
+              <div className="wizard-card-heading">
+                <h2>Canais e páginas de referência <em>(opcional)</em></h2>
+                <p>Adicione links de canais ou páginas que servem como referência de estilo, narrativa, edição, etc. Pode ser do YouTube, TikTok, Instagram, Facebook ou outros.</p>
+              </div>
+              <div className="reference-links-list">
+                {references.map((reference, index) => (
+                  <div className="reference-link-row" key={`${reference.platform}-${index}`}>
+                    <span className="reference-link-icon"><SiteIcon platform={reference.platform} /></span>
+                    <input
+                      type="url"
+                      value={reference.url}
+                      placeholder={REFERENCE_PLACEHOLDERS[reference.platform]}
+                      aria-label={`URL de referência ${index + 1}`}
+                      onChange={(event) => updateReference(index, event.target.value)}
+                    />
+                    <button
+                      type="button"
+                      aria-label={`Remover referência ${index + 1}`}
+                      onClick={() => setReferences((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                    >×</button>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="add-reference-button"
+                onClick={() => setReferences((current) => [...current, { platform: "website", url: "" }])}
+              >
+                <span>＋</span> Adicionar mais uma referência
+              </button>
+            </section>
+          </div>
+        )}
 
-          <label style={labelStyle}>Público</label>
-          <input style={inputStyle} value={audience} onChange={(e) => setAudience(e.target.value)} />
-
-          <label style={labelStyle}>Idioma (fixo do canal — nunca perguntado de novo na geração)</label>
-          <select style={inputStyle} value={language} onChange={(e) => setLanguage(e.target.value as any)}>
-            {LANGUAGES.map((l) => (
-              <option key={l.value} value={l.value}>
-                {l.label}
-              </option>
-            ))}
-          </select>
-
-          <label style={labelStyle}>Tom (separado por vírgula)</label>
-          <input style={inputStyle} value={tone} onChange={(e) => setTone(e.target.value)} placeholder="calmo, acolhedor" />
-
-          <label style={labelStyle}>Temas principais (separado por vírgula)</label>
-          <input style={inputStyle} value={topics} onChange={(e) => setTopics(e.target.value)} />
-
-          <label style={labelStyle}>Assuntos a evitar (separado por vírgula)</label>
-          <input style={inputStyle} value={avoid} onChange={(e) => setAvoid(e.target.value)} />
-
-          <label style={labelStyle}>Estrutura padrão do roteiro</label>
-          <input style={inputStyle} value={structure} onChange={(e) => setStructure(e.target.value)} />
-
-          <label style={labelStyle}>Duração padrão (minutos)</label>
-          <input
-            type="number"
-            style={inputStyle}
-            value={defaultDurationMinutes}
-            onChange={(e) => setDefaultDurationMinutes(Number(e.target.value))}
-          />
-        </section>
-
-        <section style={sectionStyle}>
-          <strong>VÍDEO</strong>
-          <label style={labelStyle}>Template visual</label>
-          <input style={inputStyle} value="Neon Meditation" disabled />
-
-          <label style={labelStyle}>Paleta</label>
-          <select style={inputStyle} value={palette} onChange={(e) => setPalette(e.target.value as any)}>
-            {PALETTES.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-
-          <label style={labelStyle}>Texto sincronizado</label>
-          <select style={inputStyle} value={textPreset} onChange={(e) => setTextPreset(e.target.value as any)}>
-            <option value="bold-scroll">Bold scroll (padrão)</option>
-            <option value="none">Sem texto (canal ambiente)</option>
-          </select>
-        </section>
-
-        <section style={sectionStyle}>
-          <strong>ÁUDIO</strong>
-          <label style={labelStyle}>
-            <input
-              type="checkbox"
-              checked={usesNarration}
-              onChange={(e) => setUsesNarration(e.target.checked)}
-              style={{ marginRight: 8 }}
-            />
-            Este canal usa narração
-          </label>
-
-          {usesNarration && (
-            <>
-              <label style={labelStyle}>Motor de voz padrão</label>
-              <select style={inputStyle} value={voiceProvider} onChange={(e) => setVoiceProvider(e.target.value as any)}>
-                <option value="local">Local (macOS say)</option>
-                <option value="elevenlabs">ElevenLabs</option>
-              </select>
-
-              <label style={labelStyle}>Velocidade ({voiceSpeed.toFixed(2)}x)</label>
-              <input
-                type="range"
-                min="0.7"
-                max="1.3"
-                step="0.01"
-                value={voiceSpeed}
-                onChange={(e) => setVoiceSpeed(Number(e.target.value))}
-                style={inputStyle}
+        {step === 2 && (
+          <div className="wizard-stage wizard-stage-two">
+            <section className="wizard-card visual-reference-card">
+              <div className="wizard-card-heading">
+                <h2>Imagem de referência visual</h2>
+                <p>Envie uma imagem no formato horizontal (16:9) que representa o estilo visual dos vídeos deste canal.</p>
+              </div>
+              <ImageUpload
+                id="visual-reference"
+                kind="reference"
+                preview={visualReferencePreview}
+                prompt="Adicionar imagem de referência"
+                subprompt="PNG, JPG ou WebP · formato 16:9"
+                onChange={(file, preview) => {
+                  setVisualReference(file);
+                  setVisualReferencePreview(preview);
+                }}
               />
-            </>
-          )}
-        </section>
+              <label className="visual-description-field">
+                <strong>Descrição do estilo visual <span>(detectado pela IA)</span></strong>
+                <small>A IA analisa a imagem e identifica os principais elementos do estilo visual. Você pode editar o texto para adicionar mais detalhes ou ajustar as informações.</small>
+                <textarea
+                  maxLength={2000}
+                  value={visualStyleDescription}
+                  onChange={(event) => setVisualStyleDescription(event.target.value)}
+                  placeholder="Descreva a estética, paleta de cores, iluminação, composição e atmosfera desejadas."
+                />
+                <i>{visualStyleDescription.length}/2000</i>
+              </label>
+            </section>
 
-        <button
-          type="submit"
-          disabled={saving || !name}
-          style={{
-            background: "var(--accent)",
-            color: "#fff",
-            fontWeight: 700,
-            padding: "12px 24px",
-            borderRadius: 10,
-            border: "none",
-            cursor: "pointer",
-            opacity: saving ? 0.6 : 1,
-          }}
-        >
-          {saving ? "Salvando..." : "Salvar como Channel DNA"}
-        </button>
+            <section className="wizard-card script-skill-card">
+              <div className="copy-instruction-banner">
+                <span className="copy-document-icon" aria-hidden="true">▤</span>
+                <span>
+                  <strong>Copie a instrução para gerar o skill de roteiro na sua IA</strong>
+                  <small>Use esta instrução no ChatGPT, Claude, etc, para criar um skill de roteiro completo e personalizado para este canal, com base no estilo visual detectado ao lado.</small>
+                </span>
+                <button type="button" onClick={copyInstruction}>▣ {copied ? "Copiado!" : "Copiar instrução"}</button>
+              </div>
+              <div className="script-skill-heading">
+                <span>
+                  <h2>Skill de roteiro (Script)</h2>
+                  <p>Cole aqui todas as instruções, diretrizes e orientações que a IA deve seguir para criar os roteiros e conteúdos deste canal. Pode ser um guia, um template ou qualquer orientação detalhada em formato de texto (Markdown).</p>
+                </span>
+                <button type="button" onClick={() => setScriptSkill(skillInstruction)}>▣ <span>Modelo</span></button>
+              </div>
+              <div className="script-editor">
+                <span aria-hidden="true">1<br />2<br /><br />3<br />4</span>
+                <textarea
+                  value={scriptSkill}
+                  onChange={(event) => setScriptSkill(event.target.value)}
+                  placeholder={`# Cole aqui o skill de roteiro do seu canal...\n\nVocê pode colar o conteúdo gerado pela sua IA (ChatGPT, Claude, etc.)\nEste campo suporta formatação Markdown e textos longos.`}
+                  aria-label="Skill de roteiro"
+                />
+              </div>
+            </section>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="wizard-stage wizard-stage-three">
+            <section className="wizard-card review-basic-card">
+              <div className="review-section-heading">
+                <h2>Informações básicas</h2>
+                <button type="button" onClick={() => setStep(1)}><PencilIcon size={15} /> Editar</button>
+              </div>
+              <div className="review-profile">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={channelImagePreview ?? ""} alt="Imagem do canal" />
+                <div>
+                  <h3>{name}</h3>
+                  <strong>Idioma principal</strong>
+                  <p>{LANGUAGES.find((item) => item.value === language)?.label}</p>
+                  <strong>Descrição</strong>
+                  <p>{description}</p>
+                </div>
+              </div>
+
+              <div className="review-divider" />
+              <div className="review-section-heading compact">
+                <h3>Capa do canal</h3>
+                <button type="button" onClick={() => setStep(1)}><PencilIcon size={15} /> Editar</button>
+              </div>
+              {channelBannerPreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img className="review-banner" src={channelBannerPreview} alt="Capa do canal" />
+              ) : <div className="review-empty">Nenhuma capa adicionada</div>}
+
+              <div className="review-divider" />
+              <div className="review-section-heading compact">
+                <h3>Canais e páginas de referência</h3>
+                <button type="button" onClick={() => setStep(1)}><PencilIcon size={15} /> Editar</button>
+              </div>
+              <div className="review-reference-list">
+                {references.filter((reference) => reference.url.trim()).length ? references.filter((reference) => reference.url.trim()).map((reference, index) => (
+                  <div key={`${reference.platform}-${index}`}>
+                    <span><SiteIcon platform={reference.platform} /></span>
+                    <p>{reference.url}</p>
+                  </div>
+                )) : <div className="review-empty compact-empty">Nenhuma referência adicionada</div>}
+              </div>
+            </section>
+
+            <div className="review-right-column">
+              <section className="wizard-card review-visual-card">
+                <div className="review-section-heading">
+                  <h2>Estilo visual dos vídeos</h2>
+                  <button type="button" onClick={() => setStep(2)}><PencilIcon size={15} /> Editar</button>
+                </div>
+                <div className="review-visual-content">
+                  {visualReferencePreview ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={visualReferencePreview} alt="Referência visual" />
+                  ) : <div className="review-visual-placeholder"><UploadGlyph /></div>}
+                  <p>{visualStyleDescription || "Nenhuma descrição de estilo visual adicionada."}</p>
+                </div>
+              </section>
+
+              <section className="wizard-card review-script-card">
+                <div className="review-section-heading">
+                  <h2>Skill de roteiro (Script)</h2>
+                  <button type="button" onClick={() => setStep(2)}><PencilIcon size={15} /> Editar</button>
+                </div>
+                <div className={`review-script-content${scriptSkill ? "" : " empty"}`}>
+                  {scriptSkill || "Nenhum skill de roteiro adicionado. Você poderá preencher este campo depois."}
+                </div>
+              </section>
+            </div>
+          </div>
+        )}
+
+        {submitError && <div className="wizard-submit-error" role="alert">{submitError}</div>}
+
+        <footer className="wizard-actions">
+          {step === 1 ? (
+            <Link href="/" className="wizard-secondary-button"><Arrow direction="left" /> Cancelar</Link>
+          ) : (
+            <button type="button" className="wizard-secondary-button" onClick={() => setStep((current) => current - 1)}>
+              <Arrow direction="left" /> Voltar
+            </button>
+          )}
+          {step < 3 ? (
+            <button type="button" className="wizard-primary-button" onClick={step === 1 ? continueFromStepOne : () => setStep(3)}>
+              Continuar <Arrow />
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="wizard-primary-button"
+              disabled={saving}
+              onClick={() => void createChannelFromReview()}
+            >
+              {saving ? "Criando..." : "Criar canal"} <Arrow />
+            </button>
+          )}
+        </footer>
       </form>
     </div>
   );

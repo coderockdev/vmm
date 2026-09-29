@@ -21,6 +21,12 @@ export function getSupabase(): SupabaseClient {
     }
     global.__vmmSupabase = createClient(url, key, {
       auth: { persistSession: false },
+      global: {
+        // Server-side reads must reflect Supabase immediately. Without this,
+        // Next can cache PostgREST GET requests made while rendering a page,
+        // leaving the dashboard stale after a channel is created.
+        fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
+      },
     });
   }
   return global.__vmmSupabase;

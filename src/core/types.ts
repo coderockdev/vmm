@@ -113,6 +113,18 @@ export type VisualTemplateId = "neon-meditation";
 export type PaletteId = "cosmic" | "night-sky" | "warm-story" | "rain-blue";
 export type TextPresetId = "bold-scroll" | "none";
 
+export type ChannelReferencePlatform =
+  | "youtube"
+  | "tiktok"
+  | "instagram"
+  | "facebook"
+  | "website";
+
+export interface ChannelReference {
+  platform: ChannelReferencePlatform;
+  url: string;
+}
+
 export type {
   CoverFormat,
   CoverVisualDna,
@@ -131,6 +143,15 @@ export interface Channel {
   coverColor: string; // deterministic accent color for card art
   /** AI-generated cover art reference — relative path (local storage) or full URL (remote storage). Null = no real cover yet. */
   coverRef: string | null;
+  /** Square avatar uploaded during the new-channel onboarding. */
+  channelImageRef: string | null;
+  /** Optional 16:9 channel banner. */
+  channelBannerRef: string | null;
+  /** Optional 16:9 visual reference used to define the video style. */
+  visualReferenceRef: string | null;
+  referenceLinks: ChannelReference[];
+  visualStyleDescription: string;
+  scriptSkill: string;
   dna: ChannelDNA;
   createdAt: string;
   updatedAt: string;

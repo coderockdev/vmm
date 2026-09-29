@@ -12,7 +12,7 @@ export default async function EditChannelPage({ params }: { params: { channelId:
   const channel = await getChannel(params.channelId);
   if (!channel) notFound();
 
-  const initialCoverUrl = mediaUrl(channel.id, channel.coverRef);
+  const initialCoverUrl = mediaUrl(channel.id, channel.coverRef ?? channel.channelImageRef);
 
   return <EditChannelForm channel={channel} initialCoverUrl={initialCoverUrl} />;
 }

@@ -1,5 +1,6 @@
 import React from "react";
 import Link from "next/link";
+import { unstable_noStore as noStore } from "next/cache";
 import { ensureSeeded } from "../core/seed";
 import { listChannels, getChannel } from "../core/repo/channels";
 import { listProjectsForChannel, listAllProjects } from "../core/repo/projects";
@@ -114,6 +115,7 @@ function Stat({ icon, value, label }: { icon: React.ReactNode; value: number; la
 }
 
 export default async function HomePage() {
+  noStore();
   await ensureSeeded();
   const channels = await listChannels();
   const recentContent = (await listAllProjects()).filter((p) => p.status === "completed").slice(0, 3);
@@ -127,7 +129,7 @@ export default async function HomePage() {
         shorts: projects.filter((p) => p.status === "completed" && p.format === "short").length,
         category: KNOWN_CATEGORY_OVERRIDES[channel.id] ?? channel.niche.split(" • ")[0],
         crop: KNOWN_COVER_CROPS[channel.id],
-        coverUrl: mediaUrl(channel.id, channel.coverRef),
+        coverUrl: mediaUrl(channel.id, channel.channelImageRef ?? channel.coverRef),
         description:
           channel.dna.description.length > 95
             ? channel.dna.description.slice(0, 95) + "…"

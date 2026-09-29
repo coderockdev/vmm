@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { getDb } from "../db";
 import { getSupabase, isSupabaseEnabled, assertNoError } from "../supabaseClient";
-import { Channel, ChannelDNA } from "../types";
+import { Channel, ChannelDNA, ChannelReference } from "../types";
 import { DEFAULT_CHARS_PER_WORD, DEFAULT_WORDS_PER_MINUTE } from "../scriptBudget";
 import { clampSceneCount, DEFAULT_SCENE_COUNT } from "../providers/tts/ttsLimits";
 import { findVoice } from "../providers/tts/voiceCatalog";
@@ -16,6 +16,13 @@ interface ChannelRow {
   niche: string;
   cover_color: string;
   cover_ref: string | null;
+  channel_image_ref?: string | null;
+  channel_banner_ref?: string | null;
+  visual_reference_ref?: string | null;
+  reference_links_json?: string | ChannelReference[] | null;
+  visual_style_description?: string | null;
+  script_skill?: string | null;
+  creation_request_id?: string | null;
   dna_json: string | object;
   created_at: string;
   updated_at: string;
@@ -85,12 +92,21 @@ function normalizeDna(raw: ChannelDNA, channelId?: string): ChannelDNA {
 
 function rowToChannel(row: ChannelRow): Channel {
   const parsed = typeof row.dna_json === "string" ? JSON.parse(row.dna_json) : (row.dna_json as ChannelDNA);
+  const referenceLinks = typeof row.reference_links_json === "string"
+    ? JSON.parse(row.reference_links_json)
+    : row.reference_links_json;
   return {
     id: row.id,
     name: row.name,
     niche: row.niche,
     coverColor: row.cover_color,
     coverRef: row.cover_ref ?? null,
+    channelImageRef: row.channel_image_ref ?? null,
+    channelBannerRef: row.channel_banner_ref ?? null,
+    visualReferenceRef: row.visual_reference_ref ?? null,
+    referenceLinks: Array.isArray(referenceLinks) ? referenceLinks : [],
+    visualStyleDescription: row.visual_style_description ?? "",
+    scriptSkill: row.script_skill ?? "",
     dna: normalizeDna(parsed, row.id),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -116,12 +132,30 @@ export async function getChannel(id: string): Promise<Channel | null> {
   return row ? rowToChannel(row) : null;
 }
 
+export async function getChannelByCreationRequestId(requestId: string): Promise<Channel | null> {
+  if (!isSupabaseEnabled()) return null;
+  const res = await getSupabase()
+    .from("channels")
+    .select("*")
+    .eq("creation_request_id", requestId)
+    .maybeSingle();
+  const row = assertNoError(res);
+  return row ? rowToChannel(row as ChannelRow) : null;
+}
+
 export async function createChannel(input: {
   id?: string;
   name: string;
   niche: string;
   coverColor: string;
   dna: ChannelDNA;
+  channelImageRef?: string | null;
+  channelBannerRef?: string | null;
+  visualReferenceRef?: string | null;
+  referenceLinks?: ChannelReference[];
+  visualStyleDescription?: string;
+  scriptSkill?: string;
+  creationRequestId?: string | null;
 }): Promise<Channel> {
   const now = new Date().toISOString();
   const id = input.id ?? (await slugify(input.name));
@@ -134,6 +168,13 @@ export async function createChannel(input: {
         name: input.name,
         niche: input.niche,
         cover_color: input.coverColor,
+        channel_image_ref: input.channelImageRef ?? null,
+        channel_banner_ref: input.channelBannerRef ?? null,
+        visual_reference_ref: input.visualReferenceRef ?? null,
+        reference_links_json: input.referenceLinks ?? [],
+        visual_style_description: input.visualStyleDescription ?? "",
+        script_skill: input.scriptSkill ?? "",
+        creation_request_id: input.creationRequestId ?? null,
         dna_json: input.dna,
         created_at: now,
         updated_at: now,

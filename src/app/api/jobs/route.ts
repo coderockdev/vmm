@@ -3,6 +3,8 @@ import { listJobs } from "../../../core/repo/jobs";
 import { getVideoProject } from "../../../core/repo/projects";
 import { getChannel } from "../../../core/repo/channels";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const jobs = await listJobs();
   const enriched = await Promise.all(

@@ -76,13 +76,13 @@ export function Sidebar() {
   return (
     <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
       <div className="brand-row">
-        <Link href="/" className="brand">
+        <a href="/" className="brand">
           <BrandMark />
           <span className="brand-copy">
             <strong>VMM</strong>
             <small>VIRAL MONEY MACHINE</small>
           </span>
-        </Link>
+        </a>
         <button
           type="button"
           className="sidebar-collapse-toggle"
@@ -98,11 +98,20 @@ export function Sidebar() {
         {NAV.map((item) => {
           const Icon = item.icon;
           const active = item.href === "/" ? isCanaisActive : pathname === item.href;
-          return (
-            <Link key={item.label} href={item.href} className={`nav-item${active ? " active" : ""}`}>
+          const className = `nav-item${active ? " active" : ""}`;
+          const content = (
+            <>
               <Icon size={24} />
               <span>{item.label}</span>
-            </Link>
+            </>
+          );
+          // The channels dashboard must always refetch after a mutation. A
+          // native navigation avoids Next's client-side router cache serving
+          // the dashboard snapshot that was prefetched before channel creation.
+          return item.href === "/" ? (
+            <a key={item.label} href={item.href} className={className}>{content}</a>
+          ) : (
+            <Link key={item.label} href={item.href} className={className}>{content}</Link>
           );
         })}
       </nav>

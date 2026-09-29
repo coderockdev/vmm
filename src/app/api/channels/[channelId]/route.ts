@@ -52,6 +52,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: { channelI
     }
   }
   await deleteStoredFile(channel.id, channel.coverRef);
+  await deleteStoredFile(channel.id, channel.channelImageRef);
+  await deleteStoredFile(channel.id, channel.channelBannerRef);
+  await deleteStoredFile(channel.id, channel.visualReferenceRef);
 
   await deleteChannel(channel.id);
   return NextResponse.json({ ok: true });
