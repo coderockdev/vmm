@@ -36,6 +36,7 @@ export function BooksPanel({ channelId }: { channelId: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<BookDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [autoImported, setAutoImported] = useState(false);
 
   const loadBooks = useCallback(async () => {
     setLoading(true);
@@ -45,9 +46,11 @@ export function BooksPanel({ channelId }: { channelId: string }) {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
       setBooks(json.books ?? []);
+      return (json.books ?? []) as BookListItem[];
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setBooks([]);
+      return [] as BookListItem[];
     } finally {
       setLoading(false);
     }
@@ -56,6 +59,27 @@ export function BooksPanel({ channelId }: { channelId: string }) {
   useEffect(() => {
     void loadBooks();
   }, [loadBooks]);
+
+  // First visit with empty catalog → import the Verne package once.
+  useEffect(() => {
+    if (loading || autoImported || books.length > 0 || importing) return;
+    setAutoImported(true);
+    void (async () => {
+      setImporting(true);
+      setError(null);
+      try {
+        const res = await fetch(`/api/channels/${channelId}/books/import`, { method: "POST" });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+        setMessage(`Catálogo carregado: ${json.totalBooks} obras · ${json.totalChapters} capítulos.`);
+        await loadBooks();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setImporting(false);
+      }
+    })();
+  }, [loading, autoImported, books.length, importing, channelId, loadBooks]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -89,9 +113,7 @@ export function BooksPanel({ channelId }: { channelId: string }) {
       const res = await fetch(`/api/channels/${channelId}/books/import`, { method: "POST" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-      setMessage(
-        `Importado: ${json.totalBooks} obras, ${json.totalChapters} capítulos (idempotente).`
-      );
+      setMessage(`Atualizado: ${json.totalBooks} obras · ${json.totalChapters} capítulos.`);
       await loadBooks();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -100,12 +122,16 @@ export function BooksPanel({ channelId }: { channelId: string }) {
     }
   }
 
+  const totalChapters = books.reduce((s, b) => s + b.totalChapters, 0);
+  const doneChapters = books.reduce((s, b) => s + b.chaptersDone, 0);
+  const currentBook = books.find((b) => b.status === "in_progress") ?? books.find((b) => b.status === "queued");
+
   if (selectedId) {
     return (
       <div className="books-panel">
         <div className="books-panel-toolbar">
           <button type="button" className="books-back" onClick={() => setSelectedId(null)}>
-            ← Voltar às obras
+            ← Todas as obras
           </button>
         </div>
         {detailLoading && <p className="books-muted">Carregando capítulos…</p>}
@@ -114,9 +140,12 @@ export function BooksPanel({ channelId }: { channelId: string }) {
             <header className="books-detail-header">
               <h2>{detail.book.title}</h2>
               <p className="books-muted">
+                Produção #{(detail.book.orderIndex ?? 0) + 1} ·{" "}
                 {STATUS_LABEL[detail.book.status] ?? detail.book.status} · {detail.chapters.length}{" "}
-                capítulos · ~{Math.round((detail.book.totalWords / 150) * 10) / 10} min · pasta{" "}
-                <code>{detail.book.folder}</code>
+                capítulos · ~{Math.round((detail.book.totalWords / 150) * 10) / 10} min
+              </p>
+              <p className="books-muted" style={{ marginTop: 4 }}>
+                Cada linha = 1 vídeo. Produzir na ordem do capítulo 1 ao último.
               </p>
             </header>
             <div className="books-table-wrap">
@@ -126,8 +155,8 @@ export function BooksPanel({ channelId }: { channelId: string }) {
                     <th>#</th>
                     <th>Capítulo</th>
                     <th>Palavras</th>
+                    <th>~ min</th>
                     <th>Status</th>
-                    <th>Arquivo</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -136,13 +165,11 @@ export function BooksPanel({ channelId }: { channelId: string }) {
                       <td>{c.index}</td>
                       <td>{c.label}</td>
                       <td>{c.words.toLocaleString("pt-BR")}</td>
+                      <td>{Math.round((c.words / 150) * 10) / 10}</td>
                       <td>
                         <span className={`books-status books-status-${c.status}`}>
                           {STATUS_LABEL[c.status] ?? c.status}
                         </span>
-                      </td>
-                      <td>
-                        <code>{c.sourceFile}</code>
                       </td>
                     </tr>
                   ))}
@@ -158,62 +185,69 @@ export function BooksPanel({ channelId }: { channelId: string }) {
 
   return (
     <div className="books-panel">
-      <div className="books-panel-toolbar">
+      <div className="books-hero">
         <div>
-          <h2 style={{ margin: 0, fontSize: 20 }}>Livros</h2>
-          <p className="books-muted" style={{ margin: "4px 0 0" }}>
-            Ordem de produção · 1 capítulo = 1 vídeo
+          <h2>Obras de Júlio Verne</h2>
+          <p>
+            Uma obra de cada vez, capítulo a capítulo.{" "}
+            <strong>1 capítulo = 1 vídeo</strong> na playlist da obra.
           </p>
+          {books.length > 0 && (
+            <p className="books-muted" style={{ marginTop: 8 }}>
+              {books.length} obras · {doneChapters}/{totalChapters} capítulos feitos
+              {currentBook ? ` · a seguir: ${currentBook.title}` : ""}
+            </p>
+          )}
         </div>
         <button type="button" className="books-import-btn" disabled={importing} onClick={() => void onImport()}>
-          {importing ? "Importando…" : books.length === 0 ? "Importar pacote" : "Reimportar pacote"}
+          {importing ? "A carregar…" : books.length === 0 ? "Carregar catálogo" : "Atualizar catálogo"}
         </button>
       </div>
 
       {message && <p className="books-ok">{message}</p>}
       {error && <p className="generation-error">{error}</p>}
-      {loading && <p className="books-muted">Carregando obras…</p>}
+      {(loading || importing) && books.length === 0 && (
+        <p className="books-muted">A carregar novelas e capítulos…</p>
+      )}
 
-      {!loading && books.length === 0 && (
+      {!loading && !importing && books.length === 0 && (
         <p className="books-muted">
-          Nenhuma obra no banco. Clique em <strong>Importar pacote</strong> para ler{" "}
-          <code>data/books/julio_verne_capitulos/indice.json</code>.
+          Ainda sem obras. O pacote deve estar em{" "}
+          <code>data/books/julio_verne_capitulos/</code>.
         </p>
       )}
 
-      {!loading && books.length > 0 && (
-        <div className="books-table-wrap">
-          <table className="books-table">
-            <thead>
-              <tr>
-                <th>Ordem</th>
-                <th>Obra</th>
-                <th>Status</th>
-                <th>Capítulos</th>
-                <th>Palavras</th>
-                <th>~ min</th>
-              </tr>
-            </thead>
-            <tbody>
-              {books.map((b) => (
-                <tr key={b.id} className="books-row-click" onClick={() => setSelectedId(b.id)}>
-                  <td>{b.orderIndex + 1}</td>
-                  <td>
-                    <strong>{b.title}</strong>
-                    <div className="books-muted" style={{ fontSize: 12 }}>
-                      #{b.number} · {b.folder}
-                    </div>
-                  </td>
-                  <td>{STATUS_LABEL[b.status] ?? b.status}</td>
-                  <td>
-                    {b.chaptersDone}/{b.totalChapters}
-                  </td>
-                  <td>{b.totalWords.toLocaleString("pt-BR")}</td>
-                  <td>{b.estimatedMinutes}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {books.length > 0 && (
+        <div className="books-grid">
+          {books.map((b) => {
+            const pct =
+              b.totalChapters > 0 ? Math.round((b.chaptersDone / b.totalChapters) * 100) : 0;
+            const isNext = currentBook?.id === b.id;
+            return (
+              <button
+                key={b.id}
+                type="button"
+                className={`books-card${isNext ? " is-next" : ""}`}
+                onClick={() => setSelectedId(b.id)}
+              >
+                <div className="books-card-top">
+                  <span className="books-card-order">#{b.orderIndex + 1}</span>
+                  <span className={`books-status books-status-${b.status}`}>
+                    {STATUS_LABEL[b.status] ?? b.status}
+                  </span>
+                </div>
+                <strong className="books-card-title">{b.title}</strong>
+                <div className="books-card-meta">
+                  {b.chaptersDone}/{b.totalChapters} capítulos ·{" "}
+                  {b.totalWords.toLocaleString("pt-BR")} palavras · ~{b.estimatedMinutes} min
+                </div>
+                <div className="books-card-bar" aria-hidden>
+                  <i style={{ width: `${pct}%` }} />
+                </div>
+                {isNext && <span className="books-card-next">Obra atual na fila</span>}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

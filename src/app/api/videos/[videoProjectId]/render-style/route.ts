@@ -153,14 +153,51 @@ export async function POST(req: NextRequest, { params }: { params: { videoProjec
       });
     }
 
-    const result = await renderVideo({
-      audioPath: localAudio,
-      scriptText,
-      styleId,
-      settings,
-      outputPath: outPath,
-      previewSeconds,
-    });
+    // Heartbeat while FFmpeg runs — otherwise the UI sits at 40% for many minutes.
+    let tick = 40;
+    const heartbeat =
+      job && !preview
+        ? setInterval(() => {
+            tick = Math.min(88, tick + 3);
+            void updateJob(job!.id, {
+              status: "rendering",
+              progress: tick,
+              statusMessage: `FFmpeg · texto rolante (${sourceLabel})…`,
+            }).catch(() => undefined);
+          }, 15_000)
+        : null;
+
+    let result;
+    try {
+      result = await renderVideo({
+        audioPath: localAudio,
+        scriptText,
+        styleId,
+        settings,
+        outputPath: outPath,
+        previewSeconds,
+        onProgress: (pct, message) => {
+          if (!job || preview) return;
+          const mapped = Math.max(40, Math.min(90, Math.round(pct)));
+          tick = Math.max(tick, mapped);
+          void updateJob(job.id, {
+            status: "rendering",
+            progress: tick,
+            statusMessage: message || `FFmpeg · texto rolante (${sourceLabel})…`,
+          }).catch(() => undefined);
+        },
+      });
+    } finally {
+      if (heartbeat) clearInterval(heartbeat);
+    }
+
+    if (job && !preview) {
+      await updateJob(job.id, {
+        status: "rendering",
+        progress: 92,
+        statusMessage: "A enviar vídeo para o storage…",
+      });
+    }
 
     const ref = await persistFile(outPath, channel.id, "render", fileName, "video/mp4");
 

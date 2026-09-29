@@ -272,10 +272,15 @@ export function ChannelWorkspace({
           progress?: number;
           statusMessage?: string;
           status?: string;
+          updatedAt?: string;
         }>;
       };
       const map: Record<string, { progress: number; statusMessage: string; status: string }> = {};
-      for (const job of data.jobs ?? []) {
+      // Prefer the newest job per project (API may return several historical rows).
+      const sorted = [...(data.jobs ?? [])].sort((a, b) =>
+        String(a.updatedAt || "").localeCompare(String(b.updatedAt || ""))
+      );
+      for (const job of sorted) {
         if (job.channelId !== channel.id) continue;
         map[job.videoProjectId] = {
           progress: job.progress ?? 0,
@@ -586,9 +591,29 @@ export function ChannelWorkspace({
     (p) => PIPELINE_PRODUCING.includes(p.status)
   ).length;
   const scriptBusyCount = pendingScriptTitles.length;
-  const videoProjects = projects.filter((p) => p.status === "completed" || p.status === "rendering" || p.status === "composing");
+  const videoProjects = projects.filter((p) => {
+    const job = jobByProject[p.id];
+    // Show failed renders in the list too (so "Em produção" doesn't linger alone).
+    if (p.status === "failed" && (job?.statusMessage?.includes("FFmpeg") || job?.statusMessage?.includes("upload") || p.errorMessage)) {
+      return true;
+    }
+    return p.status === "completed" || p.status === "rendering" || p.status === "composing";
+  });
 
   function productionLabel(project: VideoProject, job?: { progress: number; statusMessage: string; status: string }) {
+    // Stale optimistic "rendering" must not win over a failed/completed job from the API.
+    if (job?.status === "failed" || (project.status === "failed" && job?.status !== "rendering")) {
+      if (project.audioAssetId) {
+        return {
+          text: job?.statusMessage || project.errorMessage || "Áudio pronto (etapa seguinte falhou)",
+          kind: "failed" as const,
+        };
+      }
+      return { text: job?.statusMessage || project.errorMessage || "Falhou", kind: "failed" as const };
+    }
+    if (job?.status === "completed" || project.status === "completed") {
+      return { text: "Concluído", kind: "done" as const };
+    }
     // Prefer live job progress — leaving Áudio must still show "Renderizando…".
     if (job?.status === "rendering" || project.status === "rendering") {
       const msg = job?.statusMessage?.trim() || "Renderizando vídeo…";
@@ -597,16 +622,6 @@ export function ChannelWorkspace({
     }
     if (job?.status === "composing" || project.status === "composing") {
       return { text: job?.statusMessage?.trim() || "Preparando composição…", kind: "working" as const };
-    }
-    if (project.status === "failed") {
-      // Audio may already exist when a later step crashed (e.g. broken .next chunk).
-      if (project.audioAssetId) {
-        return { text: "Áudio pronto (etapa seguinte falhou)", kind: "failed" as const };
-      }
-      return { text: job?.statusMessage || project.errorMessage || "Falhou", kind: "failed" as const };
-    }
-    if (project.status === "completed") {
-      return { text: "Concluído", kind: "done" as const };
     }
     if (project.audioAssetId && !PIPELINE_PRODUCING.includes(project.status)) {
       return { text: "Áudio pronto", kind: "done" as const };
@@ -639,13 +654,21 @@ export function ChannelWorkspace({
     setter(checked ? new Set(visibleIdeas.map((idea) => idea.id)) : new Set());
   }
 
-  const videoBusyCount = projects.filter(
-    (p) => p.status === "rendering" || jobByProject[p.id]?.status === "rendering"
-  ).length;
+  const videoBusyCount = projects.filter((p) => {
+    const job = jobByProject[p.id];
+    // Don't keep the banner on optimistic "rendering" after the job already failed.
+    if (job?.status === "failed" || job?.status === "completed") return false;
+    if (p.status === "failed" || p.status === "completed") return false;
+    return p.status === "rendering" || job?.status === "rendering";
+  }).length;
   const producingAnywhere =
     audioBusyCount > 0 ||
     videoBusyCount > 0 ||
-    projects.some((p) => PIPELINE_PRODUCING.includes(p.status));
+    projects.some((p) => {
+      const job = jobByProject[p.id];
+      if (job?.status === "failed" || job?.status === "completed") return false;
+      return PIPELINE_PRODUCING.includes(p.status);
+    });
 
   return (
     <div className="channel-workspace">
@@ -678,7 +701,11 @@ export function ChannelWorkspace({
             <span className="dna-icon"><MiniIcon name="database" size={24} /></span>
             <span>
               <strong>DNA do canal</strong>
-              <small>Contexto, estilo, tom, público, temas e<br /> configurações do canal para geração de conteúdo.</small>
+              <small>
+                {isAudiobook
+                  ? "Voz, estilo visual e regras do audiolivro (1 capítulo = 1 vídeo)."
+                  : "Contexto, estilo, tom, público, temas e configurações do canal para geração de conteúdo."}
+              </small>
             </span>
           </div>
           <Link href={`/channels/${channel.id}/edit`} className="dna-edit-button"><GearIcon size={19} /> Editar DNA do canal</Link>
@@ -759,7 +786,7 @@ export function ChannelWorkspace({
         </div>
       )}
 
-      {activeTab === "criar" && (
+      {activeTab === "criar" && !isAudiobook && (
         <div className="creation-layout">
           <section className="creation-card">
             <div className="workspace-section-title">
@@ -1007,7 +1034,7 @@ export function ChannelWorkspace({
         </div>
       )}
 
-      {activeTab === "ideias" && (
+      {activeTab === "ideias" && !isAudiobook && (
         <section className="suggested-ideas-section">
           <div className="ideas-heading">
             <div className="workspace-section-title">
@@ -1089,7 +1116,7 @@ export function ChannelWorkspace({
         </section>
       )}
 
-      {activeTab === "roteiros" && (
+      {activeTab === "roteiros" && !isAudiobook && (
         <section className="review-queue-section">
           <div className="workspace-section-title">
             <h2>Roteiros aguardando revisão</h2>
@@ -1163,7 +1190,7 @@ export function ChannelWorkspace({
         </section>
       )}
 
-      {activeTab === "descricoes" && (
+      {activeTab === "descricoes" && !isAudiobook && (
         <section className="review-queue-section">
           <div className="workspace-section-title">
             <h2>Descrições YouTube</h2>
@@ -1368,9 +1395,24 @@ export function ChannelWorkspace({
                                 setActiveTab("videos");
                               })
                               .catch((err) => {
-                                setAudioActionMsg(
-                                  err instanceof Error ? err.message : "Falha ao gerar vídeo"
+                                const message =
+                                  err instanceof Error ? err.message : "Falha ao gerar vídeo";
+                                setAudioActionMsg(message);
+                                setProjects((previous) =>
+                                  previous.map((p) =>
+                                    p.id === project.id
+                                      ? { ...p, status: "failed", errorMessage: message }
+                                      : p
+                                  )
                                 );
+                                setJobByProject((prev) => ({
+                                  ...prev,
+                                  [project.id]: {
+                                    progress: 0,
+                                    statusMessage: message.slice(0, 240),
+                                    status: "failed",
+                                  },
+                                }));
                                 void refreshProjects();
                                 void refreshJobs();
                               })
