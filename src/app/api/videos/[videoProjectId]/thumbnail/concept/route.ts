@@ -3,6 +3,7 @@ import { getChannel } from "../../../../../../core/repo/channels";
 import { getVideoProject, updateProjectThumbnail, getScript } from "../../../../../../core/repo/projects";
 import { generateCoverConcept } from "../../../../../../core/providers/script/coverConcept";
 import { ThumbnailFormatChoice } from "../../../../../../core/providers/image/coverFormats";
+import { mergeThumbnailHistory } from "../../../../../../core/providers/image/thumbnailStyles";
 import { insertUsageEvent } from "../../../../../../core/repo/usage";
 
 export async function POST(req: NextRequest, { params }: { params: { videoProjectId: string } }) {
@@ -27,7 +28,17 @@ export async function POST(req: NextRequest, { params }: { params: { videoProjec
       forceDifferentFormat,
     });
 
-    await updateProjectThumbnail(project.id, concept);
+    const previous = project.thumbnailConcept;
+    // Never wipe past generations when only regenerating the text/format concept.
+    const history = mergeThumbnailHistory(previous?.history, previous?.candidates ?? []);
+    const nextConcept = {
+      ...concept,
+      history,
+      candidates: previous?.candidates ?? null,
+      selectedCandidateIndex: previous?.selectedCandidateIndex ?? null,
+      imageProvider: previous?.imageProvider ?? concept.imageProvider ?? null,
+    };
+    await updateProjectThumbnail(project.id, nextConcept);
 
     if (usage) {
       await insertUsageEvent({
@@ -40,7 +51,7 @@ export async function POST(req: NextRequest, { params }: { params: { videoProjec
     }
 
     return NextResponse.json({
-      concept,
+      concept: nextConcept,
       project: await getVideoProject(project.id),
     });
   } catch (err) {

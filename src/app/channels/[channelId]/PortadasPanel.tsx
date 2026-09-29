@@ -28,6 +28,35 @@ const FALLBACK_PROVIDERS: ProviderOption[] = [
   { id: "gemini", label: "Gemini / Imagen", free: false, available: true, hint: "16:9 nativo" },
 ];
 
+type HistoryItem = {
+  id: string;
+  styleId: string;
+  styleLabel: string;
+  url: string;
+  createdAt: string;
+};
+
+function historyFromConcept(
+  channelId: string,
+  concept: VideoConcept | null | undefined
+): HistoryItem[] {
+  const source =
+    concept?.history?.length
+      ? concept.history
+      : concept?.candidates ?? [];
+  return [...source]
+    .slice()
+    .reverse()
+    .map((c) => ({
+      id: c.id,
+      styleId: c.styleId,
+      styleLabel: c.styleLabel,
+      createdAt: c.createdAt,
+      url: `${mediaUrl(channelId, c.ref) ?? ""}?t=1`,
+    }))
+    .filter((c) => c.url && !c.url.startsWith("null") && !c.url.startsWith("undefined"));
+}
+
 export function PortadasPanel({
   channel,
   projects,
@@ -43,21 +72,32 @@ export function PortadasPanel({
   const cover = useMemo(() => normalizeCoverDna(channel.dna.visual?.cover), [channel.dna.visual?.cover]);
   const formats = cover.formats.filter((f) => f.enabled !== false);
 
-  const eligible = projects.filter((p) => p.status !== "planned");
+  // Portadas always belong to a video (roteiro/áudio). Prefer ones without cover first.
+  const eligible = useMemo(() => {
+    return projects
+      .filter((p) => p.status !== "planned")
+      .slice()
+      .sort((a, b) => {
+        const aHas = a.thumbnailRef ? 1 : 0;
+        const bHas = b.thumbnailRef ? 1 : 0;
+        if (aHas !== bHas) return aHas - bHas;
+        return String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? ""));
+      });
+  }, [projects]);
+
   const [selectedId, setSelectedId] = useState(focusProjectId || eligible[0]?.id || "");
+  const [videoQuery, setVideoQuery] = useState("");
   const selected = projects.find((p) => p.id === selectedId) ?? eligible[0] ?? null;
 
-  const otherProjectThumbs = useMemo(() => {
-    return eligible
-      .filter((p) => p.id !== selected?.id && p.thumbnailRef)
-      .slice(0, 12)
-      .map((p) => ({
-        id: p.id,
-        title: p.title,
-        url: `${mediaUrl(channel.id, p.thumbnailRef!) ?? ""}?t=1`,
-      }))
-      .filter((p) => p.url && !p.url.startsWith("null"));
-  }, [eligible, selected?.id, channel.id]);
+  const filteredVideos = useMemo(() => {
+    const q = videoQuery.trim().toLowerCase();
+    if (!q) return eligible;
+    return eligible.filter(
+      (p) =>
+        p.title.toLowerCase().includes(q) ||
+        (p.thumbnailConcept?.thumbnailText ?? "").toLowerCase().includes(q)
+    );
+  }, [eligible, videoQuery]);
 
   const [formatChoice, setFormatChoice] = useState<FormatChoice>("auto");
   const [title, setTitle] = useState("");
@@ -70,9 +110,7 @@ export function PortadasPanel({
   const [candidateUrls, setCandidateUrls] = useState<
     Array<{ id: string; styleId: string; styleLabel: string; url: string }>
   >([]);
-  const [historyUrls, setHistoryUrls] = useState<
-    Array<{ id: string; styleId: string; styleLabel: string; url: string; createdAt: string }>
-  >([]);
+  const [historyUrls, setHistoryUrls] = useState<HistoryItem[]>([]);
   const [imageCount, setImageCount] = useState<1 | 2 | 3>(3);
   const [busy, setBusy] = useState<"concept" | "image" | "save" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,27 +150,43 @@ export function PortadasPanel({
     }));
     setCandidateUrls(fromConcept.filter((c) => c.url && !c.url.startsWith("null") && !c.url.startsWith("undefined")));
 
-    const historySource =
-      selected.thumbnailConcept?.history?.length
-        ? selected.thumbnailConcept.history
-        : selected.thumbnailConcept?.candidates ?? [];
-    const hist = [...historySource]
-      .slice()
-      .reverse()
-      .map((c) => ({
-        id: c.id,
-        styleId: c.styleId,
-        styleLabel: c.styleLabel,
-        createdAt: c.createdAt,
-        url: `${mediaUrl(channel.id, c.ref) ?? ""}?t=1`,
-      }))
-      .filter((c) => c.url && !c.url.startsWith("null") && !c.url.startsWith("undefined"));
+    const hist = historyFromConcept(channel.id, selected.thumbnailConcept);
     setHistoryUrls(hist);
+
     if (selected.thumbnailConcept?.thumbnailFormatId) {
       const id = String(selected.thumbnailConcept.thumbnailFormatId);
       if (id !== "auto" && id !== "invent") setFormatChoice(id);
     }
-  }, [selected?.id, selected?.thumbnailConcept, selected?.thumbnailRef, channel.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id, channel.id]);
+
+  // Sync from server when the selected project's concept changes (after generate).
+  useEffect(() => {
+    if (!selected?.thumbnailConcept) return;
+    const hist = historyFromConcept(channel.id, selected.thumbnailConcept);
+    if (hist.length === 0) return;
+    setHistoryUrls((prev) => {
+      const byId = new Map(prev.map((h) => [h.id, h]));
+      for (const item of hist) byId.set(item.id, item);
+      return Array.from(byId.values()).sort((a, b) =>
+        String(b.createdAt).localeCompare(String(a.createdAt))
+      );
+    });
+    setConcept(selected.thumbnailConcept);
+    if (selected.thumbnailRef) {
+      setThumbUrl(mediaUrl(channel.id, selected.thumbnailRef));
+    }
+    const fromConcept = (selected.thumbnailConcept.candidates ?? []).map((c) => ({
+      id: c.id,
+      styleId: c.styleId,
+      styleLabel: c.styleLabel,
+      url: `${mediaUrl(channel.id, c.ref) ?? ""}?t=1`,
+    }));
+    const nextCandidates = fromConcept.filter(
+      (c) => c.url && !c.url.startsWith("null") && !c.url.startsWith("undefined")
+    );
+    if (nextCandidates.length) setCandidateUrls(nextCandidates);
+  }, [selected?.thumbnailConcept, selected?.thumbnailRef, channel.id]);
 
   async function runConcept(choice: FormatChoice, forceDifferentFormat = false) {
     if (!selected) return;
@@ -187,6 +241,7 @@ export function PortadasPanel({
         curiosityGap: "",
         titleThumbnailRelation: "",
         status: "ready" as const,
+        history: selected.thumbnailConcept?.history ?? concept?.history ?? null,
       };
       const res = await fetch(`/api/videos/${selected.id}/thumbnail/generate`, {
         method: "POST",
@@ -198,7 +253,13 @@ export function PortadasPanel({
           thumbnailText,
           thumbnailScene,
           concept: concept
-            ? { ...concept, title, thumbnailText, thumbnailScene }
+            ? {
+                ...concept,
+                title,
+                thumbnailText,
+                thumbnailScene,
+                history: concept.history ?? selected.thumbnailConcept?.history ?? null,
+              }
             : fallbackConcept,
         }),
       });
@@ -207,37 +268,22 @@ export function PortadasPanel({
       setConcept(data.concept);
       setThumbUrl(data.thumbnailUrl);
       setCandidateUrls(data.candidates ?? []);
-      const hist = (data.concept?.history ?? data.candidates ?? [])
-        .slice()
-        .reverse()
-        .map((c: { id: string; styleId: string; styleLabel: string; ref: string; createdAt: string }) => ({
-          id: c.id,
-          styleId: c.styleId,
-          styleLabel: c.styleLabel,
-          createdAt: c.createdAt,
-          url: `${mediaUrl(channel.id, c.ref) ?? data.candidates?.find((x: { id: string }) => x.id === c.id)?.url ?? ""}?t=${Date.now()}`,
-        }))
-        .filter((c: { url: string }) => Boolean(c.url) && !c.url.startsWith("null"));
-      // Prefer server candidate urls when present
-      if (Array.isArray(data.candidates) && data.concept?.history) {
-        const urlById = new Map(
-          (data.candidates as Array<{ id: string; url: string }>).map((c) => [c.id, c.url])
+
+      const urlById = new Map(
+        ((data.candidates ?? []) as Array<{ id: string; url: string }>).map((c) => [c.id, c.url])
+      );
+      const fromServer = historyFromConcept(channel.id, data.concept).map((h) => ({
+        ...h,
+        url: urlById.get(h.id) ?? h.url.replace(/\?t=1$/, `?t=${Date.now()}`),
+      }));
+      setHistoryUrls((prev) => {
+        const byId = new Map(prev.map((h) => [h.id, h]));
+        for (const item of fromServer) byId.set(item.id, item);
+        return Array.from(byId.values()).sort((a, b) =>
+          String(b.createdAt).localeCompare(String(a.createdAt))
         );
-        setHistoryUrls(
-          [...(data.concept.history as Array<{ id: string; styleId: string; styleLabel: string; ref: string; createdAt: string }>)]
-            .slice()
-            .reverse()
-            .map((c) => ({
-              id: c.id,
-              styleId: c.styleId,
-              styleLabel: c.styleLabel,
-              createdAt: c.createdAt,
-              url: urlById.get(c.id) ?? `${mediaUrl(channel.id, c.ref)}?t=${Date.now()}`,
-            }))
-        );
-      } else {
-        setHistoryUrls(hist);
-      }
+      });
+
       if (data.partialError) setError(`Algumas falharam: ${data.partialError}`);
       if (data.project) onProjectUpdated(data.project);
     } catch (err) {
@@ -300,6 +346,12 @@ export function PortadasPanel({
     }
   }
 
+  function pickVideo(id: string) {
+    setHistoryUrls([]);
+    setCandidateUrls([]);
+    setSelectedId(id);
+  }
+
   if (eligible.length === 0) {
     return (
       <section className="costs-section">
@@ -319,21 +371,59 @@ export function PortadasPanel({
       <div className="costs-heading">
         <div className="workspace-section-title">
           <h2>Portadas (Thumbnail Creative Engine)</h2>
-          <p>Título + portada como uma unidade. Formatos Amor Amor · Automático · Inventar.</p>
+          <p>
+            Cada portada pertence a um vídeo. Escolhe o vídeo abaixo, gera imagens — o histórico
+            desse vídeo acumula e não apaga gerações anteriores.
+          </p>
         </div>
-        <select
-          className="ideas-ai-select"
-          value={selected?.id ?? ""}
-          onChange={(e) => setSelectedId(e.target.value)}
-          aria-label="Projeto"
-        >
-          {eligible.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.thumbnailRef ? "[capa] " : ""}
-              {p.title}
-            </option>
-          ))}
-        </select>
+      </div>
+
+      <div className="portadas-video-picker">
+        <div className="portadas-video-picker-bar">
+          <label className="portadas-label portadas-video-search">
+            Vídeo
+            <input
+              type="search"
+              value={videoQuery}
+              onChange={(e) => setVideoQuery(e.target.value)}
+              placeholder="Pesquisar por título…"
+              aria-label="Pesquisar vídeo"
+            />
+          </label>
+          <span className="portadas-video-count">
+            {filteredVideos.length} de {eligible.length}
+            {selected ? ` · a trabalhar: ${selected.title}` : ""}
+          </span>
+        </div>
+        <div className="portadas-video-rail" role="listbox" aria-label="Vídeos do canal">
+          {filteredVideos.length === 0 ? (
+            <p className="portadas-actions-hint">Nenhum vídeo com esse nome.</p>
+          ) : (
+            filteredVideos.map((p) => {
+              const active = p.id === selected?.id;
+              const thumb = p.thumbnailRef ? mediaUrl(channel.id, p.thumbnailRef) : null;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  className={`portadas-video-chip${active ? " active" : ""}${p.thumbnailRef ? " has-thumb" : ""}`}
+                  onClick={() => pickVideo(p.id)}
+                  title={p.title}
+                >
+                  {thumb ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={`${thumb}?t=1`} alt="" />
+                  ) : (
+                    <span className="portadas-video-chip-empty">sem capa</span>
+                  )}
+                  <span className="portadas-video-chip-title">{p.title}</span>
+                </button>
+              );
+            })
+          )}
+        </div>
       </div>
 
       {error && <div className="generation-error">{error}</div>}
@@ -475,7 +565,7 @@ export function PortadasPanel({
             )}
           </div>
           <p className="portadas-actions-hint">
-            Gera até 3 variações de estilo; clica numa para marcar como principal (lista do canal).
+            Cada geração fica no histórico deste vídeo. Clica numa para marcar como principal.
           </p>
 
           {concept?.titleThumbnailRelation && (
@@ -486,16 +576,18 @@ export function PortadasPanel({
         </div>
 
         <div className="costs-block portadas-preview">
-          <h3>Preview {candidateUrls.length > 1 ? `(${candidateUrls.length} variações)` : ""}</h3>
+          <h3>
+            Lote atual {candidateUrls.length > 1 ? `(${candidateUrls.length} variações)` : ""}
+          </h3>
           {busy === "image" ? (
             <div className="portadas-img-empty">Gerando {imageCount} imagen{imageCount > 1 ? "s" : ""}…</div>
           ) : candidateUrls.length > 0 ? (
             <div className={`portadas-candidates portadas-candidates-${Math.min(3, candidateUrls.length)}`}>
               {candidateUrls.map((c, i) => {
-                const selectedId =
+                const selectedCandidateId =
                   concept?.candidates?.[concept.selectedCandidateIndex ?? 0]?.id ??
                   candidateUrls[0]?.id;
-                const isSelected = c.id === selectedId || (selectedId == null && i === 0);
+                const isSelected = c.id === selectedCandidateId || (selectedCandidateId == null && i === 0);
                 return (
                   <button
                     key={c.id}
@@ -535,57 +627,33 @@ export function PortadasPanel({
             </p>
           )}
 
-          {(historyUrls.length > 0 || otherProjectThumbs.length > 0) && (
+          {historyUrls.length > 0 && (
             <div className="portadas-history">
-              <h3>Histórico de portadas</h3>
-              {historyUrls.length > 0 && (
-                <>
-                  <p className="portadas-actions-hint">Gerações deste vídeo — clica para tornar principal.</p>
-                  <div className="portadas-history-strip">
-                    {historyUrls.map((c) => {
-                      const isPrimary =
-                        thumbUrl?.split("?")[0] === c.url.split("?")[0] ||
-                        concept?.candidates?.[concept.selectedCandidateIndex ?? 0]?.id === c.id;
-                      return (
-                        <button
-                          key={c.id}
-                          type="button"
-                          className={`portadas-history-item${isPrimary ? " active" : ""}`}
-                          onClick={() => void selectCandidate(c.id)}
-                          disabled={!!busy}
-                          title={`${c.styleLabel} · tornar principal`}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={c.url} alt={c.styleLabel} />
-                          <span>{c.styleLabel}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-              {otherProjectThumbs.length > 0 && (
-                <>
-                  <p className="portadas-actions-hint" style={{ marginTop: 12 }}>
-                    Outros vídeos do canal
-                  </p>
-                  <div className="portadas-history-strip">
-                    {otherProjectThumbs.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        className="portadas-history-item"
-                        onClick={() => setSelectedId(p.id)}
-                        title={p.title}
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={p.url} alt={p.title} />
-                        <span>{p.title}</span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
+              <h3>Histórico deste vídeo ({historyUrls.length})</h3>
+              <p className="portadas-actions-hint">
+                Todas as gerações deste vídeo — gera de novo sem apagar as anteriores.
+              </p>
+              <div className="portadas-history-strip">
+                {historyUrls.map((c) => {
+                  const isPrimary =
+                    thumbUrl?.split("?")[0] === c.url.split("?")[0] ||
+                    concept?.candidates?.[concept.selectedCandidateIndex ?? 0]?.id === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      className={`portadas-history-item${isPrimary ? " active" : ""}`}
+                      onClick={() => void selectCandidate(c.id)}
+                      disabled={!!busy}
+                      title={`${c.styleLabel} · tornar principal`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={c.url} alt={c.styleLabel} />
+                      <span>{c.styleLabel}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
 

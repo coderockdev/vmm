@@ -22,8 +22,9 @@ export async function POST(req: NextRequest, { params }: { params: { videoProjec
   const count = Math.min(3, Math.max(1, Number(body.count) || 1));
   const styles = stylesForCount(count);
 
+  const stored = project.thumbnailConcept;
   let concept: VideoConcept | null =
-    (body.concept as VideoConcept | undefined) ?? project.thumbnailConcept;
+    (body.concept as VideoConcept | undefined) ?? stored;
   if (!concept) {
     return NextResponse.json(
       { error: "Gere o conceito (título+formato) antes de gerar a imagem." },
@@ -34,6 +35,12 @@ export async function POST(req: NextRequest, { params }: { params: { videoProjec
   if (typeof body.title === "string") concept = { ...concept, title: body.title };
   if (typeof body.thumbnailText === "string") concept = { ...concept, thumbnailText: body.thumbnailText };
   if (typeof body.thumbnailScene === "string") concept = { ...concept, thumbnailScene: body.thumbnailScene };
+
+  // Always accumulate from DB — client body can be stale and omit history.
+  const priorHistory = mergeThumbnailHistory(
+    stored?.history,
+    [...(stored?.candidates ?? []), ...(concept.history ?? []), ...(concept.candidates ?? [])]
+  );
 
   const provider = getImageProvider(imageProvider);
   const candidates: ThumbnailCandidate[] = [];
@@ -78,7 +85,7 @@ export async function POST(req: NextRequest, { params }: { params: { videoProjec
     }
 
     const primary = candidates[0];
-    const history = mergeThumbnailHistory(concept.history ?? concept.candidates, candidates);
+    const history = mergeThumbnailHistory(priorHistory, candidates);
     const nextConcept: VideoConcept = {
       ...concept,
       imageProvider: provider.name,

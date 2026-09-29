@@ -1,4 +1,4 @@
-import { getChannel, createChannel } from "./repo/channels";
+import { getChannel, createChannel, updateChannelDna } from "./repo/channels";
 import { SEED_CHANNELS } from "./seedData";
 import { reconcileStuckJobs } from "./pipeline/reconcile";
 
@@ -11,24 +11,36 @@ import { reconcileStuckJobs } from "./pipeline/reconcile";
  * Also reconciles any ProductionJob left orphaned by a previous process
  * crash/restart (see pipeline/reconcile.ts) — piggybacking here means every
  * page load gets a sane job list without a dedicated server-startup hook.
+ *
+ * Set FORCE_SEED_DNA=1 to overwrite DNA on existing seed channels from
+ * seedData (use when Supabase drifted / generationPrompt empty).
  */
 export async function ensureSeeded(): Promise<void> {
   await reconcileStuckJobs();
+  const forceDna = process.env.FORCE_SEED_DNA === "1" || process.env.FORCE_SEED_DNA === "true";
   for (const seed of SEED_CHANNELS) {
-    if (await getChannel(seed.id)) continue;
-    try {
-      await createChannel({
-        id: seed.id,
-        name: seed.name,
-        niche: seed.niche,
-        coverColor: seed.coverColor,
-        dna: seed.dna,
-      });
+    const existing = await getChannel(seed.id);
+    if (!existing) {
+      try {
+        await createChannel({
+          id: seed.id,
+          name: seed.name,
+          niche: seed.niche,
+          coverColor: seed.coverColor,
+          dna: seed.dna,
+        });
+        // eslint-disable-next-line no-console
+        console.log(`[seed] created channel ${seed.id}`);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!/duplicate key|unique constraint/i.test(message)) throw err;
+      }
+      continue;
+    }
+    if (forceDna) {
+      await updateChannelDna(seed.id, seed.dna);
       // eslint-disable-next-line no-console
-      console.log(`[seed] created channel ${seed.id}`);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (!/duplicate key|unique constraint/i.test(message)) throw err;
+      console.log(`[seed] synced DNA for ${seed.id}`);
     }
   }
 }
