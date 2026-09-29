@@ -35,7 +35,7 @@ export const THUMBNAIL_STYLE_VARIANTS: Array<{
     id: "emotional-close",
     label: "Close emocional",
     promptExtra:
-      "STYLE VARIANT — Emotional close: tighter crop on the hero object or face, intimate framing, urgent feeling, warm human detail.",
+      "STYLE VARIANT — Emotional close: tighter crop on the hero object or face ONLY (not the text). Keep on-image text fully inside an 8% safe margin — never clip letters.",
   },
 ];
 

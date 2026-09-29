@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { BookListItem, Chapter } from "../../../core/types";
 
 type BookDetail = {
@@ -27,7 +27,12 @@ const STATUS_LABEL: Record<string, string> = {
   failed: "Falhou",
 };
 
-export function BooksPanel({ channelId }: { channelId: string }) {
+type Props = {
+  channelId: string;
+  onGoToVoice?: () => void;
+};
+
+export function BooksPanel({ channelId, onGoToVoice }: Props) {
   const [books, setBooks] = useState<BookListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
@@ -37,6 +42,8 @@ export function BooksPanel({ channelId }: { channelId: string }) {
   const [detail, setDetail] = useState<BookDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [autoImported, setAutoImported] = useState(false);
+  const [query, setQuery] = useState("");
+  const [voiceLabel, setVoiceLabel] = useState<string | null>(null);
 
   const loadBooks = useCallback(async () => {
     setLoading(true);
@@ -59,6 +66,17 @@ export function BooksPanel({ channelId }: { channelId: string }) {
   useEffect(() => {
     void loadBooks();
   }, [loadBooks]);
+
+  useEffect(() => {
+    void fetch(`/api/channels/${channelId}/audiobook/settings`)
+      .then(async (res) => {
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        const voice = String(json.settings?.ttsVoice ?? "");
+        setVoiceLabel(voice.replace("pt-BR-Chirp3-HD-", "") || null);
+      })
+      .catch(() => undefined);
+  }, [channelId]);
 
   // First visit with empty catalog → import the Verne package once.
   useEffect(() => {
@@ -122,9 +140,21 @@ export function BooksPanel({ channelId }: { channelId: string }) {
     }
   }
 
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return books;
+    return books.filter(
+      (b) =>
+        b.title.toLowerCase().includes(q) ||
+        String(b.orderIndex + 1).includes(q) ||
+        String(b.number).includes(q)
+    );
+  }, [books, query]);
+
   const totalChapters = books.reduce((s, b) => s + b.totalChapters, 0);
   const doneChapters = books.reduce((s, b) => s + b.chaptersDone, 0);
-  const currentBook = books.find((b) => b.status === "in_progress") ?? books.find((b) => b.status === "queued");
+  const currentBook =
+    books.find((b) => b.status === "in_progress") ?? books.find((b) => b.status === "queued");
 
   if (selectedId) {
     return (
@@ -145,7 +175,8 @@ export function BooksPanel({ channelId }: { channelId: string }) {
                 capítulos · ~{Math.round((detail.book.totalWords / 150) * 10) / 10} min
               </p>
               <p className="books-muted" style={{ marginTop: 4 }}>
-                Cada linha = 1 vídeo. Produzir na ordem do capítulo 1 ao último.
+                Cada linha = 1 vídeo no YouTube. Produzir na ordem do capítulo 1 ao último.
+                {voiceLabel ? ` Voz do canal: ${voiceLabel}.` : ""}
               </p>
             </header>
             <div className="books-table-wrap">
@@ -155,6 +186,7 @@ export function BooksPanel({ channelId }: { channelId: string }) {
                     <th>#</th>
                     <th>Capítulo</th>
                     <th>Palavras</th>
+                    <th>Chars</th>
                     <th>~ min</th>
                     <th>Status</th>
                   </tr>
@@ -165,6 +197,7 @@ export function BooksPanel({ channelId }: { channelId: string }) {
                       <td>{c.index}</td>
                       <td>{c.label}</td>
                       <td>{c.words.toLocaleString("pt-BR")}</td>
+                      <td>{c.chars.toLocaleString("pt-BR")}</td>
                       <td>{Math.round((c.words / 150) * 10) / 10}</td>
                       <td>
                         <span className={`books-status books-status-${c.status}`}>
@@ -189,8 +222,9 @@ export function BooksPanel({ channelId }: { channelId: string }) {
         <div>
           <h2>Obras de Júlio Verne</h2>
           <p>
-            Uma obra de cada vez, capítulo a capítulo.{" "}
-            <strong>1 capítulo = 1 vídeo</strong> na playlist da obra.
+            Catálogo completo — uma obra de cada vez, capítulo a capítulo.{" "}
+            <strong>1 capítulo = 1 vídeo</strong> na playlist da obra. Sem ideias/roteiros virais:
+            escolhe a obra, define a voz, gera.
           </p>
           {books.length > 0 && (
             <p className="books-muted" style={{ marginTop: 8 }}>
@@ -203,6 +237,38 @@ export function BooksPanel({ channelId }: { channelId: string }) {
           {importing ? "A carregar…" : books.length === 0 ? "Carregar catálogo" : "Atualizar catálogo"}
         </button>
       </div>
+
+      <div className="books-voice-banner">
+        <div>
+          <strong>Antes de gerar:</strong> define a voz Chirp (Charon / Orus / Fenrir)
+          {voiceLabel ? (
+            <>
+              {" "}
+              — atual: <em>{voiceLabel}</em>
+            </>
+          ) : (
+            " na aba Áudio"
+          )}
+          .
+        </div>
+        {onGoToVoice && (
+          <button type="button" className="books-back" onClick={onGoToVoice}>
+            Definir voz →
+          </button>
+        )}
+      </div>
+
+      {books.length > 0 && (
+        <label className="books-search">
+          <span className="visually-hidden">Filtrar obras</span>
+          <input
+            type="search"
+            placeholder="Filtrar por título ou nº…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </label>
+      )}
 
       {message && <p className="books-ok">{message}</p>}
       {error && <p className="generation-error">{error}</p>}
@@ -217,9 +283,9 @@ export function BooksPanel({ channelId }: { channelId: string }) {
         </p>
       )}
 
-      {books.length > 0 && (
+      {filtered.length > 0 && (
         <div className="books-grid">
-          {books.map((b) => {
+          {filtered.map((b) => {
             const pct =
               b.totalChapters > 0 ? Math.round((b.chaptersDone / b.totalChapters) * 100) : 0;
             const isNext = currentBook?.id === b.id;
@@ -249,6 +315,10 @@ export function BooksPanel({ channelId }: { channelId: string }) {
             );
           })}
         </div>
+      )}
+
+      {books.length > 0 && filtered.length === 0 && (
+        <p className="books-muted">Nenhuma obra corresponde a «{query}».</p>
       )}
     </div>
   );

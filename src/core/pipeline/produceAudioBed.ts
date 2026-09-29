@@ -42,6 +42,8 @@ export async function produceAudioBed(args: {
   styleOverride?: string | null;
   musicVolume?: number | null;
   sfxVolume?: number | null;
+  /** Force a specific library music track (Audio tab picker). */
+  libraryEntryId?: string | null;
 }): Promise<{ project: NonNullable<Awaited<ReturnType<typeof getVideoProject>>> }> {
   await ensureAudioLibrarySeeded();
 
@@ -122,6 +124,7 @@ export async function produceAudioBed(args: {
       scriptText: musical.adaptToScript ? scriptText : undefined,
       outDir: tmpDir,
       fileBaseName: `music-${project.id}`,
+      libraryEntryId: args.libraryEntryId ?? null,
     });
     musicRef = await persistFile(
       music.filePath,

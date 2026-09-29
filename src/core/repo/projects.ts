@@ -140,6 +140,8 @@ function rowToProject(row: ProjectRow): VideoProject {
     headline: publish?.headline ?? null,
     youtubeDescription: publish?.youtubeDescription ?? null,
     autoFlow: Boolean(publish?.autoFlow),
+    youtubeVideoId: publish?.youtubeVideoId ?? null,
+    youtubeUrl: publish?.youtubeUrl ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

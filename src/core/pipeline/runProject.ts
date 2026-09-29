@@ -117,18 +117,24 @@ export async function runProject(jobId: string): Promise<void> {
       await finishAutoFlowAfterAudio({
         channel,
         projectId: project.id,
+        voiceOnly: false,
+        uploadYoutube: true,
         onProgress: async (message, progress) => {
           await updateJob(job.id, {
-            status: progress >= 75 ? "rendering" : "composing",
+            status: progress >= 94 ? "rendering" : progress >= 72 ? "rendering" : "composing",
             progress: Math.min(98, progress),
             statusMessage: message,
           }).catch(() => undefined);
-          if (progress >= 75) {
+          if (progress >= 72) {
             await updateProjectStatus(project.id, "rendering").catch(() => undefined);
           }
         },
       });
-      await updateJob(job.id, { status: "completed", progress: 100, statusMessage: "Vídeo pronto (auto)" });
+      await updateJob(job.id, {
+        status: "completed",
+        progress: 100,
+        statusMessage: "Fluxo auto concluído (vídeo + YT se ligado)",
+      });
       return;
     }
 

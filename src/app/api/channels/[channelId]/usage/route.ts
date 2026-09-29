@@ -66,8 +66,12 @@ export async function GET(req: NextRequest, { params }: { params: { channelId: s
         byStage.ideas += b.ideas || 0;
         byStage.script += b.script || 0;
         byStage.audio += b.audio || 0;
+        byStage.music += b.music || 0;
+        byStage.sfx += b.sfx || 0;
+        byStage.transcription += b.transcription || 0;
         byStage.render += b.render || 0;
         byStage.thumbnail += b.thumbnail || 0;
+        byStage.youtube += b.youtube || 0;
       } else if (p.costUsdTotal != null && p.costUsdTotal > 0) {
         byStage.script += p.costUsdTotal;
       }
@@ -128,6 +132,7 @@ export async function GET(req: NextRequest, { params }: { params: { channelId: s
     transcription: "Transcrição/sync",
     render: "Vídeo / render",
     thumbnail: "Portadas / thumbnail",
+    youtube: "YouTube upload",
   };
 
   const recentEvents = events.slice(0, 40).map((e: UsageEvent) => ({

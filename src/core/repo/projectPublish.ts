@@ -7,6 +7,9 @@ export type ProjectPublishMeta = {
   youtubeDescription?: string | null;
   /** When true, after TTS run music/SFX + scrolling video automatically. */
   autoFlow?: boolean;
+  youtubeVideoId?: string | null;
+  youtubeUrl?: string | null;
+  youtubeUploadedAt?: string | null;
   updatedAt?: string;
 };
 

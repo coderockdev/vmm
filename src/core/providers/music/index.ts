@@ -2,10 +2,14 @@ import path from "path";
 import fs from "fs";
 import { GenerateMusicArgs, GeneratedMusic, MusicProvider } from "./MusicProvider";
 import {
+  getLibraryEntry,
   moodsFromScript,
   pickBestLibraryEntry,
   resolveLibraryFile,
 } from "../audioLibrary/catalog";
+import { takeNextStandardMusic } from "./musicRotation";
+import { getChannel } from "../../repo/channels";
+import { normalizeMusicalDna } from "./musicalDna";
 import { runFfmpeg, ensureParentDir, ffprobeDuration } from "../../audio/ffmpegUtils";
 
 /**
@@ -30,12 +34,32 @@ export class LibraryMusicProvider implements MusicProvider {
           ? "espiritual"
           : args.style;
 
-    const entry = pickBestLibraryEntry("music", {
-      scriptText: `${args.scriptText ?? ""} ${args.instructions ?? ""} ${styleHint}`,
-      moods,
-      intensity: args.intensity ?? "soft",
-      channelId,
-    });
+    const forced = args.libraryEntryId ? getLibraryEntry(args.libraryEntryId) : null;
+    if (args.libraryEntryId && (!forced || forced.type !== "music")) {
+      throw new Error(`Faixa de biblioteca inválida: ${args.libraryEntryId}`);
+    }
+
+    let standard: ReturnType<typeof takeNextStandardMusic> = null;
+    if (!forced && channelId) {
+      const channel = await getChannel(channelId).catch(() => null);
+      const musical = normalizeMusicalDna(channel?.dna.musical);
+      if (musical.standardMusicIds.length > 0) {
+        standard = takeNextStandardMusic({
+          channelId,
+          standardIds: musical.standardMusicIds,
+        });
+      }
+    }
+
+    const entry =
+      forced ??
+      standard ??
+      pickBestLibraryEntry("music", {
+        scriptText: `${args.scriptText ?? ""} ${args.instructions ?? ""} ${styleHint}`,
+        moods,
+        intensity: args.intensity ?? "soft",
+        channelId,
+      });
     if (!entry) {
       throw new Error(
         "Biblioteca de música vazia. Adicione faixas instrumentais da YouTube Audio Library em data/audio-library/ (ver README)."

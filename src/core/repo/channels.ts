@@ -65,10 +65,14 @@ function normalizeDna(raw: ChannelDNA, channelId?: string): ChannelDNA {
     successfulTitles = [...AMOR_AMOR_SUCCESSFUL_TITLES];
   }
 
+  // Julio Verne is always audiobook — even if Supabase DNA drifted to viral.
+  const mode: ChannelDNA["mode"] =
+    channelId === "julio-verne-audiolivro" || raw.mode === "audiobook" ? "audiobook" : "viral";
+
   return {
     ...raw,
     successfulTitles,
-    mode: raw.mode === "audiobook" ? "audiobook" : "viral",
+    mode,
     scriptRules: {
       ...raw.scriptRules,
       generationPrompt: raw.scriptRules?.generationPrompt ?? "",

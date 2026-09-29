@@ -126,6 +126,27 @@ export function pickBestLibraryEntry(
     categoryHint?: string;
   }
 ): AudioLibraryEntry | null {
+  const ranked = rankLibraryEntries(type, args);
+  if (ranked.length === 0) return null;
+  // Among top scores, rotate so videos don't all share the same bed.
+  const topScore = ranked[0].score;
+  const top = ranked.filter((r) => r.score >= topScore - 1);
+  return top[Math.floor(Math.random() * top.length)]?.entry ?? ranked[0].entry;
+}
+
+/** Ranked music/SFX candidates for UI preview pickers. */
+export function rankLibraryEntries(
+  type: AudioLibraryType,
+  args: {
+    scriptText: string;
+    moods?: string[];
+    intensity?: string;
+    channelId?: string;
+    excludeIds?: string[];
+    categoryHint?: string;
+    limit?: number;
+  }
+): Array<{ entry: AudioLibraryEntry; score: number }> {
   const exclude = new Set(args.excludeIds ?? []);
   let pool = listLibraryEntries({
     type,
@@ -138,16 +159,14 @@ export function pickBestLibraryEntry(
     if (hinted.length) pool = hinted;
   }
 
-  if (pool.length === 0) return null;
+  if (pool.length === 0) return [];
 
   const ranked = pool
-    .map((e) => ({ e, s: scoreLibraryEntry(e, args) }))
-    .sort((a, b) => b.s - a.s);
+    .map((e) => ({ entry: e, score: scoreLibraryEntry(e, args) }))
+    .sort((a, b) => b.score - a.score);
 
-  // Among top scores, rotate so videos don't all share the same bed.
-  const topScore = ranked[0].s;
-  const top = ranked.filter((r) => r.s >= topScore - 1).map((r) => r.e);
-  return top[Math.floor(Math.random() * top.length)] ?? ranked[0].e;
+  const limit = Math.max(1, Math.min(30, args.limit ?? 12));
+  return ranked.slice(0, limit);
 }
 
 export function moodsFromScript(scriptText: string): string[] {

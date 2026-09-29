@@ -131,7 +131,7 @@ export function defaultStyleSettings(partial?: Partial<VideoStyleSettings>): Vid
     lineHeight: 1.35,
     paragraphSpacing: 0.55,
     sideMarginPct: 0.09,
-    readingZone: 0.42,
+    readingZone: 0.5,
     scrollSpeedFactor: 1,
     textShadow: true,
     textOutline: true,

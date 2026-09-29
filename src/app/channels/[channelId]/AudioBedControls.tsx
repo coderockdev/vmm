@@ -12,7 +12,10 @@ type LibEntry = {
   file: string;
   type: string;
   mood: string[];
+  intensity?: string;
   attributionRequired: boolean;
+  previewUrl?: string;
+  score?: number | null;
 };
 
 type BedBusy = "music" | "sfx" | "mix" | "video" | "preview" | null;
@@ -52,11 +55,14 @@ export function AudioBedControls({
   const [flashOk, setFlashOk] = useState<string | null>(null);
   const [musicStyle, setMusicStyle] = useState(project.musicStyle || "romantico-cinematico");
   const [entries, setEntries] = useState<LibEntry[]>([]);
+  const [selectedLibraryId, setSelectedLibraryId] = useState<string | null>(
+    project.musicLibraryId ?? null
+  );
   const [videoStyle, setVideoStyle] = useState("scrolling-text");
   const [presetId, setPresetId] = useState("amor-amor");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [musicPct, setMusicPct] = useState(
-    clampPct((project.musicVolume ?? 0.06) * 100, 6)
+    clampPct((project.musicVolume ?? 0.08) * 100, 8)
   );
   const [sfxPct, setSfxPct] = useState(clampPct((project.sfxVolume ?? 0.5) * 100, 50));
 
@@ -75,6 +81,11 @@ export function AudioBedControls({
       .then((r) => r.json())
       .then((d) => {
         setEntries(d.entries ?? []);
+        if (typeof d.selectedLibraryId === "string") {
+          setSelectedLibraryId(d.selectedLibraryId);
+        } else if (project.musicLibraryId) {
+          setSelectedLibraryId(project.musicLibraryId);
+        }
         if (d.project?.id === project.id) {
           const hydrated = d.project as VideoProject;
           if (
@@ -82,6 +93,7 @@ export function AudioBedControls({
             hydrated.mixSfxRef !== project.mixSfxRef ||
             hydrated.mixAudioRef !== project.mixAudioRef ||
             hydrated.musicTrackName !== project.musicTrackName ||
+            hydrated.musicLibraryId !== project.musicLibraryId ||
             JSON.stringify(hydrated.sfxCues) !== JSON.stringify(project.sfxCues)
           ) {
             onUpdated(hydrated);
@@ -99,6 +111,10 @@ export function AudioBedControls({
     // Intentionally only re-fetch when project id changes — onUpdated would loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
+
+  useEffect(() => {
+    if (project.musicLibraryId) setSelectedLibraryId(project.musicLibraryId);
+  }, [project.musicLibraryId]);
 
   useEffect(() => {
     if (typeof project.musicVolume === "number") {
@@ -437,16 +453,74 @@ export function AudioBedControls({
           {busy === "music" && <span className="audio-bed-inline-working"> · a gerar…</span>}
         </h4>
         <p className="portadas-actions-hint">
-          Um único tema da biblioteca, em <strong>loop</strong> durante todo o vídeo. 100%
-          instrumental · zero custo.
+          Ouves as faixas em <strong>loop</strong>, escolhes uma, e aplicas sob a voz. Instrumental
+          Mixkit (sem atribuição). Volume ~10%.
         </p>
         {project.musicTrackName && (
           <p className="audio-bed-track-name">
             Faixa actual: <strong>{project.musicTrackName}</strong>
           </p>
         )}
+
+        {entries.length > 0 && (
+          <div className="audio-bed-picker" role="list">
+            <p className="portadas-actions-hint">
+              Sugestões para este vídeo — ouve e clica <strong>Usar esta</strong>:
+            </p>
+            {entries.slice(0, 8).map((entry) => {
+              const isSelected = selectedLibraryId === entry.id || project.musicLibraryId === entry.id;
+              const preview =
+                entry.previewUrl ||
+                `/api/audio-library/file?file=${encodeURIComponent(entry.file)}`;
+              return (
+                <div
+                  key={entry.id}
+                  className={`audio-bed-pick${isSelected ? " is-selected" : ""}`}
+                  role="listitem"
+                >
+                  <div className="audio-bed-pick-head">
+                    <strong>{entry.name}</strong>
+                    <span className="books-muted">
+                      {(entry.mood ?? []).slice(0, 3).join(" · ") || "instrumental"}
+                      {entry.intensity ? ` · ${entry.intensity}` : ""}
+                    </span>
+                  </div>
+                  <audio
+                    className="review-queue-audio"
+                    controls
+                    loop
+                    preload="none"
+                    src={preview}
+                  />
+                  <button
+                    type="button"
+                    disabled={bedBusy}
+                    onClick={() => {
+                      setSelectedLibraryId(entry.id);
+                      void runBedUi(
+                        {
+                          musicOnly: true,
+                          style: musicStyle,
+                          libraryEntryId: entry.id,
+                        },
+                        "music"
+                      );
+                    }}
+                  >
+                    {busy === "music" && selectedLibraryId === entry.id
+                      ? "A aplicar…"
+                      : isSelected && musicReady
+                        ? "Em uso · reaplicar"
+                        : "Usar esta"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <label className="portadas-label">
-          Estilo musical
+          Estilo musical (ao regenerar sem escolha)
           <select
             value={musicStyle}
             onChange={(e) => setMusicStyle(e.target.value)}
@@ -464,35 +538,47 @@ export function AudioBedControls({
           <input
             type="range"
             min={0}
-            max={20}
+            max={25}
             step={1}
             value={musicPct}
             disabled={bedBusy}
             onChange={(e) => setMusicPct(Number(e.target.value))}
           />
-          <span className="portadas-actions-hint">Recomendado 5–10% (não compete com a voz).</span>
+          <span className="portadas-actions-hint">
+            Padrão do canal: 8%. Rodízio automático Voxscape → Rest Now → Vastness.
+          </span>
         </label>
         <div className="portadas-actions">
           <button
             type="button"
             disabled={bedBusy}
-            onClick={() => void runBedUi({ musicOnly: true, style: musicStyle }, "music")}
+            onClick={() =>
+              void runBedUi(
+                {
+                  musicOnly: true,
+                  style: musicStyle,
+                },
+                "music"
+              )
+            }
           >
-            {busy === "music" ? "A gerar música…" : project.musicRef ? "Regenerar música" : "Gerar música"}
+            {busy === "music"
+              ? "A gerar música…"
+              : project.musicRef
+                ? "Sortear outra faixa"
+                : "Gerar música automática"}
           </button>
           <button
             type="button"
             disabled={bedBusy}
-            onClick={() => void runBedUi({ musicOff: true, remixOnly: true }, "music")}
+            onClick={() => {
+              setSelectedLibraryId(null);
+              void runBedUi({ musicOff: true, remixOnly: true }, "music");
+            }}
           >
             Sem música
           </button>
         </div>
-        {entries.length > 0 && (
-          <p className="portadas-actions-hint">
-            {entries.length} faixas na biblioteca (sem atribuição preferidas).
-          </p>
-        )}
       </div>
 
       <div className="audio-bed-block">

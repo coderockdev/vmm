@@ -4,16 +4,18 @@ Biblioteca **interna** de músicas instrumentais e SFX.
 
 ## Fonte recomendada
 
-[Biblioteca de Áudio do YouTube](https://www.youtube.com/audiolibrary)
+[Biblioteca de Áudio do YouTube](https://www.youtube.com/audiolibrary) **ou** [Mixkit Free Music](https://mixkit.co/free-stock-music/) (licença Mixkit — atribuição **não** necessária).
 
 - Preferir faixas **“Atribuição não necessária”** (`attributionRequired: false`)
 - Só músicas **100% instrumentais** (sem vocal / letra)
+- Evitar Kevin MacLeod / Incompetech se não quiseres crédito na descrição (CC BY exige atribuição)
 - SFX pelas categorias do YouTube (telefone, chuva, vento, etc.)
 
 ## O que NÃO fazer
 
-- Não baixar automaticamente áudio de páginas aleatórias da internet
+- Não baixar automaticamente áudio de páginas aleatórias da internet sem licença clara
 - Não usar faixas sem licença registada no `catalog.json`
+- Não deixar `licenseType: "dev-placeholder"` em produção (são beeps/sines)
 
 ## Como adicionar
 

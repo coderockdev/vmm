@@ -294,6 +294,9 @@ export interface VideoProject {
   youtubeDescription: string | null;
   /** Auto-flow: continue music/SFX after TTS. */
   autoFlow: boolean;
+  /** Set after successful YouTube upload (Data API). */
+  youtubeVideoId: string | null;
+  youtubeUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }

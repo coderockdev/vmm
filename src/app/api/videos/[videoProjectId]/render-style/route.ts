@@ -15,7 +15,11 @@ import {
   completeProjectRender,
 } from "../../../../../core/repo/projects";
 import { getChannel } from "../../../../../core/repo/channels";
-import { ensureLocalFile, persistFile, workingFilePath } from "../../../../../core/storage";
+import {
+  ensureLocalFile,
+  persistRenderLocalFirst,
+  workingFilePath,
+} from "../../../../../core/storage";
 import {
   VideoStyleId,
   VideoStylePresetId,
@@ -195,19 +199,26 @@ export async function POST(req: NextRequest, { params }: { params: { videoProjec
       await updateJob(job.id, {
         status: "rendering",
         progress: 92,
-        statusMessage: "A enviar vídeo para o storage…",
+        statusMessage: "A guardar vídeo neste PC…",
       });
     }
 
-    const ref = await persistFile(outPath, channel.id, "render", fileName, "video/mp4");
+    // Local-first: FFmpeg output stays on disk; Supabase/YouTube are optional later.
+    const persisted = await persistRenderLocalFirst(outPath, channel.id, fileName);
+    const { ref, localAbsolutePath, uploadWarning } = persisted;
 
     if (!preview) {
       await completeProjectRender(project.id, ref, result.durationSeconds);
+      if (uploadWarning) {
+        await updateProjectStatus(project.id, "completed", uploadWarning).catch(() => undefined);
+      }
       if (job) {
         await updateJob(job.id, {
           status: "completed",
           progress: 100,
-          statusMessage: "Vídeo pronto",
+          statusMessage: uploadWarning
+            ? "Vídeo pronto (só neste PC — Supabase depois)"
+            : "Vídeo pronto",
         });
       }
       await insertUsageEvent({
@@ -229,6 +240,9 @@ export async function POST(req: NextRequest, { params }: { params: { videoProjec
       url: mediaUrl(channel.id, ref),
       project: await getVideoProject(project.id),
       preset: getPreset(presetId).label,
+      localAbsolutePath,
+      uploadWarning,
+      localOnly: Boolean(uploadWarning) || !/^https?:\/\//i.test(ref),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

@@ -9,7 +9,7 @@ import {
   completeProjectRender,
   updateProjectThumbnail,
 } from "../repo/projects";
-import { ensureLocalFile, persistFile, workingFilePath } from "../storage";
+import { ensureLocalFile, persistFile, persistRenderLocalFirst, workingFilePath } from "../storage";
 import { renderVideo, mergePresetSettings } from "../videoRenderers";
 import { generateCoverConcept } from "../providers/script/coverConcept";
 import { getImageProvider } from "../providers/image";
@@ -19,49 +19,89 @@ import { normalizeCoverDna } from "../providers/image/coverFormats";
 import { updateChannelDna } from "../repo/channels";
 import { insertUsageEvent } from "../repo/usage";
 import { randomUUID } from "crypto";
+import { getYoutubeAccountForChannel } from "../repo/youtubeAccounts";
+import { publishProjectToYoutube } from "../youtube/publishProject";
+import { YoutubeAuthError, YoutubeQuotaError } from "../youtube/oauth";
 
 export type AutoFlowStageHook = (message: string, progress: number) => void | Promise<void>;
 
 /**
- * After TTS: optional music/SFX → scrolling-text video → portada.
- * Failures in thumbnail are non-fatal (video still completes).
+ * After TTS: music/SFX → scrolling-text video → portada → YouTube (privado).
+ * Thumbnail / YouTube failures are non-fatal for the local video.
  */
 export async function finishAutoFlowAfterAudio(args: {
   channel: Channel;
   projectId: string;
   onProgress?: AutoFlowStageHook;
-  /** Skip bed entirely and mux narration only (voice + scrolling script). */
+  /** Default false = generate music + SFX. Set true for voice-only. */
   voiceOnly?: boolean;
+  /** Default true = upload to YouTube when account is connected. */
+  uploadYoutube?: boolean;
 }): Promise<VideoProject> {
-  const { channel, projectId, onProgress, voiceOnly = true } = args;
+  const { channel, projectId, onProgress, voiceOnly = false, uploadYoutube = true } = args;
   const report = async (message: string, progress: number) => {
     await onProgress?.(message, progress);
   };
 
   if (voiceOnly) {
-    await report("Pulando música/SFX (só voz)…", 60);
+    await report("Pulando música/SFX (só voz)…", 58);
     await produceAudioBed({ projectId, musicOff: true, sfxOff: true });
   } else {
-    await report("Gerando música e SFX…", 60);
+    await report("Gerando música e SFX…", 58);
     await produceAudioBed({ projectId });
   }
 
   let project = await getVideoProject(projectId);
   if (!project) throw new Error("Project not found after audio bed");
 
-  await report("Renderizando vídeo (texto rolante)…", 75);
+  await report("Renderizando vídeo (texto rolante)…", 72);
   await renderScrollingAutoVideo({ channel, project, voiceOnly });
 
   project = (await getVideoProject(projectId))!;
 
   try {
-    await report("Gerando portada…", 90);
+    await report("Gerando portada…", 88);
     await generateAutoThumbnail({ channel, project });
   } catch (err) {
     console.warn(
       "[auto-flow] thumbnail failed (video kept):",
       err instanceof Error ? err.message : err
     );
+  }
+
+  project = (await getVideoProject(projectId))!;
+
+  if (uploadYoutube) {
+    const account = await getYoutubeAccountForChannel(channel.id);
+    if (!account) {
+      await report("Vídeo pronto — YouTube não ligado (aba YouTube → Conectar)", 100);
+    } else {
+      try {
+        await report("A subir para YouTube (privado)…", 94);
+        const published = await publishProjectToYoutube({
+          channelId: channel.id,
+          projectId,
+          onProgress: async (msg) => report(msg, 96),
+        });
+        await report(
+          published.thumbnailOk
+            ? `YouTube privado OK · Studio`
+            : `YouTube privado OK (capa: ${published.thumbnailError?.slice(0, 80) || "pendente"})`,
+          100
+        );
+      } catch (err) {
+        const msg =
+          err instanceof YoutubeAuthError || err instanceof YoutubeQuotaError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : String(err);
+        console.warn("[auto-flow] YouTube upload failed (video kept local):", msg);
+        await report(`Vídeo local OK — YouTube falhou: ${msg.slice(0, 120)}`, 100);
+      }
+    }
+  } else {
+    await report("Vídeo + portada prontos (upload YT desligado)", 100);
   }
 
   return (await getVideoProject(projectId))!;
@@ -97,7 +137,6 @@ async function renderScrollingAutoVideo(args: {
     enabled: true,
   });
 
-  // Voice-only: never prefer a prior music mix.
   const audioRef = voiceOnly ? asset.filePath : project.mixAudioRef || asset.filePath;
   const localAudio = await ensureLocalFile(
     channel.id,
@@ -115,8 +154,8 @@ async function renderScrollingAutoVideo(args: {
     outputPath: outPath,
   });
 
-  const ref = await persistFile(outPath, channel.id, "render", fileName, "video/mp4");
-  await completeProjectRender(project.id, ref, result.durationSeconds);
+  const persisted = await persistRenderLocalFirst(outPath, channel.id, fileName);
+  await completeProjectRender(project.id, persisted.ref, result.durationSeconds);
   await insertUsageEvent({
     channelId: channel.id,
     contentIdeaId: project.contentIdeaId,

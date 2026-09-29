@@ -35,8 +35,8 @@ export function resolveAutoTopic(channel: Channel, topicRaw: string): string {
 }
 
 /**
- * One-click: ideas → scripts → YT copy → approve/enqueue audio (Juan Carlos).
- * Music/SFX + scrolling video + portada run after TTS when autoFlow is set (runProject).
+ * One-click: ideas → scripts → YT title/description → approve/enqueue audio →
+ * (in runProject) music/SFX → scrolling video → portada → YouTube privado.
  */
 export async function runAutoFlow(args: {
   channel: Channel;
@@ -175,7 +175,7 @@ export async function runAutoFlow(args: {
   report("queued", {
     done: projectIds.length,
     total: projectIds.length,
-    detail: `${projectIds.length} na fila — a seguir: voz → música/SFX → vídeo → portada (atualiza sozinho)`,
+    detail: `${projectIds.length} na fila — voz → música/SFX → vídeo → portada → YouTube privado`,
   });
 
   return { planId: plan.id, projectIds, topic };

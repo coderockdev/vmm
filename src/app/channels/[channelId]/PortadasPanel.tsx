@@ -137,7 +137,7 @@ export function PortadasPanel({
 
   useEffect(() => {
     if (!selected) return;
-    setTitle(selected.thumbnailConcept?.title || selected.title);
+    setTitle(selected.thumbnailConcept?.title || selected.headline || selected.title);
     setThumbnailText(selected.thumbnailConcept?.thumbnailText || "");
     setThumbnailScene(selected.thumbnailConcept?.thumbnailScene || "");
     setConcept(selected.thumbnailConcept);
@@ -201,7 +201,7 @@ export function PortadasPanel({
   }, [selected?.thumbnailConcept, selected?.thumbnailRef, channel.id]);
 
   async function runConcept(choice: FormatChoice, forceDifferentFormat = false) {
-    if (!selected) return;
+    if (!selected) return null;
     setBusy("concept");
     setError(null);
     try {
@@ -210,7 +210,7 @@ export function PortadasPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           formatChoice: choice,
-          titleHint: title,
+          titleHint: title || selected.headline || selected.title,
           forceDifferentFormat,
         }),
       });
@@ -221,39 +221,44 @@ export function PortadasPanel({
       setThumbnailText(data.concept.thumbnailText || "");
       setThumbnailScene(data.concept.thumbnailScene || "");
       if (data.project) onProjectUpdated(data.project);
+      return data.concept as VideoConcept;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      return null;
     } finally {
       setBusy(null);
     }
   }
 
-  async function runGenerate() {
+  async function runGenerate(existingConcept?: VideoConcept | null) {
     if (!selected) return;
-    const canGenerate =
-      Boolean(concept) ||
-      Boolean(thumbnailScene.trim()) ||
-      Boolean(thumbnailText.trim());
-    if (!canGenerate) {
-      setError("Gera o conceito primeiro (passo 1) ou preenche o texto/conceito visual.");
-      return;
-    }
-    setBusy("image");
     setError(null);
+
+    let workingConcept = existingConcept ?? concept;
+    // Auto: think titles/text/scene from script + DNA if the user left fields empty.
+    if (!workingConcept && !thumbnailScene.trim() && !thumbnailText.trim()) {
+      workingConcept = await runConcept(formatChoice);
+      if (!workingConcept) return;
+    }
+
+    setBusy("image");
     try {
+      const nextTitle = workingConcept?.title || title || selected.headline || selected.title;
+      const nextText = workingConcept?.thumbnailText || thumbnailText;
+      const nextScene = workingConcept?.thumbnailScene || thumbnailScene;
       const fallbackConcept = {
-        title: title || selected.title,
+        title: nextTitle,
         thumbnailFormatId: formatChoice,
         thumbnailFormatName:
           formats.find((f) => f.id === formatChoice)?.name || "manual",
-        thumbnailText,
-        thumbnailScene,
-        thumbnailEmotion: "",
-        thumbnailMessage: thumbnailText,
-        curiosityGap: "",
-        titleThumbnailRelation: "",
+        thumbnailText: nextText,
+        thumbnailScene: nextScene,
+        thumbnailEmotion: workingConcept?.thumbnailEmotion || "",
+        thumbnailMessage: nextText,
+        curiosityGap: workingConcept?.curiosityGap || "",
+        titleThumbnailRelation: workingConcept?.titleThumbnailRelation || "",
         status: "ready" as const,
-        history: selected.thumbnailConcept?.history ?? concept?.history ?? null,
+        history: selected.thumbnailConcept?.history ?? workingConcept?.history ?? null,
       };
       const res = await fetch(`/api/videos/${selected.id}/thumbnail/generate`, {
         method: "POST",
@@ -261,16 +266,16 @@ export function PortadasPanel({
         body: JSON.stringify({
           imageProvider,
           count: imageCount,
-          title,
-          thumbnailText,
-          thumbnailScene,
-          concept: concept
+          title: nextTitle,
+          thumbnailText: nextText,
+          thumbnailScene: nextScene,
+          concept: workingConcept
             ? {
-                ...concept,
-                title,
-                thumbnailText,
-                thumbnailScene,
-                history: concept.history ?? selected.thumbnailConcept?.history ?? null,
+                ...workingConcept,
+                title: nextTitle,
+                thumbnailText: nextText,
+                thumbnailScene: nextScene,
+                history: workingConcept.history ?? selected.thumbnailConcept?.history ?? null,
               }
             : fallbackConcept,
         }),
@@ -278,6 +283,9 @@ export function PortadasPanel({
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? `Falha na imagem (HTTP ${res.status})`);
       setConcept(data.concept);
+      setTitle(data.concept?.title || nextTitle);
+      setThumbnailText(data.concept?.thumbnailText || nextText);
+      setThumbnailScene(data.concept?.thumbnailScene || nextScene);
       setThumbUrl(data.thumbnailUrl);
       setCandidateUrls(data.candidates ?? []);
 
@@ -303,6 +311,14 @@ export function PortadasPanel({
     } finally {
       setBusy(null);
     }
+  }
+
+  async function runAuto() {
+    if (!selected) return;
+    setError(null);
+    const made = await runConcept(formatChoice);
+    if (!made) return;
+    await runGenerate(made);
   }
 
   async function selectCandidate(candidateId: string) {
@@ -445,6 +461,7 @@ export function PortadasPanel({
           <label className="portadas-label">
             Título
             <textarea value={title} onChange={(e) => setTitle(e.target.value)} rows={2} />
+            <span className="portadas-actions-hint">Pode deixar o título do roteiro — a IA pode reescrever no automático.</span>
           </label>
 
           <label className="portadas-label">
@@ -476,13 +493,22 @@ export function PortadasPanel({
           </div>
 
           <label className="portadas-label">
-            Texto de portada
-            <input value={thumbnailText} onChange={(e) => setThumbnailText(e.target.value)} />
+            Texto de portada <em style={{ fontWeight: 500, color: "#6b7280" }}>(opcional)</em>
+            <input
+              value={thumbnailText}
+              onChange={(e) => setThumbnailText(e.target.value)}
+              placeholder="Vazio = a IA inventa a partir do roteiro + DNA"
+            />
           </label>
 
           <label className="portadas-label">
-            Conceito visual
-            <textarea value={thumbnailScene} onChange={(e) => setThumbnailScene(e.target.value)} rows={3} />
+            Conceito visual <em style={{ fontWeight: 500, color: "#6b7280" }}>(opcional)</em>
+            <textarea
+              value={thumbnailScene}
+              onChange={(e) => setThumbnailScene(e.target.value)}
+              rows={3}
+              placeholder="Vazio = a IA descreve a cena a partir do roteiro"
+            />
           </label>
 
           <label className="portadas-label">
@@ -540,23 +566,34 @@ export function PortadasPanel({
           </label>
 
           <div className="portadas-actions">
-            <button type="button" disabled={!!busy} onClick={() => void runConcept(formatChoice)}>
-              {busy === "concept" ? "Criando conceito…" : "1. Gerar conceito"}
-            </button>
             <button
               type="button"
               className="portadas-generate-image"
-              disabled={!!busy || (!concept && !thumbnailScene.trim() && !thumbnailText.trim())}
+              disabled={!!busy || !selected}
+              onClick={() => void runAuto()}
+            >
+              {busy === "concept"
+                ? "A pensar título + formato…"
+                : busy === "image"
+                  ? `Gerando ${imageCount} imagen${imageCount > 1 ? "s" : ""}…`
+                  : `Gerar automático (${imageCount} imagen${imageCount > 1 ? "s" : ""})`}
+            </button>
+            <button type="button" disabled={!!busy} onClick={() => void runConcept(formatChoice)}>
+              {busy === "concept" ? "Criando conceito…" : "Só conceito"}
+            </button>
+            <button
+              type="button"
+              disabled={!!busy}
               onClick={() => void runGenerate()}
             >
               {busy === "image"
                 ? `Gerando ${imageCount} imagen${imageCount > 1 ? "s" : ""}…`
-                : `2. Generar ${imageCount} imagen${imageCount > 1 ? "s" : ""}`}
+                : `Só imagens (${imageCount})`}
             </button>
             <button
               type="button"
               disabled={!!busy || (!concept && !thumbnailScene.trim())}
-              onClick={() => void runConcept(formatChoice, false).then(() => runGenerate())}
+              onClick={() => void runConcept(formatChoice, false).then((c) => c && runGenerate(c))}
             >
               Regenerar (mesmo formato)
             </button>
@@ -577,7 +614,9 @@ export function PortadasPanel({
             )}
           </div>
           <p className="portadas-actions-hint">
-            Cada geração fica no histórico deste vídeo. Clica numa para marcar como principal.
+            <strong>Gerar automático</strong> usa o roteiro + DNA (títulos de sucesso, skill, formatos) —
+            não precisas preencher texto/conceito. Depois podes editar e regenerar.
+            Cada geração fica no histórico; clica numa para marcar como principal.
           </p>
 
           {concept?.titleThumbnailRelation && (
@@ -591,7 +630,9 @@ export function PortadasPanel({
           <h3>
             Lote atual {candidateUrls.length > 1 ? `(${candidateUrls.length} variações)` : ""}
           </h3>
-          {busy === "image" ? (
+          {busy === "concept" ? (
+            <div className="portadas-img-empty">A ler o roteiro e o DNA para inventar título + conceito…</div>
+          ) : busy === "image" ? (
             <div className="portadas-img-empty">Gerando {imageCount} imagen{imageCount > 1 ? "s" : ""}…</div>
           ) : candidateUrls.length > 0 ? (
             <div className={`portadas-candidates portadas-candidates-${Math.min(3, candidateUrls.length)}`}>
@@ -624,7 +665,7 @@ export function PortadasPanel({
             <img src={thumbUrl} alt="Portada gerada" className="portadas-img" />
           ) : (
             <div className="portadas-img-empty">
-              Sem imagem ainda — escolhe 1, 2 ou 3 e clica em <strong>Generar imagen</strong>
+              Sem imagem ainda — clica em <strong>Gerar automático</strong> (usa o roteiro + DNA)
             </div>
           )}
           {candidateUrls.length > 0 && (

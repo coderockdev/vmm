@@ -6,7 +6,8 @@ export type UsageStage =
   | "sfx"
   | "transcription"
   | "render"
-  | "thumbnail";
+  | "thumbnail"
+  | "youtube";
 
 export type UsageProvider =
   | "anthropic"
@@ -21,7 +22,8 @@ export type UsageProvider =
   | "ffmpeg-lavfi-sfx"
   | "local"
   | "mock"
-  | "uploaded";
+  | "uploaded"
+  | "youtube";
 
 /** Raw metrics captured from an API response or measured locally. */
 export interface UsageSnapshot {
@@ -33,6 +35,8 @@ export interface UsageSnapshot {
   durationSeconds?: number | null;
   /** Number of generated images (OpenAI Images / Gemini Imagen / Pollinations). */
   images?: number | null;
+  /** YouTube Data API quota units consumed (not USD). */
+  quotaUnits?: number | null;
   /** Unprocessed usage object from the provider response. */
   raw?: unknown;
 }
@@ -46,6 +50,8 @@ export interface CostBreakdown {
   transcription: number;
   render: number;
   thumbnail: number;
+  /** YouTube Data API has no $ fee — always 0; events still logged for quota. */
+  youtube: number;
 }
 
 export interface UsageEvent {
@@ -77,6 +83,7 @@ export function emptyBreakdown(): CostBreakdown {
     transcription: 0,
     render: 0,
     thumbnail: 0,
+    youtube: 0,
   };
 }
 
@@ -91,6 +98,7 @@ export function normalizeBreakdown(raw: Partial<CostBreakdown> | null | undefine
     transcription: Number(raw?.transcription) || 0,
     render: Number(raw?.render) || 0,
     thumbnail: Number(raw?.thumbnail) || 0,
+    youtube: Number(raw?.youtube) || 0,
   };
 }
 
@@ -103,7 +111,8 @@ export function sumBreakdown(b: CostBreakdown): number {
     b.sfx +
     b.transcription +
     b.render +
-    b.thumbnail
+    b.thumbnail +
+    b.youtube
   );
 }
 
