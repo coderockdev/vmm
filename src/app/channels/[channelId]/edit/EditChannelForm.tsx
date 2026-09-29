@@ -250,7 +250,7 @@ export function EditChannelForm({
   }
 
   return (
-    <div style={{ maxWidth: 640 }}>
+    <div className="channel-edit-page" style={{ maxWidth: 640 }}>
       <Link
         href={`/channels/${channel.id}`}
         style={{

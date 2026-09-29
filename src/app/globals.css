@@ -54,12 +54,15 @@ body {
   }
 
   .app-shell {
-    height: calc(100vh / .9);
+    /* Let the shell grow with long pages so the sticky sidebar's containing
+       block is not shorter than the document being scrolled. */
+    height: auto;
     min-height: calc(100vh / .9);
   }
 
   .app-content {
-    min-height: 100%;
+    height: auto;
+    min-height: calc(100vh / .9);
   }
 
   .sidebar {
@@ -373,7 +376,8 @@ textarea {
    sidebar. Keep those surfaces focused and reclaim the header's vertical
    space instead of rendering duplicate controls. */
 body:has(.dashboard-page) .topbar,
-body:has(.new-channel-wizard) .topbar {
+body:has(.new-channel-wizard) .topbar,
+body:has(.channel-edit-page) .topbar {
   display: none;
 }
 
