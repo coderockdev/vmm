@@ -17,10 +17,16 @@ export type AutoFlowProgress = {
   total: number;
 };
 
-/** Topic from UI, or DNA themes/chips when the user leaves it empty. */
+/** Topic from UI, or DNA themes / successful-title vibes when empty. */
 export function resolveAutoTopic(channel: Channel, topicRaw: string): string {
   const trimmed = topicRaw.trim();
   if (trimmed) return trimmed;
+  const hits = (channel.dna.successfulTitles ?? []).slice(0, 5);
+  if (hits.length > 0) {
+    return `Nuevos títulos al estilo de los más exitosos del canal (urgencia, regreso, oración). Referencias: ${hits
+      .map((t) => t.split("|")[0].trim().slice(0, 60))
+      .join(" · ")}`;
+  }
   const themes = (channel.dna.topics ?? []).map((t) => t.trim()).filter(Boolean);
   if (themes.length > 0) return themes.slice(0, 5).join(", ");
   const chips = suggestTopicsFromDna(channel, 4);

@@ -88,6 +88,9 @@ export function EditChannelForm({
   const [tone, setTone] = useState(channel.dna.tone.join(", "));
   const [topics, setTopics] = useState(channel.dna.topics.join(", "));
   const [avoid, setAvoid] = useState(channel.dna.avoid.join(", "));
+  const [successfulTitles, setSuccessfulTitles] = useState(
+    (channel.dna.successfulTitles ?? []).join("\n")
+  );
   const [structure, setStructure] = useState(channel.dna.scriptRules.structure);
   const [generationPrompt, setGenerationPrompt] = useState(
     channel.dna.scriptRules.generationPrompt ?? ""
@@ -197,6 +200,10 @@ export function EditChannelForm({
             tone: tone.split(",").map((s) => s.trim()).filter(Boolean),
             topics: topics.split(",").map((s) => s.trim()).filter(Boolean),
             avoid: avoid.split(",").map((s) => s.trim()).filter(Boolean),
+            successfulTitles: successfulTitles
+              .split("\n")
+              .map((s) => s.trim())
+              .filter(Boolean),
             scriptRules: {
               ...channel.dna.scriptRules,
               structure,
@@ -396,6 +403,19 @@ export function EditChannelForm({
           <input style={inputStyle} value={topics} onChange={(e) => setTopics(e.target.value)} />
           <label style={labelStyle}>Assuntos a evitar</label>
           <input style={inputStyle} value={avoid} onChange={(e) => setAvoid(e.target.value)} />
+          <label style={labelStyle}>
+            Títulos de sucesso (1 por linha) — banco para o automático / ideias
+          </label>
+          <textarea
+            style={{ ...inputStyle, minHeight: 140, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12 }}
+            value={successfulTitles}
+            onChange={(e) => setSuccessfulTitles(e.target.value)}
+            placeholder={"Um título por linha\nEx.: TE LLAMARÁ EN 10 MINUTOS…"}
+          />
+          <p style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4, marginBottom: 8 }}>
+            {(successfulTitles.split("\n").map((s) => s.trim()).filter(Boolean).length)} títulos no DNA.
+            A IA inventa títulos novos no mesmo padrão (não copia literal).
+          </p>
           <label style={labelStyle}>Estrutura padrão (resumo)</label>
           <input style={inputStyle} value={structure} onChange={(e) => setStructure(e.target.value)} />
 

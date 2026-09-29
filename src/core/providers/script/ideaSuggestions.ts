@@ -10,9 +10,15 @@ export function suggestTopicsFromDna(channel: Channel, limit = 6): string[] {
   const topics = (channel.dna.topics ?? []).map((t) => t.trim()).filter(Boolean);
   const language = channel.dna.language;
   const bucket = inferBucket(topics);
+  const hits = (channel.dna.successfulTitles ?? []).slice(0, 8);
 
-  const fromTopics = topics.slice(0, limit);
-  if (fromTopics.length >= limit) return fromTopics;
+  const fromTopics = topics.slice(0, Math.min(limit, topics.length));
+  const fromHits = hits
+    .map((t) => {
+      const base = t.split("|")[0].trim();
+      return base.length > 72 ? `${base.slice(0, 70)}…` : base;
+    })
+    .filter(Boolean);
 
   const seeds =
     language === "es"
@@ -42,10 +48,10 @@ export function suggestTopicsFromDna(channel: Channel, limit = 6): string[] {
           ? ["um imprevisto engraçado", "uma descoberta surpreendente", "um problema resolvido na marra"]
           : ["foco e descanso", "noite tranquila", "chuva suave"];
 
-  const out: string[] = [...fromTopics];
-  for (const seed of seeds) {
+  const out: string[] = [];
+  for (const t of [...fromHits.slice(0, 3), ...fromTopics, ...fromHits.slice(3), ...seeds]) {
     if (out.length >= limit) break;
-    if (!out.some((t) => t.toLowerCase() === seed.toLowerCase())) out.push(seed);
+    if (!out.some((x) => x.toLowerCase() === t.toLowerCase())) out.push(t);
   }
   return out.slice(0, limit);
 }
@@ -72,9 +78,25 @@ export function sampleIdeasFromDna(channel: Channel, quantity = 3): Array<Conten
   return ideas;
 }
 
+/**
+ * Sample proven titles for prompts (stable shuffle by quantity so batches vary).
+ */
+export function sampleSuccessfulTitles(channel: Channel, limit = 16): string[] {
+  const bank = (channel.dna.successfulTitles ?? []).map((t) => t.trim()).filter(Boolean);
+  if (bank.length === 0) return [];
+  if (bank.length <= limit) return bank;
+  const start = (limit * 7 + bank.length) % bank.length;
+  const out: string[] = [];
+  for (let i = 0; i < limit; i++) {
+    out.push(bank[(start + i * 11) % bank.length]);
+  }
+  return out;
+}
+
 /** Extra prompt block appended when asking the LLM for a content plan. */
 export function contentPlanDnaBrief(channel: Channel, quantity = 1): string {
   const dna = channel.dna;
+  const hitTitles = sampleSuccessfulTitles(channel, Math.min(18, Math.max(10, quantity * 3)));
   const diversity =
     quantity >= 5
       ? [
@@ -88,6 +110,18 @@ export function contentPlanDnaBrief(channel: Channel, quantity = 1): string {
           ]
         : [];
 
+  const titleBankBlock =
+    hitTitles.length > 0
+      ? [
+          ``,
+          `BANCO DE TÍTULOS DE SUCESSO DESTE CANAL (${(dna.successfulTitles ?? []).length} no DNA):`,
+          `Use como REFERÊNCIA de padrão (urgência, aviso/cuidado, timeframe em minutos, santo/deidad, resultado emocional, MAIÚSCULAS estratégicas).`,
+          `PROIBIDO copiar literalmente qualquer título abaixo. Invente títulos NOVOS com o mesmo ADN de click + promessa.`,
+          ...hitTitles.map((t) => `- ${t}`),
+          `- Estruturas vencedoras a variar: aviso+promessa | resultado em X minutos | di su nombre… | santo/oración + regresso | “no hay vuelta atrás”.`,
+        ]
+      : [];
+
   return [
     ``,
     `TAREFA: gerar ${quantity} ideia(s) de VÍDEO para este canal (não roteiro ainda).`,
@@ -97,6 +131,7 @@ export function contentPlanDnaBrief(channel: Channel, quantity = 1): string {
     `- Público: ${dna.audience}`,
     `- Cada ideia deve parecer nativa deste canal — se trocar o nome do canal, a ideia NÃO deveria servir para outro nicho.`,
     ...diversity,
+    ...titleBankBlock,
     dna.avoid.length
       ? `- NÃO proponha ideias sobre: ${dna.avoid.slice(0, 12).join("; ")}.`
       : ``,

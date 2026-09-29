@@ -1,6 +1,7 @@
 import { ChannelDNA } from "./types";
 import { defaultAmorAmorCoverDna } from "./providers/image/coverFormats";
 import { DEFAULT_AMOR_AMOR_MUSICAL } from "./providers/music/musicalDna";
+import { AMOR_AMOR_SUCCESSFUL_TITLES } from "./channels/amorAmorSuccessfulTitles";
 
 export interface SeedChannel {
   id: string;
@@ -261,6 +262,7 @@ No empieces en el alivio.`,
             "Mesma voz ElevenLabs v3 (Juan Carlos — Warm, Calm and Deep) que o template HeyGen usa. Vídeo: generate_from_template SEM voice_id. Áudio: elevenlabs_voice_id + speed 0.9 + stability 0.5.",
         },
       },
+      successfulTitles: [...AMOR_AMOR_SUCCESSFUL_TITLES],
       usesScript: true,
       usesNarration: true,
     },

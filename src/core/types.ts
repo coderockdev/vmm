@@ -28,6 +28,12 @@ export interface ChannelDNA {
   tone: string[];
   topics: string[];
   avoid: string[];
+  /**
+   * Proven YouTube titles for this channel (performance bank).
+   * Idea/auto generation must invent NEW titles that rhyme with these
+   * patterns (urgency, santo/deidad, timeframe, warning) — never clone verbatim.
+   */
+  successfulTitles?: string[];
 
   scriptRules: {
     opening: string;

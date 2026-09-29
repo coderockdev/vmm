@@ -8,6 +8,7 @@ import { findVoice } from "../providers/tts/voiceCatalog";
 import { profileFromLegacyVoice } from "../providers/tts/voiceCapabilities";
 import { normalizeCoverDna } from "../providers/image/coverFormats";
 import { normalizeMusicalDna } from "../providers/music/musicalDna";
+import { AMOR_AMOR_SUCCESSFUL_TITLES } from "../channels/amorAmorSuccessfulTitles";
 
 interface ChannelRow {
   id: string;
@@ -20,7 +21,7 @@ interface ChannelRow {
   updated_at: string;
 }
 
-function normalizeDna(raw: ChannelDNA): ChannelDNA {
+function normalizeDna(raw: ChannelDNA, channelId?: string): ChannelDNA {
   const wordsPerMinute = raw.scriptRules?.wordsPerMinute ?? DEFAULT_WORDS_PER_MINUTE;
   const charsPerWord = raw.scriptRules?.charsPerWord ?? DEFAULT_CHARS_PER_WORD;
   const performanceTags = {
@@ -50,13 +51,16 @@ function normalizeDna(raw: ChannelDNA): ChannelDNA {
         })
       : undefined);
 
-  // If profile has emotion tags and performanceTags empty, seed from voice.
-  if (profile?.capabilities.emotion_tags && !performanceTags.enabled && profile.capabilities.allowed_tags.length) {
-    // leave disabled until user opts in — but keep selected list ready from voice when enabled later
+  let successfulTitles = Array.isArray(raw.successfulTitles)
+    ? raw.successfulTitles.map((t) => String(t).trim()).filter(Boolean)
+    : [];
+  if (channelId === "amor-amor" && successfulTitles.length === 0) {
+    successfulTitles = [...AMOR_AMOR_SUCCESSFUL_TITLES];
   }
 
   return {
     ...raw,
+    successfulTitles,
     scriptRules: {
       ...raw.scriptRules,
       generationPrompt: raw.scriptRules?.generationPrompt ?? "",
@@ -87,7 +91,7 @@ function rowToChannel(row: ChannelRow): Channel {
     niche: row.niche,
     coverColor: row.cover_color,
     coverRef: row.cover_ref ?? null,
-    dna: normalizeDna(parsed),
+    dna: normalizeDna(parsed, row.id),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
