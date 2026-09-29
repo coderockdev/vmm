@@ -3,7 +3,7 @@ import { getScriptProvider } from "../providers/script";
 import { createContentPlan, listAllIdeaTitlesForChannel } from "../repo/plans";
 import { createVideoProject, createScript, attachScriptToProject, updateProjectStatus, listScriptTextsForChannel } from "../repo/projects";
 import { insertUsageEvent, recomputeProjectCost } from "../repo/usage";
-import { parseGeneratedScript } from "../scriptLines";
+import { parseGeneratedScript, normalizeSceneBreaks } from "../scriptLines";
 import { hashStringToSeed } from "../../remotion/seededRandom";
 import { UsageSnapshot } from "../usage/types";
 
@@ -84,7 +84,11 @@ export async function generateScriptsForIdeas(args: {
           usage: { provider: "mock" as const, model: "mock", inputTokens: 0, outputTokens: 0 },
         };
 
-    const rawLines = parseGeneratedScript(generated, args.channel.dna.scriptRules.pauses);
+    const rawLines = normalizeSceneBreaks(
+      parseGeneratedScript(generated, args.channel.dna.scriptRules.pauses),
+      args.sceneCount ?? args.channel.dna.scriptRules.defaultSceneCount ?? 4,
+      args.channel.dna.scriptRules.pauses
+    );
     const wordCount = rawLines.reduce((sum, l) => sum + l.text.split(/\s+/).filter(Boolean).length, 0);
 
     let firstProjectId: string | null = null;

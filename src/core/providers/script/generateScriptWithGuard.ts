@@ -200,14 +200,9 @@ export async function generateScriptWithGuard(args: {
     const sceneLines = part.rawText.split(/\n\n+/).map((l) => l.trim()).filter(Boolean);
     const base = allLines.length;
     for (const line of sceneLines) allLines.push(line);
-    // Mark end of scene as a section break
+    // ONLY mark the end of this TTS scene — ignore model sectionBreaks inside
+    // the scene. Those were creating 15–20 "cenas" (one per [pause]/breath).
     if (sceneLines.length > 0) sectionBreaks.push(base + sceneLines.length - 1);
-    // Also honor model-provided breaks inside the scene
-    for (const idx of part.sectionBreaks ?? []) {
-      if (Number.isInteger(idx) && idx >= 0 && idx < sceneLines.length) {
-        sectionBreaks.push(base + idx);
-      }
-    }
 
     previousTail = sceneLines.slice(-3).join("\n");
   }

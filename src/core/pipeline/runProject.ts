@@ -12,7 +12,7 @@ import { getChannel } from "../repo/channels";
 import { insertUsageEvent } from "../repo/usage";
 import { synthesizeNarration } from "./narration";
 import { renderVideoProject } from "./render";
-import { RawLine } from "../scriptLines";
+import { RawLine, normalizeSceneBreaks } from "../scriptLines";
 import { VideoFormat } from "../types";
 import { UsageProvider } from "../usage/types";
 
@@ -40,11 +40,28 @@ export async function runProject(jobId: string): Promise<void> {
       await updateJob(job.id, { status: "audio", progress: 25, statusMessage: "Gerando áudio..." });
       await updateProjectStatus(project.id, "audio");
 
-      const rawLines: RawLine[] = lines.map((l) => ({
-        text: l.text,
-        pauseAfter: l.pauseAfter,
-        sectionBreak: Boolean(l.sectionBreak),
-      }));
+      const rawLines: RawLine[] = normalizeSceneBreaks(
+        lines.map((l) => ({
+          text: l.text,
+          pauseAfter: l.pauseAfter,
+          sectionBreak: Boolean(l.sectionBreak),
+        })),
+        channel.dna.scriptRules.defaultSceneCount ?? 4,
+        channel.dna.scriptRules.pauses
+      );
+
+      // Persist normalized breaks so the review UI shows 4–6 cenas, not 19.
+      if (project.scriptId) {
+        const normalizedScriptLines = rawLines.map((l, i) => ({
+          ...lines[i],
+          text: l.text,
+          pauseAfter: l.pauseAfter,
+          sectionBreak: l.sectionBreak,
+          start: lines[i]?.start ?? 0,
+          end: lines[i]?.end ?? 0,
+        }));
+        await updateScriptLines(project.scriptId, normalizedScriptLines).catch(() => undefined);
+      }
 
       const narration = await synthesizeNarration({
         channel,

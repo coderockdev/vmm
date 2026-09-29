@@ -1,5 +1,6 @@
 import { ChannelDNA, ScriptLine } from "./types";
 import { GeneratedScript } from "./providers/script/ScriptProvider";
+import { clampSceneCount, DEFAULT_SCENE_COUNT } from "./providers/tts/ttsLimits";
 
 export interface RawLine {
   text: string;
@@ -32,6 +33,55 @@ export function parseGeneratedScript(
       text,
       pauseAfter: isLast ? 0 : sectionBreak ? pauses.betweenSections : pauses.betweenLines,
       sectionBreak,
+    };
+  });
+}
+
+/**
+ * TTS "cenas" are ONLY the N pipeline blocks (≤4.8k chars each) — not every
+ * [pause] tag or LLM sectionBreak. If a script somehow got 15–20 breaks
+ * (model treated each breath as a scene), collapse back to `targetScenes`
+ * by character weight and refresh pauseAfter from DNA.
+ *
+ * betweenLines = tiny breath between sentences; betweenSections = one natural
+ * pause when the scene (TTS request) changes.
+ */
+export function normalizeSceneBreaks(
+  lines: RawLine[],
+  targetScenes: number,
+  pauses: ChannelDNA["scriptRules"]["pauses"]
+): RawLine[] {
+  if (lines.length === 0) return lines;
+  const target = clampSceneCount(targetScenes || DEFAULT_SCENE_COUNT);
+  const breakCount = lines.filter((l) => l.sectionBreak).length;
+
+  if (breakCount <= target) {
+    return lines.map((line, i) => {
+      const isLast = i === lines.length - 1;
+      return {
+        ...line,
+        pauseAfter: isLast ? 0 : line.sectionBreak ? pauses.betweenSections : pauses.betweenLines,
+      };
+    });
+  }
+
+  const totalChars = lines.reduce((sum, l) => sum + Math.max(1, l.text.length), 0);
+  const charsPerScene = totalChars / target;
+  let acc = 0;
+  let sceneIdx = 0;
+
+  return lines.map((line, i) => {
+    const isLast = i === lines.length - 1;
+    acc += Math.max(1, line.text.length);
+    let sectionBreak = false;
+    if (!isLast && sceneIdx < target - 1 && acc >= charsPerScene * (sceneIdx + 1)) {
+      sectionBreak = true;
+      sceneIdx += 1;
+    }
+    return {
+      ...line,
+      sectionBreak,
+      pauseAfter: isLast ? 0 : sectionBreak ? pauses.betweenSections : pauses.betweenLines,
     };
   });
 }

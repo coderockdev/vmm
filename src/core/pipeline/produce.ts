@@ -12,7 +12,7 @@ import { createJob } from "../repo/jobs";
 import { insertUsageEvent } from "../repo/usage";
 import { enqueueJob } from "./queue";
 import { getScriptProvider } from "../providers/script";
-import { parseGeneratedScript } from "../scriptLines";
+import { parseGeneratedScript, normalizeSceneBreaks } from "../scriptLines";
 import { TTSProviderName } from "../providers/tts/TTSProvider";
 import { Script } from "../types";
 
@@ -113,7 +113,11 @@ export async function regenerateScript(projectId: string, aiProviderOverride: st
         usage: { provider: "mock" as const, model: "mock", inputTokens: 0, outputTokens: 0 },
       };
 
-  const rawLines = parseGeneratedScript(generated, channel.dna.scriptRules.pauses);
+  const rawLines = normalizeSceneBreaks(
+    parseGeneratedScript(generated, channel.dna.scriptRules.pauses),
+    channel.dna.scriptRules.defaultSceneCount ?? 4,
+    channel.dna.scriptRules.pauses
+  );
   const wordCount = rawLines.reduce((sum, l) => sum + l.text.split(/\s+/).filter(Boolean).length, 0);
 
   const script = await createScript({

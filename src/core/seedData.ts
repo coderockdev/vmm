@@ -189,7 +189,7 @@ Cada guion debe sentirse escrito específicamente para su título y situación. 
 REGLA PRINCIPAL:
 AMOR AMOR EMPIEZA EN LA HERIDA Y TERMINA EN EL ALIVIO.
 No empieces en el alivio.`,
-        pauses: { betweenLines: 0.7, betweenSections: 2.0 },
+        pauses: { betweenLines: 0.2, betweenSections: 1.1 },
         wordsPerMinute: 145,
         charsPerWord: 6,
         performanceTags: {
@@ -221,7 +221,7 @@ No empieces en el alivio.`,
       voice: {
         provider: "heygen",
         voiceId: null,
-        speed: 0.9,
+        speed: 0.85,
         volume: 1,
         profile: {
           provider: "heygen",
@@ -231,7 +231,7 @@ No empieces en el alivio.`,
           model: "elevenlabs_v3",
           language: "es",
           accent: "latin american",
-          speed: 0.9,
+          speed: 0.85,
           stability: 0.5,
           heygen_template_id: "c12ae661d2b6442bb079871a697ea4ef",
           capabilities: {

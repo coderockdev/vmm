@@ -51,9 +51,9 @@ export function scriptJsonInstructions(opts?: {
   return [
     ``,
     `FORMATO DE RESPOSTA (responda APENAS com este JSON, sem markdown, sem comentários, sem texto fora do JSON):`,
-    `{"lines":["primeira frase narrada","segunda frase narrada"],"sectionBreaks":[0,4]}`,
+    `{"lines":["primeira frase narrada","segunda frase narrada"],"sectionBreaks":[]}`,
     `- Cada item de "lines" é UMA frase/linha narrada isoladamente, como seria falada em voz alta (pode incluir tags de interpretação permitidas no contexto).`,
-    `- "sectionBreaks" são índices (0-based) de "lines" após os quais deve haver uma pausa maior que o normal (fim de um bloco/seção). Pode ser [].`,
+    `- "sectionBreaks" normalmente deve ser [] — NÃO marque uma quebra a cada [pause] ou frase curta. Pausas de interpretação ficam nas tags; cenas TTS são controladas pelo pipeline.`,
     `- NÃO copie o ângulo/objetivo da ideia como texto falado. O ângulo é instrução interna; o espectador só ouve a oração/narrativa.`,
     ...(scene
       ? [
@@ -62,6 +62,7 @@ export function scriptJsonInstructions(opts?: {
             ? `- META DE TAMANHO DESTA CENA: ~${scene.targetChars} caracteres falados (todas as cenas devem ficar PARELHAS — não faça uma curtíssima e outra enorme).`
             : ``,
           `- LIMITE RÍGIDO: o texto falado desta cena deve ter NO MÁXIMO ${scene.maxChars} caracteres (teto TTS). Se passar, a resposta é inválida.`,
+          `- sectionBreaks DEVE ser [] nesta resposta (esta resposta JÁ é uma cena completa).`,
           `- Não resuma demais: desenvolva emoção, imagens e invocação — sem enchimento mecânico.`,
         ].filter(Boolean)
       : durationMinutes && targetWords && targetLines
