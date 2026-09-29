@@ -149,14 +149,26 @@ export function PortadasPanel({
       url: `${mediaUrl(channel.id, c.ref) ?? ""}?t=1`,
     }));
     setCandidateUrls(fromConcept.filter((c) => c.url && !c.url.startsWith("null") && !c.url.startsWith("undefined")));
-
-    const hist = historyFromConcept(channel.id, selected.thumbnailConcept);
-    setHistoryUrls(hist);
+    setHistoryUrls(historyFromConcept(channel.id, selected.thumbnailConcept));
 
     if (selected.thumbnailConcept?.thumbnailFormatId) {
       const id = String(selected.thumbnailConcept.thumbnailFormatId);
       if (id !== "auto" && id !== "invent") setFormatChoice(id);
     }
+
+    // Pull any older PNGs still in Storage back into this video's history.
+    void (async () => {
+      try {
+        const res = await fetch(`/api/videos/${selected.id}/thumbnail/recover`, { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.recovered || !data.concept) return;
+        setConcept(data.concept);
+        setHistoryUrls(historyFromConcept(channel.id, data.concept));
+        if (data.project) onProjectUpdated(data.project);
+      } catch {
+        // ignore
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id, channel.id]);
 

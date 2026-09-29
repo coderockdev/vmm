@@ -37,10 +37,29 @@ export async function POST(req: NextRequest, { params }: { params: { videoProjec
   if (typeof body.thumbnailScene === "string") concept = { ...concept, thumbnailScene: body.thumbnailScene };
 
   // Always accumulate from DB — client body can be stale and omit history.
-  const priorHistory = mergeThumbnailHistory(
+  let priorHistory = mergeThumbnailHistory(
     stored?.history,
     [...(stored?.candidates ?? []), ...(concept.history ?? []), ...(concept.candidates ?? [])]
   );
+
+  // Re-attach any PNGs still in Storage that were dropped from JSON history.
+  try {
+    const { recoverThumbnailHistory } = await import(
+      "../../../../../../core/providers/image/recoverThumbnails"
+    );
+    const recovered = await recoverThumbnailHistory({
+      channelId: channel.id,
+      projectId: project.id,
+      concept: { ...concept, history: priorHistory },
+      thumbnailRef: project.thumbnailRef,
+    });
+    if (recovered?.history?.length) {
+      priorHistory = mergeThumbnailHistory(priorHistory, recovered.history);
+      concept = { ...concept, history: priorHistory };
+    }
+  } catch {
+    // Non-fatal — generation still proceeds with whatever history we have.
+  }
 
   const provider = getImageProvider(imageProvider);
   const candidates: ThumbnailCandidate[] = [];
