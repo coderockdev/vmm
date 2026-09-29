@@ -47,8 +47,10 @@ export interface MusicalDna {
   useMusicByDefault: boolean;
   defaultStyle: MusicStyleId;
   intensity: MusicIntensity;
-  /** 0–1; recommended 0.15–0.20 with narration. */
+  /** 0–1 bed under voice; recommended 0.05–0.10. */
   volume: number;
+  /** 0–1 SFX in final mix; recommended ~0.50. */
+  sfxVolume: number;
   ducking: boolean;
   adaptToScript: boolean;
   /** continuous bed vs dynamic rises (metadata; MVP uses continuous). */
@@ -65,7 +67,8 @@ export const DEFAULT_AMOR_AMOR_MUSICAL: MusicalDna = {
   useMusicByDefault: true,
   defaultStyle: "romantico-cinematico",
   intensity: "soft",
-  volume: 0.17,
+  volume: 0.12,
+  sfxVolume: 0.5,
   ducking: true,
   adaptToScript: true,
   bedMode: "continuous",
@@ -82,7 +85,8 @@ export const DEFAULT_MUSICAL_DNA: MusicalDna = {
   useMusicByDefault: false,
   defaultStyle: "auto",
   intensity: "soft",
-  volume: 0.18,
+  volume: 0.12,
+  sfxVolume: 0.5,
   ducking: true,
   adaptToScript: false,
   bedMode: "continuous",
@@ -102,6 +106,7 @@ export function normalizeMusicalDna(raw: Partial<MusicalDna> | null | undefined)
     defaultStyle: (raw.defaultStyle as MusicStyleId) || base.defaultStyle,
     intensity: (raw.intensity as MusicIntensity) || base.intensity,
     volume: clamp01(typeof raw.volume === "number" ? raw.volume : base.volume),
+    sfxVolume: clamp01(typeof raw.sfxVolume === "number" ? raw.sfxVolume : base.sfxVolume),
     ducking: raw.ducking !== false,
     adaptToScript: Boolean(raw.adaptToScript),
     bedMode: raw.bedMode === "dynamic" ? "dynamic" : "continuous",

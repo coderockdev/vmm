@@ -9,6 +9,8 @@ export interface SfxEvent {
   /** Internal production marker — never shown on video / never spoken. */
   marker: string;
   categoryHint?: string;
+  /** Library track display name when resolved. */
+  trackName?: string;
 }
 
 export interface PlanSfxArgs {
@@ -17,6 +19,8 @@ export interface PlanSfxArgs {
   allowed: SfxKind[];
   forbidden: SfxKind[];
   intensity: "soft" | "medium" | "intense";
+  /** Timed narration lines — SFX are placed at the line where the keyword is spoken. */
+  timedLines?: Array<{ text: string; start: number; end?: number }>;
 }
 
 export interface RenderSfxArgs {

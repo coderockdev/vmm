@@ -133,6 +133,7 @@ export function ChannelWorkspace({
   const [pendingScriptTitles, setPendingScriptTitles] = useState<string[]>([]);
   const [retryingAudioId, setRetryingAudioId] = useState<string | null>(null);
   const [audioActionMsg, setAudioActionMsg] = useState<string | null>(null);
+  const [bedBusyByProject, setBedBusyByProject] = useState<Record<string, string | null>>({});
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const durationMinutes = durationKey === "default" ? channel.dna.scriptRules.defaultDurationMinutes : Number(durationKey);
@@ -823,9 +824,14 @@ export function ChannelWorkspace({
                 const status = productionLabel(project, job);
                 const generatingAudio = status.kind === "working" || retryingAudioId === project.id;
                 const canRetryFailed = project.status === "failed" && Boolean(project.scriptId) && !asset;
-                const listenUrl = asset ? mediaUrl(channel.id, asset.filePath) : null;
+                const voiceUrl = asset ? mediaUrl(channel.id, asset.filePath) : null;
+                const openUrl = project.mixAudioRef
+                  ? mediaUrl(channel.id, project.mixAudioRef)
+                  : voiceUrl;
+                const bedBusy = bedBusyByProject[project.id] ?? null;
+                const cardBusy = generatingAudio || Boolean(bedBusy);
                 return (
-                  <article className={`review-queue-card review-queue-card-audio${generatingAudio ? " is-producing" : ""}`} key={project.id}>
+                  <article className={`review-queue-card review-queue-card-audio${cardBusy ? " is-producing" : ""}`} key={project.id}>
                     {project.thumbnailRef ? (
                       <div className="review-queue-thumb">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -844,20 +850,29 @@ export function ChannelWorkspace({
                           ? ` · total ${formatUsd(project.costUsdTotal)}`
                           : ""}
                       </p>
-                      <span className={`workspace-rendered ${status.kind}`}>
-                        <i /> {retryingAudioId === project.id ? "A regenerar áudio…" : status.text}
-                        {generatingAudio && job && retryingAudioId !== project.id ? ` · ${Math.round(job.progress)}%` : ""}
+                      <span className={`workspace-rendered ${bedBusy || generatingAudio ? "working" : status.kind}`}>
+                        <i />{" "}
+                        {bedBusy
+                          ? bedBusy
+                          : retryingAudioId === project.id
+                            ? "A regenerar áudio…"
+                            : status.text}
+                        {generatingAudio && job && retryingAudioId !== project.id && !bedBusy
+                          ? ` · ${Math.round(job.progress)}%`
+                          : ""}
                       </span>
                       <ProjectCostLabel project={project} alwaysShow />
-                      {listenUrl && (
-                        <audio className="review-queue-audio" controls preload="metadata" src={listenUrl}>
-                          Seu navegador não reproduz áudio embutido.
-                        </audio>
-                      )}
                       {asset && (
                         <AudioBedControls
                           channelId={channel.id}
                           project={project}
+                          voiceUrl={voiceUrl}
+                          onBusyChange={(label) => {
+                            setBedBusyByProject((prev) => {
+                              if ((prev[project.id] ?? null) === label) return prev;
+                              return { ...prev, [project.id]: label };
+                            });
+                          }}
                           onUpdated={(updated) => {
                             setProjects((previous) =>
                               previous.map((p) => (p.id === updated.id ? updated : p))
@@ -866,9 +881,9 @@ export function ChannelWorkspace({
                         />
                       )}
                     </div>
-                    {listenUrl ? (
-                      <a className="review-queue-action" href={listenUrl} target="_blank" rel="noreferrer">
-                        Abrir áudio
+                    {openUrl ? (
+                      <a className="review-queue-action" href={openUrl} target="_blank" rel="noreferrer">
+                        {project.mixAudioRef ? "Abrir mix" : "Abrir áudio"}
                       </a>
                     ) : asset ? (
                       <span className="review-queue-action review-queue-action-muted" title="Arquivo só existia no disco da máquina que gerou; gere de novo para subir ao Supabase.">

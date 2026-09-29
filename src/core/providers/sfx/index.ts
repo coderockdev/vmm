@@ -7,21 +7,21 @@ import {
   pickBestLibraryEntry,
   resolveLibraryFile,
 } from "../audioLibrary/catalog";
-import { runFfmpeg, ensureParentDir, renderSilence } from "../../audio/ffmpegUtils";
+import { runFfmpeg, ensureParentDir, ffprobeDuration } from "../../audio/ffmpegUtils";
 
 const KEYWORD_TO_CATEGORY: Array<{ re: RegExp; kind: SfxKind; category: string }> = [
-  { re: /tel[eé]fono|llamar|llame|vibra|mensaje|whatsapp/, kind: "phone_vibrate", category: "telefone" },
+  { re: /tel[eé]fono|llamar|llame|llamarte|vibra|mensaje|whatsapp/, kind: "phone_vibrate", category: "telefone" },
   { re: /silencio|noche|oscur|medianoche/, kind: "night", category: "noite" },
   { re: /viento|aire|sopla/, kind: "wind", category: "vento" },
   { re: /lluvia|chuva|rain/, kind: "rain", category: "chuva" },
   { re: /reloj|hora|clock/, kind: "clock", category: "relogio" },
-  { re: /coraz[oó]n|latir|pecho/, kind: "heartbeat", category: "batimento" },
+  { re: /coraz[oó]n|latir|latido|pecho/, kind: "heartbeat", category: "batimento" },
   { re: /llámame ahora|ahora mismo/, kind: "whoosh", category: "whoosh" },
 ];
 
 /**
- * Plans sparse SFX from script keywords, then pulls clips from the VMM
- * audio library (YouTube Audio Library SFX registered in catalog).
+ * Plans sparse SFX from script keywords at the timed line where they appear,
+ * then pulls clips from the VMM audio library.
  */
 export class LibrarySfxProvider implements SFXProvider {
   readonly name = "vmm-audio-library-sfx";
@@ -29,17 +29,55 @@ export class LibrarySfxProvider implements SFXProvider {
   planEvents(args: PlanSfxArgs): SfxEvent[] {
     const allowed = new Set(args.allowed.filter((k) => !args.forbidden.includes(k)));
     if (allowed.size === 0) return [];
-    const text = args.scriptText.toLowerCase();
-    const dur = args.durationSeconds;
-    const events: SfxEvent[] = [];
-    const vol = args.intensity === "intense" ? 0.35 : args.intensity === "soft" ? 0.14 : 0.22;
 
+    const vol = args.intensity === "intense" ? 0.9 : args.intensity === "soft" ? 0.7 : 0.8;
+    const usedKinds = new Set<SfxKind>();
+    const events: SfxEvent[] = [];
+    const minGap = 12; // seconds between cues
+
+    const timed = (args.timedLines ?? []).filter(
+      (l) => l && typeof l.text === "string" && Number.isFinite(l.start)
+    );
+
+    if (timed.length > 0) {
+      for (const line of timed) {
+        if (events.length >= 5) break;
+        const text = line.text.toLowerCase();
+        for (const rule of KEYWORD_TO_CATEGORY) {
+          if (!allowed.has(rule.kind) || usedKinds.has(rule.kind)) continue;
+          if (!rule.re.test(text)) continue;
+          // Place near the start of the spoken line (when the idea is heard).
+          const at = clamp(
+            (line.start ?? 0) + 0.15,
+            0.2,
+            Math.max(0.3, args.durationSeconds - 0.6)
+          );
+          if (events.some((e) => Math.abs(e.atSeconds - at) < minGap)) continue;
+          usedKinds.add(rule.kind);
+          events.push({
+            kind: rule.kind,
+            atSeconds: at,
+            volume: vol,
+            marker: `SFX_${rule.kind.toUpperCase()} @ ${fmt(at)} · “${snip(line.text)}”`,
+            categoryHint: rule.category,
+          });
+          break; // one SFX per line
+        }
+      }
+      return events.sort((a, b) => a.atSeconds - b.atSeconds);
+    }
+
+    // Fallback (no timings): still prefer first keyword occurrence position in text.
+    const full = args.scriptText || "";
+    const lower = full.toLowerCase();
     for (const rule of KEYWORD_TO_CATEGORY) {
-      if (!rule.re.test(text)) continue;
-      if (!allowed.has(rule.kind)) continue;
-      if (events.length >= 4) break;
-      const at = Math.min(dur - 0.5, Math.max(0.4, dur * (0.1 + events.length * 0.2)));
-      if (events.some((e) => Math.abs(e.atSeconds - at) < 8)) continue;
+      if (!allowed.has(rule.kind) || usedKinds.has(rule.kind)) continue;
+      const idx = lower.search(rule.re);
+      if (idx < 0) continue;
+      const ratio = full.length > 0 ? idx / full.length : 0.2;
+      const at = clamp(ratio * args.durationSeconds, 0.4, args.durationSeconds - 0.5);
+      if (events.some((e) => Math.abs(e.atSeconds - at) < minGap)) continue;
+      usedKinds.add(rule.kind);
       events.push({
         kind: rule.kind,
         atSeconds: at,
@@ -47,26 +85,41 @@ export class LibrarySfxProvider implements SFXProvider {
         marker: `SFX_${rule.kind.toUpperCase()} @ ${fmt(at)}`,
         categoryHint: rule.category,
       });
+      if (events.length >= 5) break;
     }
-    return events;
+    return events.sort((a, b) => a.atSeconds - b.atSeconds);
   }
 
   async renderBed(args: RenderSfxArgs & { channelId?: string; scriptText?: string }): Promise<GeneratedSfxBed> {
     const outPath = path.join(args.outDir, `${args.fileBaseName}.mp3`);
     ensureParentDir(outPath);
     const dur = Math.max(1, args.durationSeconds);
+    const RATE = 48000;
+    const FMT = `aformat=sample_fmts=fltp:sample_rates=${RATE}:channel_layouts=mono`;
 
     if (args.events.length === 0) {
-      const aiff = outPath.replace(/\.mp3$/, ".aiff");
-      await renderSilence(dur, aiff);
-      await runFfmpeg("ffmpeg", ["-y", "-i", aiff, "-c:a", "libmp3lame", "-q:a", "5", outPath]);
-      fs.rmSync(aiff, { force: true });
+      await runFfmpeg("ffmpeg", [
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        `anullsrc=r=${RATE}:cl=mono`,
+        "-t",
+        dur.toFixed(3),
+        "-c:a",
+        "libmp3lame",
+        "-q:a",
+        "5",
+        outPath,
+      ]);
       return { filePath: outPath, events: [], provider: this.name };
     }
 
-    const inputs: string[] = [];
-    const filterParts: string[] = [];
-    let inputIndex = 0;
+    // Input 0 = continuous silent bed (avoids adelay+apad glitches / MP3 freezes).
+    const inputs: string[] = ["-f", "lavfi", "-t", dur.toFixed(3), "-i", `anullsrc=r=${RATE}:cl=mono`];
+    const filterParts: string[] = [`[0:a]${FMT},asetpts=PTS-STARTPTS[base]`];
+    const mixLabels = ["[base]"];
+    let inputIndex = 1;
 
     for (let i = 0; i < args.events.length; i++) {
       const ev = args.events[i];
@@ -82,24 +135,54 @@ export class LibrarySfxProvider implements SFXProvider {
       const src = resolveLibraryFile(entry);
       if (!fs.existsSync(src)) continue;
 
+      ev.trackName = entry.name;
       inputs.push("-i", src);
-      const delayMs = Math.round(ev.atSeconds * 1000);
+
+      let clipDur = 1.2;
+      try {
+        clipDur = Math.max(0.15, await ffprobeDuration(src));
+      } catch {
+        /* keep default */
+      }
+      // Cap one-shots so long ambient files don't wash over the voice.
+      const useDur = Math.min(clipDur, ev.kind === "night" || ev.kind === "wind" || ev.kind === "rain" ? 2.2 : 1.4);
+      const fadeOutStart = Math.max(0.05, useDur - 0.25);
+      const delayMs = Math.max(0, Math.round(ev.atSeconds * 1000));
+      const vol = Math.min(0.75, ev.volume * 0.85);
+      const label = `s${inputIndex}`;
+      // atrim → fade → asetpts → adelay on a clean PCM timeline (no double-pad).
       filterParts.push(
-        `[${inputIndex}]volume=${ev.volume},adelay=${delayMs}|${delayMs},afade=t=out:st=1.2:d=0.4[s${inputIndex}]`
+        `[${inputIndex}:a]${FMT},atrim=0:${useDur.toFixed(3)},asetpts=PTS-STARTPTS,` +
+          `volume=${vol.toFixed(3)},` +
+          `afade=t=in:d=0.04,afade=t=out:st=${fadeOutStart.toFixed(3)}:d=0.22,` +
+          `adelay=${delayMs}|${delayMs}[${label}]`
       );
+      mixLabels.push(`[${label}]`);
       inputIndex++;
     }
 
-    if (inputIndex === 0) {
-      const aiff = outPath.replace(/\.mp3$/, ".aiff");
-      await renderSilence(dur, aiff);
-      await runFfmpeg("ffmpeg", ["-y", "-i", aiff, "-c:a", "libmp3lame", "-q:a", "5", outPath]);
-      fs.rmSync(aiff, { force: true });
+    if (mixLabels.length === 1) {
+      await runFfmpeg("ffmpeg", [
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        `anullsrc=r=${RATE}:cl=mono`,
+        "-t",
+        dur.toFixed(3),
+        "-c:a",
+        "libmp3lame",
+        "-q:a",
+        "5",
+        outPath,
+      ]);
       return { filePath: outPath, events: args.events, provider: this.name };
     }
 
-    const mix = Array.from({ length: inputIndex }, (_, i) => `[s${i}]`).join("");
-    const filter = `${filterParts.join(";")};${mix}amix=inputs=${inputIndex}:duration=longest:dropout_transition=0,apad=whole_dur=${dur.toFixed(3)}[out]`;
+    const filter =
+      `${filterParts.join(";")};` +
+      `${mixLabels.join("")}amix=inputs=${mixLabels.length}:duration=first:dropout_transition=0:normalize=0,` +
+      `alimiter=limit=0.9:attack=5:release=40[out]`;
 
     await runFfmpeg("ffmpeg", [
       "-y",
@@ -110,10 +193,14 @@ export class LibrarySfxProvider implements SFXProvider {
       "[out]",
       "-t",
       dur.toFixed(3),
+      "-ar",
+      String(RATE),
+      "-ac",
+      "1",
       "-c:a",
       "libmp3lame",
       "-q:a",
-      "5",
+      "4",
       outPath,
     ]);
 
@@ -125,6 +212,15 @@ function fmt(s: number): string {
   const m = Math.floor(s / 60);
   const sec = Math.floor(s % 60);
   return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, n));
+}
+
+function snip(text: string): string {
+  const t = text.replace(/\[[^\]]+\]/g, "").replace(/\s+/g, " ").trim();
+  return t.length > 42 ? `${t.slice(0, 40)}…` : t;
 }
 
 export function getSfxProvider(): SFXProvider {

@@ -6,6 +6,7 @@ import {
   getScript,
   getAudioAsset,
   updateProjectAudioBed,
+  withAudioBed,
 } from "../repo/projects";
 import { getMusicProvider } from "../providers/music";
 import { getSfxProvider } from "../providers/sfx";
@@ -14,7 +15,7 @@ import { mixNarrationWithBed } from "../audio/mixNarrationBed";
 import { ensureLocalFile, persistFile, workingFilePath } from "../storage";
 import { insertUsageEvent } from "../repo/usage";
 import { channelTmpDir } from "../paths";
-import { listLibraryEntries } from "../providers/audioLibrary/catalog";
+import { getLibraryEntry, listLibraryEntries } from "../providers/audioLibrary/catalog";
 
 async function ensureAudioLibrarySeeded(): Promise<void> {
   if (listLibraryEntries().length > 0) return;
@@ -28,7 +29,7 @@ async function ensureAudioLibrarySeeded(): Promise<void> {
 
 /**
  * Generate/select instrumental music + SFX from the VMM library and mix with narration.
- * Does NOT regenerate voice. Partial: musicOnly / sfxOnly supported.
+ * Does NOT regenerate voice. Partial: musicOnly / sfxOnly / remixOnly supported.
  */
 export async function produceAudioBed(args: {
   projectId: string;
@@ -36,7 +37,11 @@ export async function produceAudioBed(args: {
   sfxOnly?: boolean;
   musicOff?: boolean;
   sfxOff?: boolean;
+  /** Keep existing music/SFX refs; only re-mix with new volumes. */
+  remixOnly?: boolean;
   styleOverride?: string | null;
+  musicVolume?: number | null;
+  sfxVolume?: number | null;
 }): Promise<{ project: NonNullable<Awaited<ReturnType<typeof getVideoProject>>> }> {
   await ensureAudioLibrarySeeded();
 
@@ -52,6 +57,18 @@ export async function produceAudioBed(args: {
   const script = project.scriptId ? await getScript(project.scriptId) : null;
   const scriptText = script?.rawText ?? script?.lines.map((l) => l.text).join("\n\n") ?? "";
   const musical = normalizeMusicalDna(channel.dna.musical);
+  const musicVolume =
+    typeof args.musicVolume === "number" && Number.isFinite(args.musicVolume)
+      ? Math.min(1, Math.max(0, args.musicVolume))
+      : typeof project.musicVolume === "number"
+        ? project.musicVolume
+        : musical.volume;
+  const sfxVolume =
+    typeof args.sfxVolume === "number" && Number.isFinite(args.sfxVolume)
+      ? Math.min(1, Math.max(0, args.sfxVolume))
+      : typeof project.sfxVolume === "number"
+        ? project.sfxVolume
+        : musical.sfxVolume;
 
   const narrationLocal = await ensureLocalFile(
     channel.id,
@@ -61,14 +78,23 @@ export async function produceAudioBed(args: {
   const tmpDir = path.join(channelTmpDir(channel.id), project.id, "bed");
   fs.mkdirSync(tmpDir, { recursive: true });
 
-  let musicRef = args.musicOnly || args.sfxOnly ? project.musicRef : null;
-  let sfxRef = args.musicOnly || args.sfxOnly ? project.sfxRef : null;
+  const keepExisting = Boolean(args.remixOnly || args.musicOnly || args.sfxOnly);
+  let musicRef = keepExisting ? project.musicRef : null;
+  let sfxRef = keepExisting ? project.sfxRef : null;
   let musicStyle = project.musicStyle;
+  let musicLibraryId = keepExisting ? project.musicLibraryId : null;
+  let musicTrackName = keepExisting ? project.musicTrackName : null;
   let markers = project.productionMarkers ?? [];
+  let sfxCues = keepExisting ? project.sfxCues : null;
   let attributionText: string | null = null;
 
-  const doMusic = !args.sfxOnly && !args.musicOff && (musical.useMusicByDefault || args.musicOnly);
+  const doMusic =
+    !args.remixOnly &&
+    !args.sfxOnly &&
+    !args.musicOff &&
+    (musical.useMusicByDefault || args.musicOnly);
   const doSfx =
+    !args.remixOnly &&
     !args.musicOnly &&
     !args.sfxOff &&
     (musical.useSfx && musical.sfxMode !== "off" || args.sfxOnly);
@@ -76,10 +102,13 @@ export async function produceAudioBed(args: {
   if (args.musicOff) {
     musicRef = null;
     musicStyle = null;
+    musicLibraryId = null;
+    musicTrackName = null;
   }
   if (args.sfxOff) {
     sfxRef = null;
     markers = [];
+    sfxCues = null;
   }
 
   if (doMusic) {
@@ -102,6 +131,10 @@ export async function produceAudioBed(args: {
       "audio/mpeg"
     );
     musicStyle = music.style;
+    musicLibraryId = music.libraryEntryId ?? null;
+    musicTrackName = music.libraryEntryId
+      ? getLibraryEntry(music.libraryEntryId)?.name ?? music.libraryEntryId
+      : null;
     attributionText = music.attributionText || null;
     await insertUsageEvent({
       channelId: channel.id,
@@ -118,12 +151,18 @@ export async function produceAudioBed(args: {
 
   if (doSfx) {
     const sfxProvider = getSfxProvider();
+    const scriptLines = script?.lines ?? [];
     const events = sfxProvider.planEvents({
       scriptText,
       durationSeconds: asset.durationSeconds,
       allowed: musical.allowedSfx,
       forbidden: musical.forbiddenSfx,
       intensity: musical.sfxIntensity,
+      timedLines: scriptLines.map((l) => ({
+        text: l.text,
+        start: Number(l.start) || 0,
+        end: Number(l.end) || undefined,
+      })),
     });
     markers = events.map((e) => e.marker);
     const bed = await sfxProvider.renderBed({
@@ -134,6 +173,12 @@ export async function produceAudioBed(args: {
       channelId: channel.id,
       scriptText,
     });
+    sfxCues = bed.events.map((e) => ({
+      at: fmtCue(e.atSeconds),
+      label: sfxLabel(e.kind),
+      trackName: e.trackName,
+    }));
+    markers = bed.events.map((e) => e.marker);
     sfxRef = await persistFile(
       bed.filePath,
       channel.id,
@@ -155,43 +200,93 @@ export async function produceAudioBed(args: {
     }).catch(() => undefined);
   }
 
-  // Mix
+  // Mix variants: voice+music, voice+sfx, voice+music+sfx
+  let mixMusicRef: string | null = null;
+  let mixSfxRef: string | null = null;
   let mixAudioRef: string | null = null;
-  if (musicRef || sfxRef) {
-    const musicLocal = musicRef
-      ? await ensureLocalFile(channel.id, musicRef, `music-${project.id}.mp3`)
-      : null;
-    const sfxLocal = sfxRef
-      ? await ensureLocalFile(channel.id, sfxRef, `sfx-${project.id}.mp3`)
-      : null;
-    const mixOut = workingFilePath(channel.id, "audio", `mix-${project.id}.mp3`);
+
+  const channelId = channel.id;
+  const projectId = project.id;
+  const ducking = musical.ducking;
+
+  const musicLocal = musicRef
+    ? await ensureLocalFile(channelId, musicRef, `music-${projectId}.mp3`)
+    : null;
+  const sfxLocal = sfxRef
+    ? await ensureLocalFile(channelId, sfxRef, `sfx-${projectId}.mp3`)
+    : null;
+
+  async function persistMix(
+    fileBase: string,
+    musicPath: string | null,
+    sfxPath: string | null
+  ): Promise<string> {
+    const mixOut = workingFilePath(channelId, "audio", `${fileBase}-${projectId}.mp3`);
     await mixNarrationWithBed({
       narrationPath: narrationLocal,
-      musicPath: musicLocal,
-      sfxPath: sfxLocal,
-      musicVolume: musical.volume,
-      ducking: musical.ducking,
+      musicPath,
+      sfxPath,
+      musicVolume,
+      sfxVolume,
+      ducking,
       outputPath: mixOut,
     });
-    mixAudioRef = await persistFile(
-      mixOut,
-      channel.id,
-      "audio",
-      `mix-${project.id}.mp3`,
-      "audio/mpeg"
-    );
+    return persistFile(mixOut, channelId, "audio", `${fileBase}-${projectId}.mp3`, "audio/mpeg");
   }
 
-  await updateProjectAudioBed(project.id, {
+  if (musicLocal) {
+    mixMusicRef = await persistMix("mix-music", musicLocal, null);
+  }
+  if (sfxLocal) {
+    mixSfxRef = await persistMix("mix-sfx", null, sfxLocal);
+  }
+  if (musicLocal || sfxLocal) {
+    mixAudioRef = await persistMix("mix", musicLocal, sfxLocal);
+  }
+
+  const bedPayload = {
     musicRef,
     musicStyle,
+    musicLibraryId,
+    musicTrackName,
     sfxRef,
+    mixMusicRef,
+    mixSfxRef,
     mixAudioRef,
+    musicVolume,
+    sfxVolume,
     productionMarkers: markers,
+    sfxCues,
     attributionText,
-  });
+  };
 
-  const next = await getVideoProject(project.id);
+  await updateProjectAudioBed(projectId, bedPayload);
+
+  const next = await getVideoProject(projectId);
   if (!next) throw new Error("Failed to reload project");
-  return { project: next };
+  // Always surface mix refs on the response (overlay / DB / in-memory).
+  return { project: withAudioBed(next, bedPayload) };
+}
+
+function fmtCue(seconds: number): string {
+  const s = Math.max(0, seconds);
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
+function sfxLabel(kind: string): string {
+  const map: Record<string, string> = {
+    phone_vibrate: "Telefone (vibração)",
+    phone_ring: "Telefone (toque)",
+    message: "Mensagem",
+    wind: "Vento",
+    night: "Noite / silêncio",
+    rain: "Chuva",
+    heartbeat: "Batimento",
+    whoosh: "Whoosh",
+    impact: "Impacto",
+    clock: "Relógio",
+  };
+  return map[kind] ?? kind;
 }

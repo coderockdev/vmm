@@ -235,12 +235,32 @@ export interface VideoProject {
   /** Instrumental bed ref (path/URL) — never overwrites narration asset. */
   musicRef: string | null;
   musicStyle: string | null;
+  /** Catalog id of the looped instrumental track. */
+  musicLibraryId: string | null;
+  /** Display name of the instrumental track (same theme looped). */
+  musicTrackName: string | null;
   /** Mixed SFX bed ref. */
   sfxRef: string | null;
+  /** Voice + music only. */
+  mixMusicRef: string | null;
+  /** Voice + SFX only. */
+  mixSfxRef: string | null;
   /** Final mix (narration+music+sfx) used for video render when present. */
   mixAudioRef: string | null;
+  /** Last music gain used in mix (0–1). */
+  musicVolume: number | null;
+  /** Last SFX gain used in mix (0–1). */
+  sfxVolume: number | null;
   /** Production SFX markers (never shown on screen / never spoken). */
   productionMarkers: string[] | null;
+  /** Human-readable SFX cues for the editor UI. */
+  sfxCues: Array<{ at: string; label: string; trackName?: string }> | null;
+  /** YouTube headline / manchete. */
+  headline: string | null;
+  /** Full YouTube description. */
+  youtubeDescription: string | null;
+  /** Auto-flow: continue music/SFX after TTS. */
+  autoFlow: boolean;
   createdAt: string;
   updatedAt: string;
 }

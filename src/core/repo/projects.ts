@@ -5,6 +5,13 @@ import { getDb } from "../db";
 import { getSupabase, isSupabaseEnabled, assertNoError } from "../supabaseClient";
 import { workingFilePath, persistFile } from "../storage";
 import { AudioAsset, JobStatus, Script, ScriptLine, VideoFormat, VideoProject, VideoConcept } from "../types";
+import {
+  mergeAudioBed,
+  readAudioBedOverlay,
+  writeAudioBedOverlay,
+  type AudioBedOverlay,
+} from "./audioBedOverlay";
+import { readProjectPublish } from "./projectPublish";
 
 interface ProjectRow {
   id: string;
@@ -64,19 +71,49 @@ function parseJsonObject<T>(raw: string | object | null | undefined): T | null {
   return obj as T;
 }
 
-type AudioBedJson = {
-  musicRef?: string | null;
-  musicStyle?: string | null;
-  musicLibraryId?: string | null;
-  sfxRef?: string | null;
-  mixAudioRef?: string | null;
-  productionMarkers?: string[] | null;
-  attributionText?: string | null;
-};
+type AudioBedJson = AudioBedOverlay;
+
+function bedFieldsFromJson(bed: AudioBedJson | null): Pick<
+  VideoProject,
+  | "musicRef"
+  | "musicStyle"
+  | "musicLibraryId"
+  | "musicTrackName"
+  | "sfxRef"
+  | "mixMusicRef"
+  | "mixSfxRef"
+  | "mixAudioRef"
+  | "musicVolume"
+  | "sfxVolume"
+  | "productionMarkers"
+  | "sfxCues"
+> {
+  return {
+    musicRef: bed?.musicRef ?? null,
+    musicStyle: bed?.musicStyle ?? null,
+    musicLibraryId: bed?.musicLibraryId ?? null,
+    musicTrackName: bed?.musicTrackName ?? null,
+    sfxRef: bed?.sfxRef ?? null,
+    mixMusicRef: bed?.mixMusicRef ?? null,
+    mixSfxRef: bed?.mixSfxRef ?? null,
+    mixAudioRef: bed?.mixAudioRef ?? null,
+    musicVolume: typeof bed?.musicVolume === "number" ? bed.musicVolume : null,
+    sfxVolume: typeof bed?.sfxVolume === "number" ? bed.sfxVolume : null,
+    productionMarkers: bed?.productionMarkers ?? null,
+    sfxCues: Array.isArray(bed?.sfxCues) ? bed!.sfxCues! : null,
+  };
+}
+
+function resolveAudioBed(projectId: string, raw: string | object | null | undefined): AudioBedJson | null {
+  const fromDb = parseJsonObject<AudioBedJson>(raw);
+  const fromOverlay = readAudioBedOverlay(projectId);
+  return mergeAudioBed(fromDb, fromOverlay);
+}
 
 function rowToProject(row: ProjectRow): VideoProject {
   const style = parseJsonObject<NonNullable<VideoProject["videoStyle"]>>(row.video_style_json);
-  const bed = parseJsonObject<AudioBedJson>(row.audio_bed_json);
+  const bed = resolveAudioBed(row.id, row.audio_bed_json);
+  const publish = readProjectPublish(row.id);
   return {
     id: row.id,
     channelId: row.channel_id,
@@ -99,14 +136,18 @@ function rowToProject(row: ProjectRow): VideoProject {
     thumbnailConcept: parseThumbnailConcept(row.thumbnail_json),
     thumbnailRef: row.thumbnail_ref ?? null,
     videoStyle: style,
-    musicRef: bed?.musicRef ?? null,
-    musicStyle: bed?.musicStyle ?? null,
-    sfxRef: bed?.sfxRef ?? null,
-    mixAudioRef: bed?.mixAudioRef ?? null,
-    productionMarkers: bed?.productionMarkers ?? null,
+    ...bedFieldsFromJson(bed),
+    headline: publish?.headline ?? null,
+    youtubeDescription: publish?.youtubeDescription ?? null,
+    autoFlow: Boolean(publish?.autoFlow),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+/** Apply bed refs onto a project object (in-memory), for API responses. */
+export function withAudioBed(project: VideoProject, bed: AudioBedJson): VideoProject {
+  return { ...project, ...bedFieldsFromJson(bed) };
 }
 
 export async function createVideoProject(input: {
@@ -697,34 +738,57 @@ export async function updateProjectVideoStyle(
 export async function updateProjectAudioBed(
   projectId: string,
   bed: AudioBedJson
-): Promise<void> {
+): Promise<{ persisted: "supabase" | "sqlite" | "overlay" }> {
   const now = new Date().toISOString();
   const existing = await getVideoProject(projectId);
   const merged: AudioBedJson = {
     musicRef: existing?.musicRef,
     musicStyle: existing?.musicStyle,
+    musicLibraryId: existing?.musicLibraryId,
+    musicTrackName: existing?.musicTrackName,
     sfxRef: existing?.sfxRef,
+    mixMusicRef: existing?.mixMusicRef,
+    mixSfxRef: existing?.mixSfxRef,
     mixAudioRef: existing?.mixAudioRef,
+    musicVolume: existing?.musicVolume,
+    sfxVolume: existing?.sfxVolume,
     productionMarkers: existing?.productionMarkers,
+    sfxCues: existing?.sfxCues,
     ...bed,
   };
+
   if (isSupabaseEnabled()) {
     const res = await getSupabase()
       .from("video_projects")
       .update({ audio_bed_json: merged, updated_at: now })
       .eq("id", projectId);
     if (res.error && /audio_bed/i.test(res.error.message)) {
-      console.warn("[projects] audio_bed_json missing — add column via SQL");
-      return;
+      console.warn("[projects] audio_bed_json missing — writing disk overlay");
+      writeAudioBedOverlay(projectId, merged);
+      return { persisted: "overlay" };
     }
     assertNoError(res);
-    return;
+    // Keep overlay in sync so refresh works even if column is later dropped.
+    try {
+      writeAudioBedOverlay(projectId, merged);
+    } catch {
+      /* best-effort */
+    }
+    return { persisted: "supabase" };
   }
+
   try {
     getDb()
       .prepare(`UPDATE video_projects SET audio_bed_json = ?, updated_at = ? WHERE id = ?`)
       .run(JSON.stringify(merged), now, projectId);
+    try {
+      writeAudioBedOverlay(projectId, merged);
+    } catch {
+      /* best-effort */
+    }
+    return { persisted: "sqlite" };
   } catch {
-    /* column may be missing locally */
+    writeAudioBedOverlay(projectId, merged);
+    return { persisted: "overlay" };
   }
 }

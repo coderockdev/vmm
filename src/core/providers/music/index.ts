@@ -35,24 +35,46 @@ export class LibraryMusicProvider implements MusicProvider {
 
     const outPath = path.join(args.outDir, `${args.fileBaseName}.mp3`);
     ensureParentDir(outPath);
-    // Loop / trim to narration duration with soft fades — never alter pitch of narration.
+    // Normalize the short library clip first (fast), then loop — never alter narration.
     const dur = Math.max(2, args.durationSeconds);
+    const normalized = path.join(args.outDir, `${args.fileBaseName}-norm.mp3`);
+    await runFfmpeg("ffmpeg", [
+      "-y",
+      "-i",
+      src,
+      "-af",
+      "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono,dynaudnorm=f=75:g=12:p=0.95,volume=1.35,alimiter=limit=0.95",
+      "-ar",
+      "48000",
+      "-ac",
+      "1",
+      "-c:a",
+      "libmp3lame",
+      "-q:a",
+      "3",
+      normalized,
+    ]);
     await runFfmpeg("ffmpeg", [
       "-y",
       "-stream_loop",
       "-1",
       "-i",
-      src,
+      normalized,
       "-t",
       dur.toFixed(3),
       "-af",
-      `afade=t=in:st=0:d=1.5,afade=t=out:st=${Math.max(0.5, dur - 2.5).toFixed(3)}:d=2.5`,
+      `aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono,afade=t=in:st=0:d=1.5,afade=t=out:st=${Math.max(0.5, dur - 2.5).toFixed(3)}:d=2.5`,
+      "-ar",
+      "48000",
+      "-ac",
+      "1",
       "-c:a",
       "libmp3lame",
       "-q:a",
       "3",
       outPath,
     ]);
+    fs.rmSync(normalized, { force: true });
 
     return {
       filePath: outPath,

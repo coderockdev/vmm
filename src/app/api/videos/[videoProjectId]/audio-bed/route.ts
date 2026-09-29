@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { produceAudioBed } from "../../../../../core/pipeline/produceAudioBed";
 import { getVideoProject } from "../../../../../core/repo/projects";
+import { ensureAudioBedColumns } from "../../../../../core/repo/ensureAudioBedColumns";
 import { listLibraryEntries } from "../../../../../core/providers/audioLibrary/catalog";
 import { getChannel } from "../../../../../core/repo/channels";
 import type { AudioLibraryEntry } from "../../../../../core/providers/audioLibrary/types";
@@ -9,13 +10,17 @@ import type { AudioLibraryEntry } from "../../../../../core/providers/audioLibra
 export async function POST(req: NextRequest, { params }: { params: { videoProjectId: string } }) {
   const body = await req.json().catch(() => ({}));
   try {
+    await ensureAudioBedColumns().catch(() => false);
     const result = await produceAudioBed({
       projectId: params.videoProjectId,
       musicOnly: Boolean(body.musicOnly),
       sfxOnly: Boolean(body.sfxOnly),
       musicOff: Boolean(body.musicOff),
       sfxOff: Boolean(body.sfxOff),
+      remixOnly: Boolean(body.remixOnly),
       styleOverride: typeof body.style === "string" ? body.style : null,
+      musicVolume: typeof body.musicVolume === "number" ? body.musicVolume : null,
+      sfxVolume: typeof body.sfxVolume === "number" ? body.sfxVolume : null,
     });
     return NextResponse.json({ project: result.project });
   } catch (err) {
