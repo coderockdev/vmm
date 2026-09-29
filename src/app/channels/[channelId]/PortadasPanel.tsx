@@ -47,6 +47,18 @@ export function PortadasPanel({
   const [selectedId, setSelectedId] = useState(focusProjectId || eligible[0]?.id || "");
   const selected = projects.find((p) => p.id === selectedId) ?? eligible[0] ?? null;
 
+  const otherProjectThumbs = useMemo(() => {
+    return eligible
+      .filter((p) => p.id !== selected?.id && p.thumbnailRef)
+      .slice(0, 12)
+      .map((p) => ({
+        id: p.id,
+        title: p.title,
+        url: `${mediaUrl(channel.id, p.thumbnailRef!) ?? ""}?t=1`,
+      }))
+      .filter((p) => p.url && !p.url.startsWith("null"));
+  }, [eligible, selected?.id, channel.id]);
+
   const [formatChoice, setFormatChoice] = useState<FormatChoice>("auto");
   const [title, setTitle] = useState("");
   const [thumbnailText, setThumbnailText] = useState("");
@@ -57,6 +69,9 @@ export function PortadasPanel({
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const [candidateUrls, setCandidateUrls] = useState<
     Array<{ id: string; styleId: string; styleLabel: string; url: string }>
+  >([]);
+  const [historyUrls, setHistoryUrls] = useState<
+    Array<{ id: string; styleId: string; styleLabel: string; url: string; createdAt: string }>
   >([]);
   const [imageCount, setImageCount] = useState<1 | 2 | 3>(3);
   const [busy, setBusy] = useState<"concept" | "image" | "save" | null>(null);
@@ -96,6 +111,23 @@ export function PortadasPanel({
       url: `${mediaUrl(channel.id, c.ref) ?? ""}?t=1`,
     }));
     setCandidateUrls(fromConcept.filter((c) => c.url && !c.url.startsWith("null") && !c.url.startsWith("undefined")));
+
+    const historySource =
+      selected.thumbnailConcept?.history?.length
+        ? selected.thumbnailConcept.history
+        : selected.thumbnailConcept?.candidates ?? [];
+    const hist = [...historySource]
+      .slice()
+      .reverse()
+      .map((c) => ({
+        id: c.id,
+        styleId: c.styleId,
+        styleLabel: c.styleLabel,
+        createdAt: c.createdAt,
+        url: `${mediaUrl(channel.id, c.ref) ?? ""}?t=1`,
+      }))
+      .filter((c) => c.url && !c.url.startsWith("null") && !c.url.startsWith("undefined"));
+    setHistoryUrls(hist);
     if (selected.thumbnailConcept?.thumbnailFormatId) {
       const id = String(selected.thumbnailConcept.thumbnailFormatId);
       if (id !== "auto" && id !== "invent") setFormatChoice(id);
@@ -175,6 +207,37 @@ export function PortadasPanel({
       setConcept(data.concept);
       setThumbUrl(data.thumbnailUrl);
       setCandidateUrls(data.candidates ?? []);
+      const hist = (data.concept?.history ?? data.candidates ?? [])
+        .slice()
+        .reverse()
+        .map((c: { id: string; styleId: string; styleLabel: string; ref: string; createdAt: string }) => ({
+          id: c.id,
+          styleId: c.styleId,
+          styleLabel: c.styleLabel,
+          createdAt: c.createdAt,
+          url: `${mediaUrl(channel.id, c.ref) ?? data.candidates?.find((x: { id: string }) => x.id === c.id)?.url ?? ""}?t=${Date.now()}`,
+        }))
+        .filter((c: { url: string }) => Boolean(c.url) && !c.url.startsWith("null"));
+      // Prefer server candidate urls when present
+      if (Array.isArray(data.candidates) && data.concept?.history) {
+        const urlById = new Map(
+          (data.candidates as Array<{ id: string; url: string }>).map((c) => [c.id, c.url])
+        );
+        setHistoryUrls(
+          [...(data.concept.history as Array<{ id: string; styleId: string; styleLabel: string; ref: string; createdAt: string }>)]
+            .slice()
+            .reverse()
+            .map((c) => ({
+              id: c.id,
+              styleId: c.styleId,
+              styleLabel: c.styleLabel,
+              createdAt: c.createdAt,
+              url: urlById.get(c.id) ?? `${mediaUrl(channel.id, c.ref)}?t=${Date.now()}`,
+            }))
+        );
+      } else {
+        setHistoryUrls(hist);
+      }
       if (data.partialError) setError(`Algumas falharam: ${data.partialError}`);
       if (data.project) onProjectUpdated(data.project);
     } catch (err) {
@@ -198,6 +261,16 @@ export function PortadasPanel({
       if (!res.ok) throw new Error(data.error ?? "Falha ao escolher a portada");
       setConcept(data.concept);
       setThumbUrl(data.thumbnailUrl);
+      if (data.concept?.candidates) {
+        setCandidateUrls(
+          data.concept.candidates.map((c: { id: string; styleId: string; styleLabel: string; ref: string }) => ({
+            id: c.id,
+            styleId: c.styleId,
+            styleLabel: c.styleLabel,
+            url: `${mediaUrl(channel.id, c.ref)}?t=${Date.now()}`,
+          }))
+        );
+      }
       if (data.project) onProjectUpdated(data.project);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -461,6 +534,61 @@ export function PortadasPanel({
               ))}
             </p>
           )}
+
+          {(historyUrls.length > 0 || otherProjectThumbs.length > 0) && (
+            <div className="portadas-history">
+              <h3>Histórico de portadas</h3>
+              {historyUrls.length > 0 && (
+                <>
+                  <p className="portadas-actions-hint">Gerações deste vídeo — clica para tornar principal.</p>
+                  <div className="portadas-history-strip">
+                    {historyUrls.map((c) => {
+                      const isPrimary =
+                        thumbUrl?.split("?")[0] === c.url.split("?")[0] ||
+                        concept?.candidates?.[concept.selectedCandidateIndex ?? 0]?.id === c.id;
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          className={`portadas-history-item${isPrimary ? " active" : ""}`}
+                          onClick={() => void selectCandidate(c.id)}
+                          disabled={!!busy}
+                          title={`${c.styleLabel} · tornar principal`}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={c.url} alt={c.styleLabel} />
+                          <span>{c.styleLabel}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+              {otherProjectThumbs.length > 0 && (
+                <>
+                  <p className="portadas-actions-hint" style={{ marginTop: 12 }}>
+                    Outros vídeos do canal
+                  </p>
+                  <div className="portadas-history-strip">
+                    {otherProjectThumbs.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className="portadas-history-item"
+                        onClick={() => setSelectedId(p.id)}
+                        title={p.title}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={p.url} alt={p.title} />
+                        <span>{p.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           <div className="portadas-format-grid">
             {formats.slice(0, 10).map((f, i) => (
               <button

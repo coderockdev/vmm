@@ -10,6 +10,7 @@ import { PortadasPanel } from "./PortadasPanel";
 import { formatUsd } from "../../../core/usage/types";
 import { findVoice } from "../../../core/providers/tts/voiceCatalog";
 import { TTSProviderName } from "../../../core/providers/tts/TTSProvider";
+import { JUAN_CARLOS_ELEVENLABS_VOICE_ID } from "../../../core/providers/tts/voiceCapabilities";
 import { ScriptReviewModal } from "./ScriptReviewModal";
 import { mediaUrl } from "../../../core/media";
 import { sampleIdeasFromDna, suggestTopicsFromDna } from "../../../core/providers/script/ideaSuggestions";
@@ -129,6 +130,8 @@ export function ChannelWorkspace({
   const [jobByProject, setJobByProject] = useState<Record<string, { progress: number; statusMessage: string; status: string }>>({});
   const [reviewingProject, setReviewingProject] = useState<VideoProject | null>(null);
   const [pendingScriptTitles, setPendingScriptTitles] = useState<string[]>([]);
+  const [retryingAudioId, setRetryingAudioId] = useState<string | null>(null);
+  const [audioActionMsg, setAudioActionMsg] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const durationMinutes = durationKey === "default" ? channel.dna.scriptRules.defaultDurationMinutes : Number(durationKey);
@@ -165,16 +168,35 @@ export function ChannelWorkspace({
   }, [activeTab]);
 
   async function refreshProjects() {
-    const response = await fetch(`/api/channels/${channel.id}`);
-    const data = await response.json();
-    if (data.projects) setProjects(data.projects);
-    if (data.audioAssets) setAudioAssets(data.audioAssets);
+    try {
+      const response = await fetch(`/api/channels/${channel.id}`);
+      const text = await response.text();
+      if (!response.ok || !text) return;
+      const data = JSON.parse(text) as {
+        projects?: VideoProject[];
+        audioAssets?: typeof audioAssets;
+      };
+      if (data.projects) setProjects(data.projects);
+      if (data.audioAssets) setAudioAssets(data.audioAssets);
+    } catch {
+      // Ignore poll/parse errors (empty body, HTML 404 from stale Next instance).
+    }
   }
 
   async function refreshJobs() {
     try {
       const response = await fetch("/api/jobs");
-      const data = await response.json();
+      const text = await response.text();
+      if (!response.ok || !text) return;
+      const data = JSON.parse(text) as {
+        jobs?: Array<{
+          channelId: string;
+          videoProjectId: string;
+          progress?: number;
+          statusMessage?: string;
+          status?: string;
+        }>;
+      };
       const map: Record<string, { progress: number; statusMessage: string; status: string }> = {};
       for (const job of data.jobs ?? []) {
         if (job.channelId !== channel.id) continue;
@@ -275,6 +297,66 @@ export function ChannelWorkspace({
     await refreshProjects();
   }
 
+  /** Failed audio card: re-approve with Juan Carlos voice_id and show clear feedback. */
+  async function handleRetryAudio(project: VideoProject) {
+    setRetryingAudioId(project.id);
+    setAudioActionMsg(null);
+    try {
+      const juanCarlosId =
+        channel.dna.voice.profile?.elevenlabs_voice_id || JUAN_CARLOS_ELEVENLABS_VOICE_ID;
+      const providerOverride =
+        project.ttsProviderOverride === "elevenlabs" ||
+        channel.dna.voice.provider === "heygen" ||
+        !project.ttsProviderOverride
+          ? "elevenlabs"
+          : project.ttsProviderOverride;
+      const voiceOverride =
+        project.ttsVoiceIdOverride?.trim() ||
+        (providerOverride === "elevenlabs" ? juanCarlosId : null);
+
+      const response = await fetch(`/api/videos/${project.id}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ttsProviderOverride: providerOverride,
+          ttsVoiceIdOverride: voiceOverride,
+        }),
+      });
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : {};
+      if (!response.ok) {
+        throw new Error(data.error ?? `Falha ao regenerar áudio (HTTP ${response.status})`);
+      }
+      if (data.project) {
+        setProjects((previous) =>
+          previous.map((p) => (p.id === data.project.id ? data.project : p))
+        );
+      } else {
+        setProjects((previous) =>
+          previous.map((p) =>
+            p.id === project.id
+              ? { ...p, status: "audio", errorMessage: null }
+              : p
+          )
+        );
+      }
+      setAudioActionMsg(`A regenerar áudio: «${project.title}»…`);
+      await refreshJobs();
+      await refreshProjects();
+    } catch (err) {
+      setAudioActionMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRetryingAudioId(null);
+    }
+  }
+
+  async function handleRefreshAudioStatus() {
+    setAudioActionMsg("A atualizar estado…");
+    await Promise.all([refreshProjects(), refreshJobs()]);
+    setAudioActionMsg("Estado atualizado.");
+    window.setTimeout(() => setAudioActionMsg(null), 2500);
+  }
+
   const planIdeas = (plan?.items ?? []).filter((item) => item.status !== "removed");
   const usingSamples = planIdeas.length === 0;
   const dnaSampleIdeas = sampleIdeasFromDna(channel, 3);
@@ -293,7 +375,13 @@ export function ChannelWorkspace({
   const activeSelection = usingSamples ? sampleSelected : selectedIds;
   const allSelected = visibleIdeas.length > 0 && visibleIdeas.every((idea) => activeSelection.has(idea.id));
 
-  const reviewProjects = projects.filter((p) => p.status === "script");
+  const reviewProjects = projects.filter(
+    (p) =>
+      p.status === "script" ||
+      // Keep voice/audio failures visible here so the script doesn't "disappear"
+      // after Aprovar — user can reopen and retry.
+      (p.status === "failed" && Boolean(p.scriptId))
+  );
   const projectsByIdeaId = new Map(
     projects.filter((p) => p.contentIdeaId).map((p) => [p.contentIdeaId!, p])
   );
@@ -670,11 +758,18 @@ export function ChannelWorkspace({
                   <div className="review-queue-copy">
                     <h3>{project.title}</h3>
                     <p>{project.topic} · {project.durationMinutes} min · {project.format}</p>
-                    <span className="workspace-rendered done"><i /> Pronto para revisar</span>
+                    <span className={`workspace-rendered ${project.status === "failed" ? "failed" : "done"}`}>
+                      <i />{" "}
+                      {project.status === "failed"
+                        ? project.errorMessage?.slice(0, 80) || "Falhou — reabrir para tentar de novo"
+                        : "Pronto para revisar"}
+                    </span>
                     <ProjectCostLabel project={project} alwaysShow />
                   </div>
                   <div className="review-queue-actions-stack">
-                    <button type="button" onClick={() => setReviewingProject(project)}>Ler e revisar</button>
+                    <button type="button" onClick={() => setReviewingProject(project)}>
+                      {project.status === "failed" ? "Reabrir e aprovar" : "Ler e revisar"}
+                    </button>
                     <button
                       type="button"
                       className="review-queue-secondary"
@@ -712,12 +807,21 @@ export function ChannelWorkspace({
             </div>
           ) : (
             <div className="review-queue-list">
+              {audioActionMsg && (
+                <p
+                  className={`workspace-inline-feedback${/falha|erro|sem voice|HTTP/i.test(audioActionMsg) ? " is-error" : ""}`}
+                  role="status"
+                >
+                  {audioActionMsg}
+                </p>
+              )}
               {audioProjects.map((project) => {
                 const asset = project.audioAssetId ? audioById.get(project.audioAssetId) : undefined;
                 const job = jobByProject[project.id];
                 const audioCost = project.costBreakdown?.audio ?? 0;
                 const status = productionLabel(project, job);
-                const generatingAudio = status.kind === "working";
+                const generatingAudio = status.kind === "working" || retryingAudioId === project.id;
+                const canRetryFailed = project.status === "failed" && Boolean(project.scriptId) && !asset;
                 const listenUrl = asset ? mediaUrl(channel.id, asset.filePath) : null;
                 return (
                   <article className={`review-queue-card review-queue-card-audio${generatingAudio ? " is-producing" : ""}`} key={project.id}>
@@ -740,8 +844,8 @@ export function ChannelWorkspace({
                           : ""}
                       </p>
                       <span className={`workspace-rendered ${status.kind}`}>
-                        <i /> {status.text}
-                        {generatingAudio && job ? ` · ${Math.round(job.progress)}%` : ""}
+                        <i /> {retryingAudioId === project.id ? "A regenerar áudio…" : status.text}
+                        {generatingAudio && job && retryingAudioId !== project.id ? ` · ${Math.round(job.progress)}%` : ""}
                       </span>
                       <ProjectCostLabel project={project} alwaysShow />
                       {listenUrl && (
@@ -758,8 +862,24 @@ export function ChannelWorkspace({
                       <span className="review-queue-action review-queue-action-muted" title="Arquivo só existia no disco da máquina que gerou; gere de novo para subir ao Supabase.">
                         Indisponível
                       </span>
+                    ) : canRetryFailed ? (
+                      <button
+                        type="button"
+                        className="review-queue-action"
+                        disabled={retryingAudioId === project.id}
+                        onClick={() => { void handleRetryAudio(project); }}
+                        title="Volta a gerar o áudio com a voz Juan Carlos (ElevenLabs)"
+                      >
+                        {retryingAudioId === project.id ? "A regenerar…" : "Tentar de novo"}
+                      </button>
                     ) : (
-                      <button type="button" className="review-queue-action" disabled={generatingAudio} onClick={() => { void refreshProjects(); void refreshJobs(); }}>
+                      <button
+                        type="button"
+                        className="review-queue-action"
+                        disabled={generatingAudio}
+                        onClick={() => { void handleRefreshAudioStatus(); }}
+                        title="Atualiza o progresso desta produção"
+                      >
                         {generatingAudio ? "Produzindo…" : "Atualizar"}
                       </button>
                     )}

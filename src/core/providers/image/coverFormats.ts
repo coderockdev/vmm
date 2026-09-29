@@ -7,7 +7,7 @@ import type { ImageProviderName } from "./ImageProvider";
 import type { ThumbnailCandidate } from "./thumbnailStyles";
 
 export type { ThumbnailCandidate, ThumbnailStyleId } from "./thumbnailStyles";
-export { THUMBNAIL_STYLE_VARIANTS, stylesForCount } from "./thumbnailStyles";
+export { THUMBNAIL_STYLE_VARIANTS, stylesForCount, mergeThumbnailHistory } from "./thumbnailStyles";
 
 export interface CoverFormat {
   id: string;
@@ -55,6 +55,8 @@ export interface VideoConcept {
   candidates?: ThumbnailCandidate[] | null;
   /** Index into candidates that is the primary thumbnail_ref. */
   selectedCandidateIndex?: number | null;
+  /** Accumulated past generations (newest last) for the history strip. */
+  history?: ThumbnailCandidate[] | null;
   status: "draft" | "ready" | "generated" | "failed";
   errorMessage?: string | null;
   updatedAt?: string;

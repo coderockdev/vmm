@@ -95,7 +95,9 @@ export function ScriptReviewModal({
     setError(null);
     try {
       const response = await fetch(`/api/videos/${project.id}`);
-      const data = await response.json();
+      const text = await response.text();
+      if (!response.ok || !text) throw new Error("Não foi possível carregar o roteiro.");
+      const data = JSON.parse(text);
       setScript(data.script ?? null);
       if (data.project) setCurrentProject(data.project);
     } catch {
@@ -168,7 +170,8 @@ export function ScriptReviewModal({
           ttsVoiceIdOverride: resolvedVoiceId,
         }),
       });
-      const data = await response.json();
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : {};
       if (!response.ok) throw new Error(data.error ?? "Falha ao aprovar o roteiro");
       onApproved(data.project);
     } catch (err) {
@@ -187,7 +190,8 @@ export function ScriptReviewModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ aiProviderOverride: regenAiOverride || null }),
       });
-      const data = await response.json();
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : {};
       if (!response.ok) throw new Error(data.error ?? "Falha ao regenerar o roteiro");
       setScript(data.script);
       if (data.project) setCurrentProject(data.project);

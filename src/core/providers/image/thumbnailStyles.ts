@@ -43,3 +43,23 @@ export function stylesForCount(count: number) {
   const n = Math.min(3, Math.max(1, Math.round(count) || 1));
   return THUMBNAIL_STYLE_VARIANTS.slice(0, n);
 }
+
+const HISTORY_MAX = 18;
+
+/** Append new candidates to history (dedupe by ref), keep newest last. */
+export function mergeThumbnailHistory(
+  previous: ThumbnailCandidate[] | null | undefined,
+  incoming: ThumbnailCandidate[]
+): ThumbnailCandidate[] {
+  const byRef = new Map<string, ThumbnailCandidate>();
+  for (const item of previous ?? []) {
+    if (item?.ref) byRef.set(item.ref, item);
+  }
+  for (const item of incoming) {
+    if (item?.ref) byRef.set(item.ref, item);
+  }
+  return Array.from(byRef.values())
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
+    .slice(-HISTORY_MAX);
+}
+

@@ -29,10 +29,8 @@ export async function approveScriptAndProduce(
 ): Promise<void> {
   const project = await getVideoProject(projectId);
   if (!project) throw new Error(`Video project not found: ${projectId}`);
-  // Allow retry after a failed audio attempt (e.g. missing voice_id column / override).
-  const canRetryFailed =
-    project.status === "failed" &&
-    /voice_id|ElevenLabs|áudio|audio/i.test(project.errorMessage ?? "");
+  // Allow retry after any failed attempt that still has a script (Áudio → Tentar de novo).
+  const canRetryFailed = project.status === "failed" && Boolean(project.scriptId);
   if (project.status !== "script" && !canRetryFailed) {
     throw new Error(`Project is not awaiting review (status: ${project.status})`);
   }
@@ -40,7 +38,9 @@ export async function approveScriptAndProduce(
   const channel = await getChannel(project.channelId);
   if (!channel) throw new Error(`Channel not found: ${project.channelId}`);
 
-  const { resolvePipelineAudioVoice } = await import("../providers/tts/voiceCapabilities");
+  const { resolvePipelineAudioVoice, JUAN_CARLOS_ELEVENLABS_VOICE_ID } = await import(
+    "../providers/tts/voiceCapabilities"
+  );
   const resolved = resolvePipelineAudioVoice({
     channelProvider: channel.dna.voice.provider,
     channelVoiceId: channel.dna.voice.voiceId,
@@ -54,7 +54,12 @@ export async function approveScriptAndProduce(
       "HeyGen só gera o vídeo pelo template. O áudio do pipeline usa a voz ElevenLabs do Juan Carlos (elevenlabs_voice_id)."
     );
   }
-  if (resolved.provider === "elevenlabs" && !resolved.voiceId) {
+
+  const voiceId =
+    resolved.voiceId?.trim() ||
+    channel.dna.voice.profile?.elevenlabs_voice_id ||
+    (resolved.provider === "elevenlabs" ? JUAN_CARLOS_ELEVENLABS_VOICE_ID : null);
+  if (resolved.provider === "elevenlabs" && !voiceId) {
     throw new Error(
       "ElevenLabs sem voice_id. O DNA precisa de elevenlabs_voice_id (Juan Carlos) ou escolha uma voz ao aprovar."
     );
@@ -63,7 +68,7 @@ export async function approveScriptAndProduce(
   // Persist the resolved audio voice so the worker uses Juan Carlos (not Rachel).
   // If the DB column is missing, this clears a bare "elevenlabs" override instead
   // of leaving a broken state — narration then resolves voice from DNA.
-  await setTtsProviderOverride(projectId, resolved.provider, resolved.voiceId);
+  await setTtsProviderOverride(projectId, resolved.provider, voiceId);
 
   // Flip status immediately so the Áudio tab shows "em produção" before the
   // worker loop picks the job up (otherwise the card stays on Roteiros).

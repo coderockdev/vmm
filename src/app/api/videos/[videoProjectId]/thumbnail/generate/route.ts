@@ -4,7 +4,7 @@ import { getChannel, updateChannelDna } from "../../../../../../core/repo/channe
 import { getVideoProject, updateProjectThumbnail } from "../../../../../../core/repo/projects";
 import { getImageProvider } from "../../../../../../core/providers/image";
 import { ImageProviderName } from "../../../../../../core/providers/image/ImageProvider";
-import { stylesForCount, ThumbnailCandidate } from "../../../../../../core/providers/image/thumbnailStyles";
+import { stylesForCount, mergeThumbnailHistory, ThumbnailCandidate } from "../../../../../../core/providers/image/thumbnailStyles";
 import { buildThumbnailImagePrompt } from "../../../../../../core/providers/script/coverConcept";
 import { normalizeCoverDna, VideoConcept } from "../../../../../../core/providers/image/coverFormats";
 import { workingFilePath, persistFile } from "../../../../../../core/storage";
@@ -78,11 +78,13 @@ export async function POST(req: NextRequest, { params }: { params: { videoProjec
     }
 
     const primary = candidates[0];
+    const history = mergeThumbnailHistory(concept.history ?? concept.candidates, candidates);
     const nextConcept: VideoConcept = {
       ...concept,
       imageProvider: provider.name,
       candidates,
       selectedCandidateIndex: 0,
+      history,
       status: "generated",
       errorMessage: lastError && candidates.length < styles.length ? lastError : null,
       updatedAt: new Date().toISOString(),
