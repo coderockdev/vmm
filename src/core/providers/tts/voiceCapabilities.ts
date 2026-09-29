@@ -171,33 +171,36 @@ export function resolvePipelineAudioVoice(args: {
   const profile = args.profile ?? null;
   const override = args.ttsOverride && args.ttsOverride !== args.channelProvider ? args.ttsOverride : null;
 
-  if (override) {
-    return {
-      provider: override,
-      voiceId: args.ttsVoiceIdOverride?.trim() || null,
-      speed: profile?.speed ?? 0.9,
-      stability: profile?.stability ?? 0.5,
-    };
-  }
+  let provider: TTSProviderName;
+  let voiceId: string | null;
+  let speed = profile?.speed ?? 0.9;
+  let stability: number | null = profile?.stability ?? 0.5;
 
-  // DNA HeyGen Juan Carlos → same ElevenLabs voice for pipeline audio.
-  if (args.channelProvider === "heygen" || profile?.provider === "heygen") {
-    const voiceId =
+  if (override) {
+    provider = override;
+    voiceId = args.ttsVoiceIdOverride?.trim() || null;
+  } else if (args.channelProvider === "heygen" || profile?.provider === "heygen") {
+    // DNA HeyGen Juan Carlos → same ElevenLabs voice for pipeline audio.
+    provider = "elevenlabs";
+    voiceId =
       args.ttsVoiceIdOverride?.trim() ||
       profile?.elevenlabs_voice_id ||
       JUAN_CARLOS_ELEVENLABS_VOICE_ID;
-    return {
-      provider: "elevenlabs",
-      voiceId,
-      speed: profile?.speed ?? 0.9,
-      stability: profile?.stability ?? 0.5,
-    };
+  } else {
+    provider = args.channelProvider as TTSProviderName;
+    voiceId =
+      args.ttsVoiceIdOverride?.trim() || args.channelVoiceId || profile?.voice_id || null;
+    stability = profile?.stability ?? null;
   }
 
-  return {
-    provider: args.channelProvider as TTSProviderName,
-    voiceId: args.ttsVoiceIdOverride?.trim() || args.channelVoiceId || profile?.voice_id || null,
-    speed: profile?.speed ?? 0.9,
-    stability: profile?.stability ?? null,
-  };
+  // Hard guarantee: never call ElevenLabs without a voice id.
+  if (provider === "elevenlabs" && !voiceId?.trim()) {
+    voiceId =
+      profile?.elevenlabs_voice_id ||
+      profile?.voice_id ||
+      args.channelVoiceId ||
+      JUAN_CARLOS_ELEVENLABS_VOICE_ID;
+  }
+
+  return { provider, voiceId, speed, stability };
 }

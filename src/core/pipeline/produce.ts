@@ -29,7 +29,11 @@ export async function approveScriptAndProduce(
 ): Promise<void> {
   const project = await getVideoProject(projectId);
   if (!project) throw new Error(`Video project not found: ${projectId}`);
-  if (project.status !== "script") {
+  // Allow retry after a failed audio attempt (e.g. missing voice_id column / override).
+  const canRetryFailed =
+    project.status === "failed" &&
+    /voice_id|ElevenLabs|áudio|audio/i.test(project.errorMessage ?? "");
+  if (project.status !== "script" && !canRetryFailed) {
     throw new Error(`Project is not awaiting review (status: ${project.status})`);
   }
 
@@ -57,11 +61,13 @@ export async function approveScriptAndProduce(
   }
 
   // Persist the resolved audio voice so the worker uses Juan Carlos (not Rachel).
+  // If the DB column is missing, this clears a bare "elevenlabs" override instead
+  // of leaving a broken state — narration then resolves voice from DNA.
   await setTtsProviderOverride(projectId, resolved.provider, resolved.voiceId);
 
   // Flip status immediately so the Áudio tab shows "em produção" before the
   // worker loop picks the job up (otherwise the card stays on Roteiros).
-  await updateProjectStatus(projectId, "audio");
+  await updateProjectStatus(projectId, "audio", null);
   const job = await createJob({ videoProjectId: project.id, channelId: project.channelId });
   await enqueueJob(job.id);
 }

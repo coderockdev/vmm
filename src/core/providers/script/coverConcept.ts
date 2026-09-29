@@ -233,6 +233,8 @@ export async function generateCoverConcept(args: GenerateCoverConceptArgs): Prom
 export function buildThumbnailImagePrompt(args: {
   channel: Channel;
   concept: VideoConcept;
+  /** Optional style twist for A/B variants (1–3 images). */
+  styleExtra?: string | null;
 }): string {
   const cover = coverDna(args.channel);
   const format =
@@ -254,6 +256,9 @@ export function buildThumbnailImagePrompt(args: {
     cover.styleRules,
     `Accent colors: ${cover.accentColors.primary} and ${cover.accentColors.emphasis}.`,
     `Avoid: ${cover.avoid.join(", ")}.`,
+    args.styleExtra?.trim() || "",
     "No watermarks, no logos, no tiny paragraphs, no deformed hands or phones.",
-  ].join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 }

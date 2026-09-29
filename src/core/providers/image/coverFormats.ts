@@ -4,6 +4,10 @@
  */
 
 import type { ImageProviderName } from "./ImageProvider";
+import type { ThumbnailCandidate } from "./thumbnailStyles";
+
+export type { ThumbnailCandidate, ThumbnailStyleId } from "./thumbnailStyles";
+export { THUMBNAIL_STYLE_VARIANTS, stylesForCount } from "./thumbnailStyles";
 
 export interface CoverFormat {
   id: string;
@@ -47,6 +51,10 @@ export interface VideoConcept {
   titleThumbnailRelation: string;
   inventedFormat?: InventedCoverFormat | null;
   imageProvider?: ImageProviderName | null;
+  /** Up to 3 generated variants (YouTube thumbnail slots). */
+  candidates?: ThumbnailCandidate[] | null;
+  /** Index into candidates that is the primary thumbnail_ref. */
+  selectedCandidateIndex?: number | null;
   status: "draft" | "ready" | "generated" | "failed";
   errorMessage?: string | null;
   updatedAt?: string;

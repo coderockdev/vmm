@@ -221,25 +221,33 @@ export async function setTtsProviderOverride(
   voiceIdOverride: string | null = null
 ): Promise<void> {
   const now = new Date().toISOString();
+  // Never persist "elevenlabs" without a voice id — worker would fail later.
+  // Prefer DNA/HeyGen resolution path (null override) over a broken override.
+  const safeOverride =
+    override === "elevenlabs" && !voiceIdOverride?.trim() ? null : override;
+  const safeVoiceId = voiceIdOverride?.trim() || null;
+
   if (isSupabaseEnabled()) {
     const withVoice = await getSupabase()
       .from("video_projects")
       .update({
-        tts_provider_override: override,
-        tts_voice_id_override: voiceIdOverride,
+        tts_provider_override: safeOverride,
+        tts_voice_id_override: safeVoiceId,
         updated_at: now,
       })
       .eq("id", projectId);
     if (withVoice.error && /tts_voice_id_override/i.test(withVoice.error.message)) {
-      // Column not migrated yet — still save provider so audio can proceed via DNA voice id.
+      // Column missing: do NOT save elevenlabs alone. Leave null so narration
+      // resolves Juan Carlos from DNA (heygen → elevenlabs_voice_id).
+      const providerOnly = safeOverride === "elevenlabs" ? null : safeOverride;
       assertNoError(
         await getSupabase()
           .from("video_projects")
-          .update({ tts_provider_override: override, updated_at: now })
+          .update({ tts_provider_override: providerOnly, updated_at: now })
           .eq("id", projectId)
       );
       console.warn(
-        `[projects] tts_voice_id_override missing — run supabase/schema_tts_voice_override.sql. Saved provider only.`
+        `[projects] tts_voice_id_override missing — run supabase/schema_tts_voice_override.sql. Saved provider=${providerOnly}.`
       );
       return;
     }
@@ -251,11 +259,12 @@ export async function setTtsProviderOverride(
       .prepare(
         `UPDATE video_projects SET tts_provider_override = ?, tts_voice_id_override = ?, updated_at = ? WHERE id = ?`
       )
-      .run(override, voiceIdOverride, now, projectId);
+      .run(safeOverride, safeVoiceId, now, projectId);
   } catch {
+    const providerOnly = safeOverride === "elevenlabs" ? null : safeOverride;
     getDb()
       .prepare(`UPDATE video_projects SET tts_provider_override = ?, updated_at = ? WHERE id = ?`)
-      .run(override, now, projectId);
+      .run(providerOnly, now, projectId);
   }
 }
 

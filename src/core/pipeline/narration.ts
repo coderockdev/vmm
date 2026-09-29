@@ -5,7 +5,7 @@ import { RawLine } from "../scriptLines";
 import { getTTSProvider } from "../providers/tts";
 import { TTSProviderName } from "../providers/tts/TTSProvider";
 import { compileForVoice, VoiceCompileError } from "../providers/tts/compileForVoice";
-import { profileFromLegacyVoice, resolvePipelineAudioVoice } from "../providers/tts/voiceCapabilities";
+import { profileFromLegacyVoice, resolvePipelineAudioVoice, JUAN_CARLOS_ELEVENLABS_VOICE_ID } from "../providers/tts/voiceCapabilities";
 import { concatAudioFiles, renderSilence, ensureParentDir } from "../audio/ffmpegUtils";
 import { channelTmpDir } from "../paths";
 import { workingFilePath, persistFile } from "../storage";
@@ -69,14 +69,18 @@ export async function synthesizeNarration(args: {
       "HeyGen só gera vídeo via template. Para áudio use a voz ElevenLabs do Juan Carlos (elevenlabs_voice_id no DNA)."
     );
   }
-  if (providerName === "elevenlabs" && !resolved.voiceId) {
+  // Last-resort: never fail audio for missing id when DNA/Juan Carlos is known.
+  const voiceId =
+    resolved.voiceId?.trim() ||
+    channel.dna.voice.profile?.elevenlabs_voice_id ||
+    (providerName === "elevenlabs" ? JUAN_CARLOS_ELEVENLABS_VOICE_ID : null);
+  if (providerName === "elevenlabs" && !voiceId) {
     throw new Error(
       "ElevenLabs sem voice_id — configure elevenlabs_voice_id no DNA (Juan Carlos) ou escolha uma voz ao aprovar."
     );
   }
 
   const provider = getTTSProvider(providerName);
-  const voiceId = resolved.voiceId;
   const isOverridden = Boolean(args.ttsOverride && args.ttsOverride !== channel.dna.voice.provider);
   const profile =
     !isOverridden && channel.dna.voice.profile

@@ -10,17 +10,14 @@ type AiOverride = "" | "mock" | "anthropic" | "openai" | "gemini";
 type TtsOverride = "" | "local" | "cartesia" | "elevenlabs";
 
 function defaultAudioVoice(channel: Channel): { provider: TtsOverride; voiceId: string } {
-  if (channel.dna.voice.provider === "heygen") {
-    return {
-      provider: "elevenlabs",
-      voiceId:
-        channel.dna.voice.profile?.elevenlabs_voice_id ||
-        JUAN_CARLOS_ELEVENLABS_VOICE_ID,
-    };
-  }
+  // Empty provider = follow DNA. For HeyGen (Juan Carlos), the pipeline
+  // maps to ElevenLabs automatically with the DNA elevenlabs_voice_id.
   return {
     provider: "",
-    voiceId: channel.dna.voice.voiceId ?? "",
+    voiceId:
+      channel.dna.voice.profile?.elevenlabs_voice_id ||
+      channel.dna.voice.voiceId ||
+      (channel.dna.voice.provider === "heygen" ? JUAN_CARLOS_ELEVENLABS_VOICE_ID : ""),
   };
 }
 
@@ -154,13 +151,21 @@ export function ScriptReviewModal({
     setApproving(true);
     setError(null);
     try {
+      const juanCarlosId =
+        channel.dna.voice.profile?.elevenlabs_voice_id || JUAN_CARLOS_ELEVENLABS_VOICE_ID;
+      const needsElevenLabsId =
+        ttsOverride === "elevenlabs" ||
+        (!ttsOverride && channel.dna.voice.provider === "heygen");
+      // If UI shows Juan Carlos via select fallback but state is empty, still send the id.
+      const resolvedVoiceId =
+        ttsVoiceId.trim() || (needsElevenLabsId ? juanCarlosId : "") || null;
       const response = await fetch(`/api/videos/${project.id}/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           // Empty = DNA path (HeyGen → Juan Carlos ElevenLabs automatically).
           ttsProviderOverride: ttsOverride || null,
-          ttsVoiceIdOverride: ttsVoiceId.trim() || null,
+          ttsVoiceIdOverride: resolvedVoiceId,
         }),
       });
       const data = await response.json();
@@ -294,7 +299,7 @@ export function ScriptReviewModal({
               {regenerating ? "Gerando..." : "Regenerar"}
             </button>
           </div>
-          <p style={{ margin: "0 0 8px", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.4 }}>
+          <p className="script-review-hint">
             Regenerar usa o DNA do canal (modelo de oração, avoid-list, {channel.dna.scriptRules.defaultSceneCount ?? 4} cenas parelhas ≤4.800 chars)
             {channel.dna.voice.provider === "heygen" || channel.dna.voice.provider === "elevenlabs"
               ? " e tags emocionais/pausas válidas para ElevenLabs/HeyGen."
@@ -302,13 +307,27 @@ export function ScriptReviewModal({
             Evite Mock — ele ignora o DNA.
           </p>
 
-          <div className="script-review-action-group">
+          <div className="script-review-action-group script-review-voice-group">
             <span className="script-review-action-label">Voz para o áudio</span>
             <select
               value={ttsOverride}
               onChange={(event) => {
-                setTtsOverride(event.target.value as TtsOverride);
-                setTtsVoiceId("");
+                const next = event.target.value as TtsOverride;
+                setTtsOverride(next);
+                if (next === "elevenlabs") {
+                  setTtsVoiceId(
+                    channel.dna.voice.profile?.elevenlabs_voice_id ||
+                      JUAN_CARLOS_ELEVENLABS_VOICE_ID
+                  );
+                } else if (next === "") {
+                  setTtsVoiceId(
+                    channel.dna.voice.profile?.elevenlabs_voice_id ||
+                      channel.dna.voice.voiceId ||
+                      (channelIsHeygen ? JUAN_CARLOS_ELEVENLABS_VOICE_ID : "")
+                  );
+                } else {
+                  setTtsVoiceId("");
+                }
               }}
               disabled={busy}
             >
@@ -319,13 +338,14 @@ export function ScriptReviewModal({
             </select>
             {ttsOverride === "elevenlabs" && (
               <select
+                className="script-review-voice-select"
                 value={ttsVoiceId || channel.dna.voice.profile?.elevenlabs_voice_id || JUAN_CARLOS_ELEVENLABS_VOICE_ID}
                 onChange={(event) => setTtsVoiceId(event.target.value)}
                 disabled={busy || voicesLoading}
                 aria-label="Voz masculina ElevenLabs"
               >
                 <option value={channel.dna.voice.profile?.elevenlabs_voice_id || JUAN_CARLOS_ELEVENLABS_VOICE_ID}>
-                  Juan Carlos (DNA · Warm Calm Deep · LATAM)
+                  Juan Carlos (DNA)
                 </option>
                 {elevenVoices
                   .filter((v) => v.id !== (channel.dna.voice.profile?.elevenlabs_voice_id || JUAN_CARLOS_ELEVENLABS_VOICE_ID))
@@ -338,21 +358,28 @@ export function ScriptReviewModal({
               </select>
             )}
             {(!ttsOverride || ttsOverride === "elevenlabs") && channelIsHeygen && (
-              <span style={{ fontSize: 11, color: "var(--text-dim)" }}>0.9x · eleven_v3</span>
+              <span className="script-review-voice-meta">0.9x · eleven_v3</span>
             )}
             <button type="button" className="voice-preview" aria-label="Testar voz" onClick={handlePreviewVoice} disabled={busy || previewing}>
               <PlayIcon size={16} />
             </button>
             <audio ref={previewAudioRef} style={{ display: "none" }} />
-            <button type="button" className="script-review-approve" onClick={handleApprove} disabled={busy || loading || !script}>
+          </div>
+          {voicesError && <p className="script-review-voices-error">{voicesError}</p>}
+
+          <div className="script-review-primary-row">
+            <button type="button" className="script-review-delete" onClick={handleDelete} disabled={busy}>
+              {deleting ? "Excluindo..." : "Excluir"}
+            </button>
+            <button
+              type="button"
+              className="script-review-approve"
+              onClick={handleApprove}
+              disabled={busy || loading || !script}
+            >
               {approving ? "Aprovando..." : "Aprovar e gerar áudio"}
             </button>
           </div>
-          {voicesError && <p style={{ margin: "6px 0 0", fontSize: 11, color: "#b42318" }}>{voicesError}</p>}
-
-          <button type="button" className="script-review-delete" onClick={handleDelete} disabled={busy}>
-            {deleting ? "Excluindo..." : "Excluir"}
-          </button>
         </footer>
       </div>
     </div>

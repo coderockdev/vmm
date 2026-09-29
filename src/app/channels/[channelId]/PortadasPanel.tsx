@@ -55,6 +55,10 @@ export function PortadasPanel({
   const [providerOptions, setProviderOptions] = useState<ProviderOption[]>([]);
   const [concept, setConcept] = useState<VideoConcept | null>(null);
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
+  const [candidateUrls, setCandidateUrls] = useState<
+    Array<{ id: string; styleId: string; styleLabel: string; url: string }>
+  >([]);
+  const [imageCount, setImageCount] = useState<1 | 2 | 3>(3);
   const [busy, setBusy] = useState<"concept" | "image" | "save" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,6 +89,13 @@ export function PortadasPanel({
     setThumbnailScene(selected.thumbnailConcept?.thumbnailScene || "");
     setConcept(selected.thumbnailConcept);
     setThumbUrl(selected.thumbnailRef ? mediaUrl(channel.id, selected.thumbnailRef) : null);
+    const fromConcept = (selected.thumbnailConcept?.candidates ?? []).map((c) => ({
+      id: c.id,
+      styleId: c.styleId,
+      styleLabel: c.styleLabel,
+      url: `${mediaUrl(channel.id, c.ref) ?? ""}?t=1`,
+    }));
+    setCandidateUrls(fromConcept.filter((c) => c.url && !c.url.startsWith("null") && !c.url.startsWith("undefined")));
     if (selected.thumbnailConcept?.thumbnailFormatId) {
       const id = String(selected.thumbnailConcept.thumbnailFormatId);
       if (id !== "auto" && id !== "invent") setFormatChoice(id);
@@ -121,24 +132,70 @@ export function PortadasPanel({
 
   async function runGenerate() {
     if (!selected) return;
+    const canGenerate =
+      Boolean(concept) ||
+      Boolean(thumbnailScene.trim()) ||
+      Boolean(thumbnailText.trim());
+    if (!canGenerate) {
+      setError("Gera o conceito primeiro (passo 1) ou preenche o texto/conceito visual.");
+      return;
+    }
     setBusy("image");
     setError(null);
     try {
+      const fallbackConcept = {
+        title: title || selected.title,
+        thumbnailFormatId: formatChoice,
+        thumbnailFormatName:
+          formats.find((f) => f.id === formatChoice)?.name || "manual",
+        thumbnailText,
+        thumbnailScene,
+        thumbnailEmotion: "",
+        thumbnailMessage: thumbnailText,
+        curiosityGap: "",
+        titleThumbnailRelation: "",
+        status: "ready" as const,
+      };
       const res = await fetch(`/api/videos/${selected.id}/thumbnail/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           imageProvider,
+          count: imageCount,
           title,
           thumbnailText,
           thumbnailScene,
           concept: concept
             ? { ...concept, title, thumbnailText, thumbnailScene }
-            : undefined,
+            : fallbackConcept,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? `Falha na imagem (HTTP ${res.status})`);
+      setConcept(data.concept);
+      setThumbUrl(data.thumbnailUrl);
+      setCandidateUrls(data.candidates ?? []);
+      if (data.partialError) setError(`Algumas falharam: ${data.partialError}`);
+      if (data.project) onProjectUpdated(data.project);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function selectCandidate(candidateId: string) {
+    if (!selected) return;
+    setBusy("save");
+    setError(null);
+    try {
+      const res = await fetch(`/api/videos/${selected.id}/thumbnail/select`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ candidateId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Falha ao escolher a portada");
       setConcept(data.concept);
       setThumbUrl(data.thumbnailUrl);
       if (data.project) onProjectUpdated(data.project);
@@ -283,19 +340,50 @@ export function PortadasPanel({
             </select>
           </label>
 
+          <label className="portadas-label">
+            Quantas imagens (YouTube aceita até 3)
+            <div className="portadas-count-pills" role="group" aria-label="Quantidade de imagens">
+              {([1, 2, 3] as const).map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className={imageCount === n ? "active" : ""}
+                  disabled={!!busy}
+                  onClick={() => setImageCount(n)}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+            <span className="portadas-count-hint">
+              {imageCount === 1
+                ? "1 estilo: cinemático"
+                : imageCount === 2
+                  ? "2 estilos: cinemático + alto contraste"
+                  : "3 estilos: cinemático · alto contraste · close emocional"}
+            </span>
+          </label>
+
           <div className="portadas-actions">
             <button type="button" disabled={!!busy} onClick={() => void runConcept(formatChoice)}>
-              {busy === "concept" ? "Criando conceito…" : "1. Gerar conceito título+portada"}
-            </button>
-            <button type="button" disabled={!!busy || !concept} onClick={() => void runGenerate()}>
-              {busy === "image" ? "Gerando imagem…" : "2. Gerar portada"}
+              {busy === "concept" ? "Criando conceito…" : "1. Gerar conceito"}
             </button>
             <button
               type="button"
-              disabled={!!busy || !concept}
+              className="portadas-generate-image"
+              disabled={!!busy || (!concept && !thumbnailScene.trim() && !thumbnailText.trim())}
+              onClick={() => void runGenerate()}
+            >
+              {busy === "image"
+                ? `Gerando ${imageCount} imagen${imageCount > 1 ? "s" : ""}…`
+                : `2. Generar ${imageCount} imagen${imageCount > 1 ? "s" : ""}`}
+            </button>
+            <button
+              type="button"
+              disabled={!!busy || (!concept && !thumbnailScene.trim())}
               onClick={() => void runConcept(formatChoice, false).then(() => runGenerate())}
             >
-              Regenerar mesmo formato
+              Regenerar (mesmo formato)
             </button>
             <button
               type="button"
@@ -305,7 +393,7 @@ export function PortadasPanel({
               Probar otro formato
             </button>
             <button type="button" disabled={!!busy} onClick={() => void runConcept("invent")}>
-              ✨ Inventar formato
+              Inventar formato
             </button>
             {concept?.inventedFormat && (
               <button type="button" disabled={!!busy} onClick={() => void saveInventedFormat()}>
@@ -313,6 +401,9 @@ export function PortadasPanel({
               </button>
             )}
           </div>
+          <p className="portadas-actions-hint">
+            Gera até 3 variações de estilo; clica numa para marcar como principal (lista do canal).
+          </p>
 
           {concept?.titleThumbnailRelation && (
             <p className="portadas-relation">
@@ -322,12 +413,53 @@ export function PortadasPanel({
         </div>
 
         <div className="costs-block portadas-preview">
-          <h3>Preview</h3>
-          {thumbUrl ? (
+          <h3>Preview {candidateUrls.length > 1 ? `(${candidateUrls.length} variações)` : ""}</h3>
+          {busy === "image" ? (
+            <div className="portadas-img-empty">Gerando {imageCount} imagen{imageCount > 1 ? "s" : ""}…</div>
+          ) : candidateUrls.length > 0 ? (
+            <div className={`portadas-candidates portadas-candidates-${Math.min(3, candidateUrls.length)}`}>
+              {candidateUrls.map((c, i) => {
+                const selectedId =
+                  concept?.candidates?.[concept.selectedCandidateIndex ?? 0]?.id ??
+                  candidateUrls[0]?.id;
+                const isSelected = c.id === selectedId || (selectedId == null && i === 0);
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className={`portadas-candidate${isSelected ? " active" : ""}`}
+                    onClick={() => void selectCandidate(c.id)}
+                    disabled={!!busy}
+                    title="Definir como portada principal"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={c.url} alt={c.styleLabel} />
+                    <span>
+                      {c.styleLabel}
+                      {isSelected ? " · principal" : ""}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : thumbUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={thumbUrl} alt="Portada gerada" className="portadas-img" />
           ) : (
-            <div className="portadas-img-empty">Sem imagem ainda</div>
+            <div className="portadas-img-empty">
+              Sem imagem ainda — escolhe 1, 2 ou 3 e clica em <strong>Generar imagen</strong>
+            </div>
+          )}
+          {candidateUrls.length > 0 && (
+            <p className="portadas-actions-hint">
+              Abre cada imagem num separador para descarregar e subir as 3 no YouTube.
+              {" "}
+              {candidateUrls.map((c, i) => (
+                <a key={c.id} href={c.url} target="_blank" rel="noreferrer" style={{ marginRight: 8 }}>
+                  #{i + 1} {c.styleLabel}
+                </a>
+              ))}
+            </p>
           )}
           <div className="portadas-format-grid">
             {formats.slice(0, 10).map((f, i) => (
