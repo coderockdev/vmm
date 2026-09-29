@@ -614,6 +614,7 @@ textarea {
 
 .channel-title-row {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   min-width: 0;
   gap: 9px;
@@ -643,7 +644,11 @@ textarea {
 }
 
 .category-badge {
-  flex: 0 0 auto;
+  display: block;
+  flex: 0 1 42%;
+  min-width: 0;
+  max-width: min(42%, 180px);
+  overflow: hidden;
   padding: 7px 16px 6px;
   color: #444b5e;
   font-size: 12px;
@@ -651,20 +656,8 @@ textarea {
   line-height: 1;
   background: #edf0f7;
   border-radius: 999px;
-}
-
-.category-historias-do-ze {
-  background: #edf0f5;
-}
-
-.category-chuva-para-dormir {
-  color: #394668;
-  background: #e9eefc;
-}
-
-.category-oracoes-da-noite {
-  color: #504b6d;
-  background: #f0eef9;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .channel-description {

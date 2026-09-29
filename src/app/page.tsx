@@ -18,27 +18,6 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const DASHBOARD_REFERENCE_SRC = "/reference/dashboard-reference.jpg";
-
-type Crop = { x: number; y: number; width: number; height: number };
-
-// Pixel crops into the design-reference screenshot — only valid for these
-// three seeded demo channels (their card matched this exact mockup 1:1).
-// Any other channel (a new one the user creates) falls back to a plain
-// gradient placeholder since we don't generate real thumbnails yet.
-const KNOWN_COVER_CROPS: Record<string, Crop> = {
-  "historias-do-ze": { x: 284, y: 320, width: 376, height: 153 },
-  "chuva-para-dormir": { x: 702, y: 320, width: 364, height: 153 },
-  "oracoes-da-noite": { x: 1107, y: 320, width: 380, height: 153 },
-};
-
-// The mockup showed a slightly different category word for this one channel
-// ("Espiritual" instead of the DNA's literal first niche segment, "Oração").
-// Everything else derives the badge text from real channel data.
-const KNOWN_CATEGORY_OVERRIDES: Record<string, string> = {
-  "oracoes-da-noite": "Espiritual",
-};
-
 function formatDuration(seconds: number | null): string {
   if (!seconds) return "—";
   const total = Math.round(seconds);
@@ -52,29 +31,6 @@ function formatDuration(seconds: number | null): string {
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
-}
-
-function ReferenceCrop({ crop, alt }: { crop: Crop; alt: string }) {
-  return (
-    <span
-      className="reference-crop"
-      aria-label={alt}
-      role="img"
-      style={{ aspectRatio: `${crop.width} / ${crop.height}` }}
-    >
-      <img
-        src={DASHBOARD_REFERENCE_SRC}
-        alt=""
-        aria-hidden="true"
-        draggable={false}
-        style={{
-          width: `${(1536 / crop.width) * 100}%`,
-          left: `${(-crop.x / crop.width) * 100}%`,
-          top: `${(-crop.y / crop.height) * 100}%`,
-        }}
-      />
-    </span>
-  );
 }
 
 function GradientCover({
@@ -127,8 +83,7 @@ export default async function HomePage() {
         channel,
         videos: projects.filter((p) => p.status === "completed" && p.format === "video").length,
         shorts: projects.filter((p) => p.status === "completed" && p.format === "short").length,
-        category: KNOWN_CATEGORY_OVERRIDES[channel.id] ?? channel.niche.split(" • ")[0],
-        crop: KNOWN_COVER_CROPS[channel.id],
+        category: channel.niche?.split(" • ")[0]?.trim() || "Sem categoria",
         coverUrl: mediaUrl(channel.id, channel.channelImageRef ?? channel.coverRef),
         description:
           channel.dna.description.length > 95
@@ -170,7 +125,7 @@ export default async function HomePage() {
       </section>
 
       <section className="channel-grid" aria-label="Seus canais">
-        {channelCards.map(({ channel, videos, shorts, category, crop, coverUrl, description }) => {
+        {channelCards.map(({ channel, videos, shorts, category, coverUrl, description }) => {
           return (
             <article className="channel-card" key={channel.id}>
               <div className="channel-cover">
@@ -181,8 +136,6 @@ export default async function HomePage() {
                     alt={`Capa do canal ${channel.name}`}
                     style={{ width: "100%", height: "100%", objectFit: "cover" }}
                   />
-                ) : crop ? (
-                  <ReferenceCrop crop={crop} alt={`Capa do canal ${channel.name}`} />
                 ) : (
                   <GradientCover color={channel.coverColor} initial={channel.name.charAt(0)} />
                 )}
@@ -197,7 +150,7 @@ export default async function HomePage() {
                       <PencilIcon size={18} />
                     </Link>
                   </div>
-                  <span className={`category-badge category-${channel.id}`}>{category}</span>
+                  <span className="category-badge">{category}</span>
                 </div>
 
                 <p className="channel-description">{description}</p>
