@@ -16,7 +16,7 @@ export type ScriptProviderName = "mock" | "anthropic" | "openai" | "gemini";
  * sites.
  */
 export function getScriptProvider(override?: string | null): ScriptProvider {
-  const provider = (override || process.env.AI_PROVIDER || "mock").toLowerCase();
+  const provider = (override || process.env.AI_PROVIDER || "openai").toLowerCase();
 
   switch (provider) {
     case "mock":
@@ -28,7 +28,7 @@ export function getScriptProvider(override?: string | null): ScriptProvider {
     case "gemini":
       return new GeminiScriptProvider();
     default:
-      console.warn(`[ScriptProvider] AI_PROVIDER="${provider}" not implemented yet, falling back to mock.`);
-      return new MockScriptProvider();
+      console.warn(`[ScriptProvider] AI_PROVIDER="${provider}" not implemented yet, falling back to openai.`);
+      return new OpenAIScriptProvider();
   }
 }

@@ -66,6 +66,41 @@ function stageLabel(stage: string): string {
   return map[stage] || stage;
 }
 
+/** Pipeline steps shown during auto-flow (prep phase before jobs). */
+const AUTO_PIPELINE_STEPS = [
+  { id: "start", label: "Início" },
+  { id: "ideas", label: "Ideias" },
+  { id: "scripts", label: "Roteiros" },
+  { id: "youtube", label: "Título + desc" },
+  { id: "audio", label: "Fila de voz" },
+  { id: "queued", label: "Vídeo → YouTube" },
+] as const;
+
+function autoPipelineIndex(stage: string | null | undefined): number {
+  if (!stage) return 0;
+  const idx = AUTO_PIPELINE_STEPS.findIndex((s) => s.id === stage);
+  return idx >= 0 ? idx : 0;
+}
+
+function autoPipelinePercent(args: {
+  stage: string | null;
+  done?: number;
+  total?: number;
+  productionProgress?: number | null;
+}): number {
+  if (args.productionProgress != null && Number.isFinite(args.productionProgress)) {
+    // Prep is ~35% of perceived progress; production (TTS→YT) is the rest.
+    return Math.min(99, Math.round(35 + (args.productionProgress / 100) * 65));
+  }
+  const idx = autoPipelineIndex(args.stage);
+  const base = (idx / AUTO_PIPELINE_STEPS.length) * 35;
+  const within =
+    args.total && args.total > 0
+      ? (Math.min(args.done ?? 0, args.total) / args.total) * (35 / AUTO_PIPELINE_STEPS.length)
+      : 0;
+  return Math.min(99, Math.round(base + within));
+}
+
 type Crop = { x: number; y: number; width: number; height: number };
 
 function ReferenceCrop({ crop, alt }: { crop: Crop; alt: string }) {
@@ -156,13 +191,16 @@ export function ChannelWorkspace({
     channel.dna.scriptRules.defaultSceneCount ?? 4
   );
   const [format, setFormat] = useState<VideoFormat>("video");
-  const [ideaAiOverride, setIdeaAiOverride] = useState<"" | "mock" | "anthropic" | "openai" | "gemini">("");
-  const [scriptAiOverride, setScriptAiOverride] = useState<"" | "mock" | "anthropic" | "openai" | "gemini">("");
+  const [ideaAiOverride, setIdeaAiOverride] = useState<"" | "mock" | "anthropic" | "openai" | "gemini">("openai");
+  const [scriptAiOverride, setScriptAiOverride] = useState<"" | "mock" | "anthropic" | "openai" | "gemini">("openai");
   const [loadingAuto, setLoadingAuto] = useState(false);
   const [autoError, setAutoError] = useState<string | null>(null);
   const [autoStatus, setAutoStatus] = useState<string | null>(null);
   const [autoLog, setAutoLog] = useState<Array<{ id: string; stage: string; detail: string }>>([]);
   const [autoProjectIds, setAutoProjectIds] = useState<string[]>([]);
+  const [autoStage, setAutoStage] = useState<string | null>(null);
+  const [autoDone, setAutoDone] = useState(0);
+  const [autoTotal, setAutoTotal] = useState(0);
   /** Manual mode only — auto always generates manchete + descrição for YT upload. */
   const [includeManchete, setIncludeManchete] = useState(true);
   const [mancheteBankSize] = useState((channel.dna.successfulTitles ?? []).length);
@@ -369,8 +407,19 @@ export function ChannelWorkspace({
   async function handleAutoFlow() {
     setLoadingAuto(true);
     setAutoError(null);
-    setAutoLog([]);
+    setAutoLog([
+      {
+        id: `${Date.now()}-boot`,
+        stage: "start",
+        detail: topic.trim()
+          ? `A iniciar (${autoQuantity} vídeo${autoQuantity > 1 ? "s" : ""}) com ChatGPT…`
+          : `Sem tópico — DNA do canal · ${autoQuantity} vídeo${autoQuantity > 1 ? "s" : ""} · ChatGPT…`,
+      },
+    ]);
     setAutoProjectIds([]);
+    setAutoStage("start");
+    setAutoDone(0);
+    setAutoTotal(autoQuantity);
     setAutoStatus(
       topic.trim()
         ? `A iniciar fluxo automático (${autoQuantity})…`
@@ -386,7 +435,7 @@ export function ChannelWorkspace({
           durationMinutes,
           format,
           sceneCount,
-          aiProviderOverride: ideaAiOverride || null,
+          aiProviderOverride: ideaAiOverride || "openai",
           includeManchete: true,
         }),
       });
@@ -429,6 +478,9 @@ export function ChannelWorkspace({
           if (event.type === "progress") {
             const detail = event.detail || event.stage || "…";
             setAutoStatus(detail);
+            if (event.stage) setAutoStage(event.stage);
+            if (typeof event.done === "number") setAutoDone(event.done);
+            if (typeof event.total === "number" && event.total > 0) setAutoTotal(event.total);
             setAutoLog((prev) => {
               const next = [
                 ...prev,
@@ -443,6 +495,7 @@ export function ChannelWorkspace({
           } else if (event.type === "done") {
             finished = true;
             setAutoProjectIds(event.projectIds ?? []);
+            setAutoStage("queued");
             setAutoStatus(event.message ?? "Na fila de produção");
             setAutoLog((prev) => [
               ...prev,
@@ -1135,29 +1188,83 @@ export function ChannelWorkspace({
             )}
             {(loadingAuto || autoLog.length > 0 || autoStatus) && createMode === "auto" && (
               <div className="auto-progress-panel" role="status" aria-live="polite">
-                <div className="auto-progress-head">
-                  {loadingAuto && <span className="production-spinner" aria-hidden />}
-                  <strong>{loadingAuto ? "Em progresso" : "Último fluxo"}</strong>
-                  {autoStatus && <span className="auto-progress-current">{autoStatus}</span>}
-                </div>
-                {autoLog.length > 0 && (
-                  <ol className="auto-progress-log">
-                    {autoLog.slice(-12).map((item) => (
-                      <li key={item.id}>
-                        <span className="auto-progress-stage">{stageLabel(item.stage)}</span>
-                        <span>{item.detail}</span>
-                      </li>
-                    ))}
-                  </ol>
-                )}
-                {autoProjectIds.length > 0 && !loadingAuto && (
-                  <p className="auto-progress-follow">
-                    Produção a correr até YouTube — podes abrir{" "}
-                    <button type="button" onClick={() => setActiveTab("audio")}>Áudio</button>,{" "}
-                    <button type="button" onClick={() => setActiveTab("videos")}>Vídeos</button> ou{" "}
-                    <button type="button" onClick={() => setActiveTab("youtube")}>YouTube</button>.
-                  </p>
-                )}
+                {(() => {
+                  const prodJobs = autoProjectIds
+                    .map((id) => jobByProject[id])
+                    .filter(Boolean);
+                  const avgProd =
+                    prodJobs.length > 0
+                      ? prodJobs.reduce((s, j) => s + (j.progress || 0), 0) / prodJobs.length
+                      : null;
+                  const pct = autoPipelinePercent({
+                    stage: autoStage,
+                    done: autoDone,
+                    total: autoTotal,
+                    productionProgress:
+                      !loadingAuto && autoProjectIds.length > 0 ? avgProd : null,
+                  });
+                  const activeIdx = autoPipelineIndex(autoStage);
+                  return (
+                    <>
+                      <div className="auto-progress-head">
+                        {loadingAuto && <span className="production-spinner" aria-hidden />}
+                        <strong>
+                          {loadingAuto
+                            ? "Em progresso"
+                            : autoProjectIds.length > 0
+                              ? "Produção (voz → YouTube)"
+                              : "Último fluxo"}
+                        </strong>
+                        <span className="auto-progress-pct">{pct}%</span>
+                      </div>
+                      <div className="auto-progress-bar" aria-hidden>
+                        <i style={{ width: `${pct}%` }} />
+                      </div>
+                      {autoStatus && (
+                        <p className="auto-progress-current">{autoStatus}</p>
+                      )}
+                      <ol className="auto-progress-steps">
+                        {AUTO_PIPELINE_STEPS.map((step, i) => {
+                          const state =
+                            i < activeIdx || (!loadingAuto && autoProjectIds.length > 0 && i <= activeIdx)
+                              ? "done"
+                              : i === activeIdx && (loadingAuto || autoProjectIds.length > 0)
+                                ? "active"
+                                : "pending";
+                          return (
+                            <li key={step.id} className={`is-${state}`}>
+                              <span className="auto-progress-step-dot" aria-hidden />
+                              <span>{step.label}</span>
+                            </li>
+                          );
+                        })}
+                      </ol>
+                      {autoTotal > 0 && (autoStage === "scripts" || autoStage === "youtube" || autoStage === "audio") && (
+                        <p className="portadas-actions-hint">
+                          Vídeo {Math.min(autoDone + 1, autoTotal)} de {autoTotal}
+                        </p>
+                      )}
+                      {autoLog.length > 0 && (
+                        <ol className="auto-progress-log">
+                          {autoLog.slice(-8).map((item) => (
+                            <li key={item.id}>
+                              <span className="auto-progress-stage">{stageLabel(item.stage)}</span>
+                              <span>{item.detail}</span>
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                      {autoProjectIds.length > 0 && !loadingAuto && (
+                        <p className="auto-progress-follow">
+                          Cada vídeo: voz → música → render → portada → YouTube. Acompanha em{" "}
+                          <button type="button" onClick={() => setActiveTab("audio")}>Áudio</button>{" "}
+                          ou{" "}
+                          <button type="button" onClick={() => setActiveTab("videos")}>Vídeos</button>.
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             )}
             {autoError && <div className="generation-error">{autoError}</div>}
@@ -1165,35 +1272,21 @@ export function ChannelWorkspace({
 
             <div className="voice-row">
               <MiniIcon name="sparkles" size={24} />
-              <span className="voice-label">IA para gerar as ideias</span>
+              <span className="voice-label">IA para gerar ideias e roteiros</span>
               <select
-                value={ideaAiOverride}
+                value={ideaAiOverride || "openai"}
                 onChange={(event) => {
                   const next = event.target.value as typeof ideaAiOverride;
                   setIdeaAiOverride(next);
-                  // Keep script IA in sync so "ChatGPT nas ideias" também gera o roteiro com ChatGPT.
                   setScriptAiOverride(next);
                 }}
               >
-                <option value="">Padrão do sistema (AI_PROVIDER)</option>
-                <option value="mock">Mock (sem IA, offline)</option>
+                <option value="openai">ChatGPT (padrão)</option>
                 <option value="anthropic">Claude (Anthropic)</option>
-                <option value="openai">ChatGPT (OpenAI)</option>
                 <option value="gemini">Gemini (Google)</option>
+                <option value="mock">Mock (sem IA, offline)</option>
               </select>
-              <label className="voice-toggle-label">
-                <span>Usar outra IA apenas nesta geração</span>
-                <input
-                  type="checkbox"
-                  checked={Boolean(ideaAiOverride)}
-                  onChange={(event) => {
-                    const next = event.target.checked ? "openai" : "";
-                    setIdeaAiOverride(next);
-                    setScriptAiOverride(next);
-                  }}
-                />
-                <i />
-              </label>
+              <span className="books-muted voice-row-hint">Padrão = ChatGPT</span>
             </div>
           </section>
 

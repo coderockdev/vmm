@@ -2014,11 +2014,82 @@ body:has(.channel-workspace) .main-content {
   color: #2a2c31;
 }
 
+.auto-progress-pct {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 700;
+  color: #2a2c31;
+  font-variant-numeric: tabular-nums;
+}
+
+.auto-progress-bar {
+  height: 6px;
+  margin: 0 0 10px;
+  background: #e8dfc4;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.auto-progress-bar > i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #c5a35a, #8a6b2e);
+  border-radius: inherit;
+  transition: width 0.35s ease;
+}
+
 .auto-progress-current {
-  flex: 1 1 220px;
+  margin: 0 0 10px;
   color: #4a5160;
   font-size: 13px;
   line-height: 1.35;
+}
+
+.auto-progress-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.auto-progress-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #8a9099;
+}
+
+.auto-progress-steps li.is-done {
+  color: #1f5a2e;
+  font-weight: 600;
+}
+
+.auto-progress-steps li.is-active {
+  color: #6a4a12;
+  font-weight: 700;
+}
+
+.auto-progress-step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d5d8de;
+}
+
+.auto-progress-steps li.is-done .auto-progress-step-dot {
+  background: #3d9a55;
+}
+
+.auto-progress-steps li.is-active .auto-progress-step-dot {
+  background: #c5a35a;
+  box-shadow: 0 0 0 3px rgba(197, 163, 90, 0.35);
+}
+
+.voice-row-hint {
+  font-size: 12px;
 }
 
 .auto-progress-log {
