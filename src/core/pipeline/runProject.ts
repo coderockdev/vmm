@@ -51,6 +51,7 @@ export async function runProject(jobId: string): Promise<void> {
         videoProjectId: project.id,
         lines: rawLines,
         ttsOverride: project.ttsProviderOverride,
+        ttsVoiceIdOverride: project.ttsVoiceIdOverride,
       });
 
       const audioAsset = await createAudioAsset({

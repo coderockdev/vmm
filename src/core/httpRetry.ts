@@ -1,6 +1,6 @@
 /**
- * Retries a fetch on transient failures (429 rate-limited, 5xx server
- * errors — e.g. "model is currently experiencing high demand") with
+ * Retries a fetch on transient failures (network blips, 429 rate-limited, 5xx
+ * server errors — e.g. "model is currently experiencing high demand") with
  * exponential backoff. AI providers hit this under normal load; a couple of
  * automatic retries turns a flaky request into a successful one without the
  * user needing to click "gerar" again.
@@ -22,6 +22,19 @@ function isBillingQuotaError(body: string): boolean {
   );
 }
 
+function isNetworkFetchError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return (
+    msg === "fetch failed" ||
+    msg.includes("network") ||
+    msg.includes("econnreset") ||
+    msg.includes("etimedout") ||
+    msg.includes("socket hang up") ||
+    msg.includes("undici")
+  );
+}
+
 export function describeProviderError(providerLabel: string, status: number, body: string): string {
   if (status === 429 && isBillingQuotaError(body)) {
     return `${providerLabel} sem créditos/quota na conta (HTTP 429 insufficient_quota — não é bug do app). Coloque crédito em platform.openai.com (Billing) ou troque de IA no seletor (Claude/Gemini/Mock).`;
@@ -40,22 +53,39 @@ export async function fetchWithRetry(
   init: RequestInit,
   options: { retries?: number; baseDelayMs?: number } = {}
 ): Promise<Response> {
-  const retries = options.retries ?? 2;
+  const retries = options.retries ?? 3;
   const baseDelayMs = options.baseDelayMs ?? 1000;
 
-  let response: Response;
+  let lastNetworkError: unknown;
   for (let attempt = 0; ; attempt++) {
-    response = await fetch(input, init);
-    // Billing/quota 429s never recover with retry — only true rate limits do.
-    let billingBlocked = false;
-    if (response.status === 429) {
-      const peek = await response.clone().text().catch(() => "");
-      billingBlocked = isBillingQuotaError(peek);
+    try {
+      const response = await fetch(input, init);
+      // Billing/quota 429s never recover with retry — only true rate limits do.
+      let billingBlocked = false;
+      if (response.status === 429) {
+        const peek = await response.clone().text().catch(() => "");
+        billingBlocked = isBillingQuotaError(peek);
+      }
+      const retryable = !billingBlocked && (response.status === 429 || response.status >= 500);
+      if (response.ok || !retryable || attempt >= retries) {
+        return response;
+      }
+      await new Promise((resolve) => setTimeout(resolve, baseDelayMs * 2 ** attempt));
+    } catch (err) {
+      lastNetworkError = err;
+      if (!isNetworkFetchError(err) || attempt >= retries) {
+        if (isNetworkFetchError(err)) {
+          throw new Error(
+            `Falha de rede ao falar com a IA (${err instanceof Error ? err.message : "fetch failed"}). Verifique a internet e tente de novo.`
+          );
+        }
+        throw err;
+      }
+      await new Promise((resolve) => setTimeout(resolve, baseDelayMs * 2 ** attempt));
     }
-    const retryable = !billingBlocked && (response.status === 429 || response.status >= 500);
-    if (response.ok || !retryable || attempt >= retries) {
-      return response;
-    }
-    await new Promise((resolve) => setTimeout(resolve, baseDelayMs * 2 ** attempt));
   }
+  // Unreachable, but keeps TS happy if the loop shape changes.
+  throw lastNetworkError instanceof Error
+    ? lastNetworkError
+    : new Error("Falha de rede ao falar com a IA.");
 }

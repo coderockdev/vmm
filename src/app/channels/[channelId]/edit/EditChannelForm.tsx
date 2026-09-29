@@ -95,6 +95,9 @@ export function EditChannelForm({
   const [defaultDurationMinutes, setDefaultDurationMinutes] = useState(
     channel.dna.scriptRules.defaultDurationMinutes
   );
+  const [defaultSceneCount, setDefaultSceneCount] = useState(
+    channel.dna.scriptRules.defaultSceneCount ?? 4
+  );
   const [wordsPerMinute, setWordsPerMinute] = useState(
     channel.dna.scriptRules.wordsPerMinute ?? DEFAULT_WORDS_PER_MINUTE
   );
@@ -199,6 +202,7 @@ export function EditChannelForm({
               structure,
               generationPrompt,
               defaultDurationMinutes,
+              defaultSceneCount,
               wordsPerMinute,
               charsPerWord,
               performanceTags: {
@@ -455,7 +459,23 @@ export function EditChannelForm({
           <p style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6 }}>
             Agora: {wordsForDuration(defaultDurationMinutes, wordsPerMinute).toLocaleString("pt-BR")} palavras ·{" "}
             {charsForDuration(defaultDurationMinutes, wordsPerMinute, charsPerWord).toLocaleString("pt-BR")} caracteres totais
-            (o áudio é gerado em vários pedidos TTS — ~4.800 chars/pedido no máx., não um único envio).
+            · {defaultSceneCount} cenas (máx. ~4.800 chars/cena no TTS).
+          </p>
+          <label style={labelStyle}>Cenas padrão do roteiro (3–8)</label>
+          <select
+            style={inputStyle}
+            value={defaultSceneCount}
+            onChange={(e) => setDefaultSceneCount(Number(e.target.value))}
+          >
+            {[3, 4, 5, 6, 7, 8].map((n) => (
+              <option key={n} value={n}>
+                {n} cenas{n === 4 ? " (recomendado Amor Amor / HeyGen)" : ""}
+              </option>
+            ))}
+          </select>
+          <p style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6 }}>
+            O roteiro é um só, dividido nessas cenas. Cada cena vira um pedido TTS (≤ 4.800 caracteres).
+            Na hora de gerar dá para escolher outro número.
           </p>
         </section>
 

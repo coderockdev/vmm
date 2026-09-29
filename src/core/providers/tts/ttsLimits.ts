@@ -11,8 +11,22 @@ export const TTS_SOFT_CHAR_LIMIT: Record<string, number> = {
   uploaded: 50_000,
 };
 
+/** Hard ceiling per scene / TTS request (ElevenLabs v3 / Cartesia). */
+export const SCENE_TTS_CHAR_LIMIT = 4800;
+
+/** How many narrative scenes a script may be split into for TTS-safe chunks. */
+export const MIN_SCENE_COUNT = 3;
+export const MAX_SCENE_COUNT = 8;
+export const DEFAULT_SCENE_COUNT = 4;
+
 export function softCharLimitForProvider(provider: string): number {
-  return TTS_SOFT_CHAR_LIMIT[provider] ?? 4800;
+  return TTS_SOFT_CHAR_LIMIT[provider] ?? SCENE_TTS_CHAR_LIMIT;
+}
+
+export function clampSceneCount(n: number | null | undefined): number {
+  const v = typeof n === "number" ? n : Number(n);
+  if (!Number.isFinite(v)) return DEFAULT_SCENE_COUNT;
+  return Math.min(MAX_SCENE_COUNT, Math.max(MIN_SCENE_COUNT, Math.round(v)));
 }
 
 /**

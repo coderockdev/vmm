@@ -1,4 +1,4 @@
-export type ImageProviderName = "openai";
+export type ImageProviderName = "openai" | "pollinations" | "gemini";
 
 export interface GenerateImageArgs {
   prompt: string;
@@ -10,9 +10,8 @@ export interface GenerateImageResult {
 }
 
 /**
- * ImageProvider is the seam for AI cover-art generation — same pattern as
- * ScriptProvider/TTSProvider. Today only OpenAI is implemented; swapping in
- * Stability/Gemini/etc later means adding a class here, nothing else changes.
+ * ImageProvider is the seam for AI cover/thumbnail generation — same pattern as
+ * ScriptProvider/TTSProvider.
  */
 export interface ImageProvider {
   readonly name: ImageProviderName;

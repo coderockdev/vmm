@@ -29,6 +29,7 @@ export async function POST(req: NextRequest, { params }: { params: { channelId: 
       format: plan.format,
       ideas,
       aiProviderOverride: body.aiProviderOverride ?? null,
+      sceneCount: body.sceneCount != null ? Number(body.sceneCount) : undefined,
     });
     return NextResponse.json({ projectIds });
   } catch (err) {

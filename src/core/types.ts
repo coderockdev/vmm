@@ -33,6 +33,12 @@ export interface ChannelDNA {
     cta: string;
     defaultDurationMinutes: number;
     /**
+     * How many TTS-safe scenes (3–8) a full script is split into by default.
+     * Each scene stays ≤ ~4800 characters so ElevenLabs/Cartesia/HeyGen can
+     * synthesize one scene per request. Amor Amor defaults to 4.
+     */
+    defaultSceneCount: number;
+    /**
      * Spoken-pace budget used to translate minutes ↔ words ↔ characters
      * for the LLM and the DNA UI. Calm/passionate narration is often ~130–150;
      * Amor Amor targets ~145 → ~1600 words at 11 min.
@@ -72,6 +78,8 @@ export interface ChannelDNA {
     template: VisualTemplateId;
     palette: PaletteId;
     textPreset: TextPresetId;
+    /** YouTube thumbnail creative engine (formats + style rules). */
+    cover?: CoverVisualDna;
   };
 
   voice: {
@@ -91,6 +99,17 @@ export interface ChannelDNA {
 export type VisualTemplateId = "neon-meditation";
 export type PaletteId = "cosmic" | "night-sky" | "warm-story" | "rain-blue";
 export type TextPresetId = "bold-scroll" | "none";
+
+export type {
+  CoverFormat,
+  CoverVisualDna,
+  VideoConcept,
+  InventedCoverFormat,
+  ThumbnailFormatChoice,
+} from "./providers/image/coverFormats";
+export type { ImageProviderName } from "./providers/image/ImageProvider";
+
+import type { CoverVisualDna, VideoConcept } from "./providers/image/coverFormats";
 
 export interface Channel {
   id: string;
@@ -178,6 +197,8 @@ export interface VideoProject {
   seed: number;
   /** Per-generation TTS override (e.g. to A/B "local" vs "elevenlabs" for the same script). Null = use channel default. */
   ttsProviderOverride: "local" | "cartesia" | "elevenlabs" | "uploaded" | "heygen" | null;
+  /** Explicit voice when overriding TTS (required for ElevenLabs — never invent a default). */
+  ttsVoiceIdOverride: string | null;
   scriptId: string | null;
   audioAssetId: string | null;
   renderPath: string | null; // relative path under data dir (local storage) or full URL (remote storage), once completed
@@ -186,6 +207,10 @@ export interface VideoProject {
   costUsdTotal: number | null;
   /** Per-stage USD snapshot { ideas, script, audio, render }. */
   costBreakdown: { ideas: number; script: number; audio: number; render: number } | null;
+  /** Joint title+thumbnail creative concept. */
+  thumbnailConcept: VideoConcept | null;
+  /** Generated thumbnail image path/URL. */
+  thumbnailRef: string | null;
   createdAt: string;
   updatedAt: string;
 }

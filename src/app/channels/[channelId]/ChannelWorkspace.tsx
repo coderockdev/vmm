@@ -5,11 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Channel, ContentPlan, VideoProject, VideoFormat, JobStatus, AudioAsset } from "../../../core/types";
 import { ProjectCostLabel } from "./ProjectCostLabel";
+import { CostsPanel } from "./CostsPanel";
+import { PortadasPanel } from "./PortadasPanel";
 import { formatUsd } from "../../../core/usage/types";
 import { findVoice } from "../../../core/providers/tts/voiceCatalog";
 import { TTSProviderName } from "../../../core/providers/tts/TTSProvider";
 import { ScriptReviewModal } from "./ScriptReviewModal";
 import { mediaUrl } from "../../../core/media";
+import { sampleIdeasFromDna, suggestTopicsFromDna } from "../../../core/providers/script/ideaSuggestions";
 import {
   CalendarIcon,
   CarouselIcon,
@@ -24,34 +27,14 @@ import {
 
 const CHANNEL_PAGE_REFERENCE_SRC = "/reference/canal-page.png";
 const QUANTITIES = [1, 3, 5, 10];
+const SCENE_COUNTS = [3, 4, 5, 6, 7, 8] as const;
 // "script" = script generated, awaiting human review in the Roteiros tab — it
 // sits there until a person acts, so it's not part of the auto-poll set.
 const ACTIVE_STATUSES: JobStatus[] = ["planned", "audio", "timing", "composing", "rendering"];
-const AUDIO_ACTIVE: JobStatus[] = ["audio", "timing"];
-type WorkspaceTab = "criar" | "ideias" | "roteiros" | "audio" | "videos";
+const PIPELINE_PRODUCING: JobStatus[] = ["planned", "audio", "timing", "composing", "rendering"];
+type WorkspaceTab = "criar" | "ideias" | "roteiros" | "audio" | "videos" | "portadas" | "custos";
 
 type Crop = { x: number; y: number; width: number; height: number };
-
-const SAMPLE_IDEAS = [
-  {
-    id: "sample-persistencia",
-    title: "O valor da persistência",
-    angle: "Uma história sobre um jovem que nunca desistiu dos seus sonhos.",
-    objective: "Fazer o espectador sentir que vale a pena continuar tentando, mesmo diante de fracassos repetidos.",
-  },
-  {
-    id: "sample-errado",
-    title: "Quando tudo dá errado",
-    angle: "Uma história sobre um dia em que nada saiu como planejado, mas terminou bem.",
-    objective: "Mostrar que contratempos não definem o resultado final do dia — só atrasam ele.",
-  },
-  {
-    id: "sample-cadeira",
-    title: "A lição da cadeira vazia",
-    angle: "Uma situação simples que ensina um aprendizado incrível sobre a vida.",
-    objective: "Levar o espectador a valorizar quem está por perto, antes que seja tarde.",
-  },
-] as const;
 
 function ReferenceCrop({ crop, alt }: { crop: Crop; alt: string }) {
   return (
@@ -125,6 +108,9 @@ export function ChannelWorkspace({
   const [topic, setTopic] = useState("");
   const [quantity, setQuantity] = useState(5);
   const [durationKey, setDurationKey] = useState("default");
+  const [sceneCount, setSceneCount] = useState(
+    channel.dna.scriptRules.defaultSceneCount ?? 4
+  );
   const [format, setFormat] = useState<VideoFormat>("video");
   const [ideaAiOverride, setIdeaAiOverride] = useState<"" | "mock" | "anthropic" | "openai" | "gemini">("");
   const [scriptAiOverride, setScriptAiOverride] = useState<"" | "mock" | "anthropic" | "openai" | "gemini">("");
@@ -141,10 +127,14 @@ export function ChannelWorkspace({
   const [audioAssets, setAudioAssets] = useState<AudioAsset[]>(initialAudioAssets);
   const [jobByProject, setJobByProject] = useState<Record<string, { progress: number; statusMessage: string; status: string }>>({});
   const [reviewingProject, setReviewingProject] = useState<VideoProject | null>(null);
+  const [pendingScriptTitles, setPendingScriptTitles] = useState<string[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const durationMinutes = durationKey === "default" ? channel.dna.scriptRules.defaultDurationMinutes : Number(durationKey);
-  const hasActive = projects.some((project) => ACTIVE_STATUSES.includes(project.status));
+  const hasActiveJobs = Object.values(jobByProject).some((j) =>
+    ["planned", "audio", "timing", "composing", "rendering"].includes(j.status)
+  );
+  const hasActive = projects.some((project) => ACTIVE_STATUSES.includes(project.status)) || hasActiveJobs;
 
   useEffect(() => {
     if (hasActive && !pollRef.current) {
@@ -153,6 +143,7 @@ export function ChannelWorkspace({
         void refreshJobs();
       }, 2000);
       void refreshJobs();
+      void refreshProjects();
     }
     if (!hasActive && pollRef.current) {
       clearInterval(pollRef.current);
@@ -163,6 +154,14 @@ export function ChannelWorkspace({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasActive]);
+
+  useEffect(() => {
+    if (activeTab === "audio" || activeTab === "roteiros" || activeTab === "videos") {
+      void refreshProjects();
+      void refreshJobs();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   async function refreshProjects() {
     const response = await fetch(`/api/channels/${channel.id}`);
@@ -208,7 +207,12 @@ export function ChannelWorkspace({
       setSelectedIds(new Set(data.plan.items.map((item: { id: string }) => item.id)));
       setActiveTab("ideias");
     } catch (err) {
-      setIdeaError(err instanceof Error ? err.message : String(err));
+      const raw = err instanceof Error ? err.message : String(err);
+      setIdeaError(
+        /fetch failed|network|failed to fetch/i.test(raw)
+          ? "Falha de rede ao gerar ideias. Espere 2s e tente de novo (às vezes o servidor reinicia no hot-reload)."
+          : raw
+      );
     } finally {
       setLoadingPlan(false);
     }
@@ -231,6 +235,11 @@ export function ChannelWorkspace({
     if (!plan || selectedIds.size === 0) return;
     setGenerating(true);
     setScriptError(null);
+    const titles = visibleIdeas
+      .filter((idea) => selectedIds.has(idea.id))
+      .map((idea) => idea.title);
+    setPendingScriptTitles(titles);
+    setActiveTab("roteiros");
     try {
       const response = await fetch(`/api/channels/${channel.id}/generate`, {
         method: "POST",
@@ -239,6 +248,7 @@ export function ChannelWorkspace({
           planId: plan.id,
           ideaIds: Array.from(selectedIds),
           aiProviderOverride: scriptAiOverride || null,
+          sceneCount,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -247,7 +257,9 @@ export function ChannelWorkspace({
       setActiveTab("roteiros");
     } catch (err) {
       setScriptError(err instanceof Error ? err.message : String(err));
+      setActiveTab("ideias");
     } finally {
+      setPendingScriptTitles([]);
       setGenerating(false);
     }
   }
@@ -264,23 +276,72 @@ export function ChannelWorkspace({
 
   const planIdeas = (plan?.items ?? []).filter((item) => item.status !== "removed");
   const usingSamples = planIdeas.length === 0;
+  const dnaSampleIdeas = sampleIdeasFromDna(channel, 3);
+  const dnaTopicSuggestions = suggestTopicsFromDna(channel, 6);
+  const topicPlaceholder =
+    channel.dna.language === "es"
+      ? dnaTopicSuggestions[0]
+        ? `Ej.: ${dnaTopicSuggestions[0]}…`
+        : "Ej.: que regrese desesperado esta noche…"
+      : dnaTopicSuggestions[0]
+        ? `Ex.: ${dnaTopicSuggestions[0]}…`
+        : "Ex.: assunto alinhado ao DNA deste canal…";
   const visibleIdeas = usingSamples
-    ? SAMPLE_IDEAS
+    ? dnaSampleIdeas
     : planIdeas.map((item) => ({ id: item.id, title: item.title, angle: item.angle, objective: item.objective }));
   const activeSelection = usingSamples ? sampleSelected : selectedIds;
   const allSelected = visibleIdeas.length > 0 && visibleIdeas.every((idea) => activeSelection.has(idea.id));
 
   const reviewProjects = projects.filter((p) => p.status === "script");
+  const projectsByIdeaId = new Map(
+    projects.filter((p) => p.contentIdeaId).map((p) => [p.contentIdeaId!, p])
+  );
   const audioById = new Map(audioAssets.map((a) => [a.id, a]));
   const audioProjects = projects.filter(
     (p) =>
       p.status !== "script" &&
-      (AUDIO_ACTIVE.includes(p.status) ||
+      (PIPELINE_PRODUCING.includes(p.status) ||
         Boolean(p.audioAssetId) ||
-        ["composing", "rendering", "completed", "failed"].includes(p.status))
+        ["completed", "failed"].includes(p.status))
   );
-  const audioBusyCount = projects.filter((p) => AUDIO_ACTIVE.includes(p.status)).length;
+  const audioBusyCount = projects.filter(
+    (p) => PIPELINE_PRODUCING.includes(p.status)
+  ).length;
+  const scriptBusyCount = pendingScriptTitles.length;
   const videoProjects = projects.filter((p) => p.status === "completed" || p.status === "rendering" || p.status === "composing");
+
+  function productionLabel(project: VideoProject, job?: { progress: number; statusMessage: string; status: string }) {
+    if (project.status === "failed") {
+      // Audio may already exist when a later step crashed (e.g. broken .next chunk).
+      if (project.audioAssetId) {
+        return { text: "Áudio pronto (etapa seguinte falhou)", kind: "failed" as const };
+      }
+      return { text: job?.statusMessage || project.errorMessage || "Falhou", kind: "failed" as const };
+    }
+    if (project.status === "completed") {
+      return { text: "Concluído", kind: "done" as const };
+    }
+    if (project.audioAssetId && !PIPELINE_PRODUCING.includes(project.status)) {
+      return { text: "Áudio pronto", kind: "done" as const };
+    }
+    const msg = job?.statusMessage?.trim();
+    if (job?.status === "planned" || project.status === "planned") {
+      return { text: msg || "Na fila de produção…", kind: "working" as const };
+    }
+    if (project.status === "audio" || job?.status === "audio") {
+      return { text: msg || "Gerando áudio…", kind: "working" as const };
+    }
+    if (project.status === "timing" || job?.status === "timing") {
+      return { text: msg || "Sincronizando texto…", kind: "working" as const };
+    }
+    if (project.status === "composing" || job?.status === "composing") {
+      return { text: msg || "Preparando composição…", kind: "working" as const };
+    }
+    if (project.status === "rendering" || job?.status === "rendering") {
+      return { text: msg || "Renderizando vídeo…", kind: "working" as const };
+    }
+    return { text: msg || "Em produção…", kind: "working" as const };
+  }
 
   function toggleIdea(id: string, checked: boolean) {
     const setter = usingSamples ? setSampleSelected : setSelectedIds;
@@ -339,12 +400,17 @@ export function ChannelWorkspace({
         <button type="button" className={activeTab === "criar" ? "active" : ""} onClick={() => setActiveTab("criar")}>Criar conteúdo</button>
         <button type="button" className={activeTab === "ideias" ? "active" : ""} onClick={() => setActiveTab("ideias")}>Ideias</button>
         <button type="button" className={activeTab === "roteiros" ? "active" : ""} onClick={() => setActiveTab("roteiros")}>
-          Roteiros{reviewProjects.length > 0 && <span className="tab-badge">{reviewProjects.length}</span>}
+          Roteiros
+          {(scriptBusyCount > 0 || reviewProjects.length > 0) && (
+            <span className="tab-badge">{scriptBusyCount > 0 ? scriptBusyCount : reviewProjects.length}</span>
+          )}
         </button>
         <button type="button" className={activeTab === "audio" ? "active" : ""} onClick={() => setActiveTab("audio")}>
           Áudio{audioBusyCount > 0 && <span className="tab-badge">{audioBusyCount}</span>}
         </button>
         <button type="button" className={activeTab === "videos" ? "active" : ""} onClick={() => setActiveTab("videos")}>Vídeos</button>
+        <button type="button" className={activeTab === "portadas" ? "active" : ""} onClick={() => setActiveTab("portadas")}>Portadas</button>
+        <button type="button" className={activeTab === "custos" ? "active" : ""} onClick={() => setActiveTab("custos")}>Custos</button>
         <button type="button" disabled title="Ainda não implementado">Estatísticas</button>
         <button type="button" onClick={() => router.push(`/channels/${channel.id}/edit`)}>Configurações</button>
       </nav>
@@ -354,18 +420,35 @@ export function ChannelWorkspace({
           <section className="creation-card">
             <div className="workspace-section-title">
               <h2>O que vamos criar hoje?</h2>
-              <p>Digite um assunto e gere várias ideias de vídeos com base no DNA deste canal.</p>
+              <p>Sugestões e ideias geradas a partir do DNA deste canal ({channel.name}).</p>
             </div>
             <div className="topic-field">
               <textarea
                 value={topic}
                 maxLength={500}
                 onChange={(event) => setTopic(event.target.value)}
-                placeholder="Ex.: Uma história sobre persistência e nunca desistir dos sonhos..."
+                placeholder={topicPlaceholder}
                 aria-label="Assunto para geração de ideias"
               />
               <span>{topic.length}/500</span>
             </div>
+            {dnaTopicSuggestions.length > 0 && (
+              <div className="dna-topic-suggestions" aria-label="Sugestões do DNA do canal">
+                <span className="dna-topic-suggestions-label">Sugestões do DNA</span>
+                <div className="dna-topic-chips">
+                  {dnaTopicSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      className={topic.trim() === suggestion ? "active" : ""}
+                      onClick={() => setTopic(suggestion)}
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="creation-controls">
               <label>
@@ -381,6 +464,16 @@ export function ChannelWorkspace({
                   <option value="5">5 minutos</option>
                   <option value="10">10 minutos</option>
                   <option value="15">15 minutos</option>
+                </select>
+              </label>
+              <label>
+                <span>Cenas do roteiro</span>
+                <select value={sceneCount} onChange={(event) => setSceneCount(Number(event.target.value))}>
+                  {SCENE_COUNTS.map((n) => (
+                    <option key={n} value={n}>
+                      {n} cenas{n === (channel.dna.scriptRules.defaultSceneCount ?? 4) ? " (padrão do canal)" : ""}
+                    </option>
+                  ))}
                 </select>
               </label>
               <div className="format-control">
@@ -459,6 +552,20 @@ export function ChannelWorkspace({
             </div>
             <div className="ideas-actions">
               <label className="select-all"><input type="checkbox" checked={allSelected} onChange={(event) => toggleAll(event.target.checked)} /> <span>Selecionar todos</span></label>
+              <label className="ideas-scene-select">
+                <span className="sr-only">Cenas</span>
+                <select
+                  value={sceneCount}
+                  onChange={(event) => setSceneCount(Number(event.target.value))}
+                  aria-label="Quantidade de cenas do roteiro"
+                >
+                  {SCENE_COUNTS.map((n) => (
+                    <option key={n} value={n}>
+                      {n} cenas (≤4.8k chars)
+                    </option>
+                  ))}
+                </select>
+              </label>
               <select
                 className="ideas-ai-select"
                 value={scriptAiOverride}
@@ -479,8 +586,20 @@ export function ChannelWorkspace({
           {scriptError && <div className="generation-error">{scriptError}</div>}
 
           <div className="ideas-grid">
-            {visibleIdeas.map((idea) => (
-              <article className="idea-card" key={idea.id}>
+            {visibleIdeas.map((idea) => {
+              const linked = !usingSamples ? projectsByIdeaId.get(idea.id) : undefined;
+              const pending = pendingScriptTitles.includes(idea.title);
+              const ideaStatus = pending
+                ? { text: "Gerando roteiro…", kind: "working" as const }
+                : linked?.status === "script"
+                  ? { text: "Pronto para revisar", kind: "done" as const }
+                  : linked && PIPELINE_PRODUCING.includes(linked.status)
+                    ? { text: "Em produção…", kind: "working" as const }
+                    : linked?.audioAssetId || linked?.status === "completed"
+                      ? { text: "Já gerado", kind: "done" as const }
+                      : null;
+              return (
+              <article className={`idea-card${ideaStatus ? " idea-card-has-status" : ""}`} key={idea.id}>
                 <input
                   className="idea-checkbox"
                   type="checkbox"
@@ -492,10 +611,16 @@ export function ChannelWorkspace({
                   <h3>{idea.title}</h3>
                   <p className="idea-angle">{idea.angle}</p>
                   {idea.objective && <p className="idea-objective">{idea.objective}</p>}
+                  {ideaStatus && (
+                    <span className={`workspace-rendered ${ideaStatus.kind}`}>
+                      <i /> {ideaStatus.text}
+                    </span>
+                  )}
                 </div>
                 {!usingSamples && <button type="button" className="idea-remove" onClick={() => handleRemoveIdea(idea.id)} aria-label={`Remover ${idea.title}`}>×</button>}
               </article>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
@@ -507,19 +632,38 @@ export function ChannelWorkspace({
             <p>Leia cada roteiro, aprove escolhendo a voz, peça outra versão ou exclua.</p>
           </div>
 
-          {reviewProjects.length === 0 ? (
+          {scriptBusyCount > 0 && (
+            <div className="production-banner" role="status">
+              <span className="production-spinner" aria-hidden />
+              Gerando {scriptBusyCount} roteiro{scriptBusyCount > 1 ? "s" : ""} com o DNA do canal… isso pode levar alguns minutos.
+            </div>
+          )}
+
+          {reviewProjects.length === 0 && scriptBusyCount === 0 ? (
             <div className="review-empty-state">
               Nenhum roteiro aguardando revisão. Gere roteiros na aba <button type="button" onClick={() => setActiveTab("ideias")}>Ideias</button>.
             </div>
           ) : (
             <div className="review-queue-list">
+              {pendingScriptTitles.map((title) => (
+                <article className="review-queue-card review-queue-card-pending" key={`pending-${title}`}>
+                  <div className="review-queue-icon"><MiniIcon name="doc" size={22} /></div>
+                  <div className="review-queue-copy">
+                    <h3>{title}</h3>
+                    <p>{sceneCount} cenas · gerando com IA…</p>
+                    <span className="workspace-rendered working"><i /> Escrevendo roteiro…</span>
+                  </div>
+                  <button type="button" disabled>Aguarde</button>
+                </article>
+              ))}
               {reviewProjects.map((project) => (
                 <article className="review-queue-card" key={project.id}>
                   <div className="review-queue-icon"><MiniIcon name="doc" size={22} /></div>
                   <div className="review-queue-copy">
                     <h3>{project.title}</h3>
                     <p>{project.topic} · {project.durationMinutes} min · {project.format}</p>
-                    <ProjectCostLabel project={project} />
+                    <span className="workspace-rendered done"><i /> Pronto para revisar</span>
+                    <ProjectCostLabel project={project} alwaysShow />
                   </div>
                   <button type="button" onClick={() => setReviewingProject(project)}>Ler e revisar</button>
                 </article>
@@ -535,6 +679,12 @@ export function ChannelWorkspace({
             <h2>Áudios do canal</h2>
             <p>Acompanhe a geração TTS (ElevenLabs/Cartesia/local): status, duração e custo estimado.</p>
           </div>
+          {audioBusyCount > 0 && (
+            <div className="production-banner" role="status">
+              <span className="production-spinner" aria-hidden />
+              {audioBusyCount} produção{audioBusyCount > 1 ? "ões" : ""} em andamento — atualizando a cada 2s.
+            </div>
+          )}
           {audioProjects.length === 0 ? (
             <div className="review-empty-state">
               Nenhum áudio ainda. Aprove um roteiro na aba{" "}
@@ -546,19 +696,11 @@ export function ChannelWorkspace({
                 const asset = project.audioAssetId ? audioById.get(project.audioAssetId) : undefined;
                 const job = jobByProject[project.id];
                 const audioCost = project.costBreakdown?.audio ?? 0;
-                const generatingAudio = AUDIO_ACTIVE.includes(project.status);
+                const status = productionLabel(project, job);
+                const generatingAudio = status.kind === "working";
                 const listenUrl = asset ? mediaUrl(channel.id, asset.filePath) : null;
-                const statusLabel = generatingAudio
-                  ? job?.statusMessage || "Gerando áudio..."
-                  : project.status === "failed"
-                    ? "Falhou"
-                    : asset
-                      ? "Áudio pronto"
-                      : project.status === "completed"
-                        ? "Áudio pronto"
-                        : "Em produção";
                 return (
-                  <article className="review-queue-card review-queue-card-audio" key={project.id}>
+                  <article className={`review-queue-card review-queue-card-audio${generatingAudio ? " is-producing" : ""}`} key={project.id}>
                     <div className="review-queue-icon"><MiniIcon name="mic" size={22} /></div>
                     <div className="review-queue-copy">
                       <h3>{project.title}</h3>
@@ -570,11 +712,11 @@ export function ChannelWorkspace({
                           ? ` · total ${formatUsd(project.costUsdTotal)}`
                           : ""}
                       </p>
-                      <span className={`workspace-rendered${project.status === "failed" ? " failed" : ""}`}>
-                        <i /> {statusLabel}
+                      <span className={`workspace-rendered ${status.kind}`}>
+                        <i /> {status.text}
                         {generatingAudio && job ? ` · ${Math.round(job.progress)}%` : ""}
                       </span>
-                      <ProjectCostLabel project={project} />
+                      <ProjectCostLabel project={project} alwaysShow />
                       {listenUrl && (
                         <audio className="review-queue-audio" controls preload="metadata" src={listenUrl}>
                           Seu navegador não reproduz áudio embutido.
@@ -590,8 +732,8 @@ export function ChannelWorkspace({
                         Indisponível
                       </span>
                     ) : (
-                      <button type="button" className="review-queue-action" disabled={generatingAudio} onClick={() => void refreshProjects()}>
-                        {generatingAudio ? "Atualizando..." : "Atualizar"}
+                      <button type="button" className="review-queue-action" disabled={generatingAudio} onClick={() => { void refreshProjects(); void refreshJobs(); }}>
+                        {generatingAudio ? "Produzindo…" : "Atualizar"}
                       </button>
                     )}
                   </article>
@@ -628,15 +770,34 @@ export function ChannelWorkspace({
         </section>
       )}
 
+      {activeTab === "portadas" && (
+        <PortadasPanel
+          channel={channel}
+          projects={projects}
+          onProjectUpdated={(updated) => {
+            setProjects((previous) => previous.map((p) => (p.id === updated.id ? updated : p)));
+          }}
+        />
+      )}
+
+      {activeTab === "custos" && <CostsPanel channelId={channel.id} />}
+
       {reviewingProject && (
         <ScriptReviewModal
           project={reviewingProject}
           channel={channel}
           onClose={() => setReviewingProject(null)}
           onApproved={(updated) => {
-            setProjects((previous) => previous.map((p) => (p.id === updated.id ? updated : p)));
+            setProjects((previous) =>
+              previous.map((p) =>
+                p.id === updated.id
+                  ? { ...updated, status: updated.status === "script" ? "audio" : updated.status }
+                  : p
+              )
+            );
             setReviewingProject(null);
             setActiveTab("audio");
+            void refreshProjects();
             void refreshJobs();
           }}
           onDeleted={(projectId) => {

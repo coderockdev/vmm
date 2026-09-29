@@ -6,7 +6,11 @@ export async function POST(req: NextRequest, { params }: { params: { videoProjec
   const body = await req.json().catch(() => ({}));
 
   try {
-    await approveScriptAndProduce(params.videoProjectId, body.ttsProviderOverride ?? null);
+    await approveScriptAndProduce(
+      params.videoProjectId,
+      body.ttsProviderOverride ?? null,
+      typeof body.ttsVoiceIdOverride === "string" ? body.ttsVoiceIdOverride : null
+    );
     return NextResponse.json({ project: await getVideoProject(params.videoProjectId) });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

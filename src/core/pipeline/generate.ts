@@ -59,6 +59,8 @@ export async function generateScriptsForIdeas(args: {
   format: VideoFormat;
   ideas: ContentIdea[];
   aiProviderOverride?: string | null;
+  /** 3–8 scenes; defaults to channel DNA `defaultSceneCount`. */
+  sceneCount?: number;
 }): Promise<string[]> {
   const provider = getScriptProvider(args.aiProviderOverride);
   const previousScripts = await listScriptTextsForChannel(args.channel.id);
@@ -73,6 +75,7 @@ export async function generateScriptsForIdeas(args: {
           topic: args.topic,
           contentIdea: idea,
           durationMinutes: args.durationMinutes,
+          sceneCount: args.sceneCount,
           previousScripts,
         })
       : {

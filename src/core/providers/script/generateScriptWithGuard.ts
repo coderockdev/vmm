@@ -12,18 +12,21 @@ import {
   DEFAULT_WORDS_PER_MINUTE,
   wordsForDuration,
 } from "../../scriptBudget";
-import { TTS_SOFT_CHAR_LIMIT } from "../tts/ttsLimits";
+import { clampSceneCount, DEFAULT_SCENE_COUNT, SCENE_TTS_CHAR_LIMIT } from "../tts/ttsLimits";
 
-const TTS_BLOCK_CHARS = TTS_SOFT_CHAR_LIMIT.elevenlabs; // 4800 — hard ceiling per scene / TTS request
+const TTS_BLOCK_CHARS = SCENE_TTS_CHAR_LIMIT;
 
 function countWords(text: string): number {
   return text.trim() ? text.trim().split(/\s+/).filter(Boolean).length : 0;
 }
 
-/** 4–5 narrative scenes, each under the TTS soft char limit. */
+/**
+ * Auto scene count from char budget when DNA/UI didn't pick one.
+ * Prefer enough scenes so each stays under the TTS soft limit, clamped 3–8.
+ */
 export function sceneCountForBudget(targetChars: number): number {
   const byTts = Math.ceil(Math.max(1, targetChars) / TTS_BLOCK_CHARS);
-  return Math.min(5, Math.max(4, byTts));
+  return clampSceneCount(Math.max(DEFAULT_SCENE_COUNT, byTts));
 }
 
 function mergeUsage(a?: UsageSnapshot, b?: UsageSnapshot): UsageSnapshot | undefined {
@@ -39,7 +42,7 @@ function mergeUsage(a?: UsageSnapshot, b?: UsageSnapshot): UsageSnapshot | undef
 }
 
 /**
- * Generates a full-length script in 4–5 scenes (each ≤ ~4800 chars) so:
+ * Generates a full-length script in N scenes (3–8, each ≤ ~4800 chars) so:
  *  - LLMs hit the ~1600-word / 11-min budget instead of stopping at ~500 words
  *  - each scene is already safe to send to ElevenLabs/Cartesia in one request
  *
@@ -56,9 +59,17 @@ export async function generateScriptWithGuard(args: {
   const durationMinutes = scriptArgs.durationMinutes;
   const targetWords = wordsForDuration(durationMinutes, wpm);
   const targetChars = charsForDuration(durationMinutes, wpm, cpw);
-  const sceneCount = sceneCountForBudget(targetChars);
+  const sceneCount = clampSceneCount(
+    scriptArgs.sceneCount ??
+      scriptArgs.channel.dna.scriptRules.defaultSceneCount ??
+      sceneCountForBudget(targetChars)
+  );
   const wordsPerScene = Math.max(180, Math.round(targetWords / sceneCount));
-  const charsPerScene = Math.min(TTS_BLOCK_CHARS - 200, Math.round(targetChars / sceneCount));
+  // Keep scenes even and safely under the TTS hard ceiling.
+  const charsPerScene = Math.min(
+    TTS_BLOCK_CHARS - 200,
+    Math.max(800, Math.round(targetChars / sceneCount))
+  );
 
   const context = buildScriptGenerationContext({
     channel: scriptArgs.channel,
@@ -78,13 +89,14 @@ export async function generateScriptWithGuard(args: {
 
     const sceneBrief = [
       `CENA ${scene} de ${sceneCount} (gere APENAS esta cena agora).`,
-      `Meta desta cena: ~${wordsPerScene} palavras / até ~${charsPerScene} caracteres (NUNCA ultrapasse ${TTS_BLOCK_CHARS} caracteres nesta cena — limite TTS ElevenLabs/Cartesia).`,
+      `TAMANHO PARELHO: meta ~${wordsPerScene} palavras / ~${charsPerScene} caracteres nesta cena (todas as ${sceneCount} cenas devem ficar com tamanho similar).`,
+      `NUNCA ultrapasse ${TTS_BLOCK_CHARS} caracteres nesta cena — limite TTS ElevenLabs/Cartesia/HeyGen.`,
       `Meta do roteiro completo: ~${targetWords} palavras / ~${targetChars} caracteres para ${durationMinutes} minutos.`,
       isFirst
-        ? `Esta é a ABERTURA: siga a regra de abertura do DNA. Sem respiração/meditação.`
+        ? `Esta é a ABERTURA: siga a regra de abertura do DNA (aviso/gancho poderoso). Sem respiração/meditação.`
         : `Continue a narrativa a partir do trecho anterior (não reinicie, não repita o gancho inicial).`,
       isLast
-        ? `Esta é a CENA FINAL: leve ao clímax se ainda não chegou, depois descarga, perdão (só no fim), agradecimento e CTA final do DNA.`
+        ? `Esta é a CENA FINAL: leve ao clímax se ainda não chegou, depois descarga, perdón (só no fim), agradecimiento e CTA final do DNA.`
         : `Ainda NÃO feche a oração — deixe tensão para as cenas seguintes.`,
       previousTail
         ? `Últimas falas já escritas (só contexto; NÃO as repita):\n${previousTail}`
@@ -109,6 +121,7 @@ export async function generateScriptWithGuard(args: {
           scene,
           sceneCount,
           minWords: Math.round(wordsPerScene * 0.85),
+          targetChars: charsPerScene,
           maxChars: TTS_BLOCK_CHARS,
         },
       }),
@@ -124,7 +137,8 @@ export async function generateScriptWithGuard(args: {
         prompt,
         ``,
         `TENTATIVA ANTERIOR REJEITADA — continha: ${forbidden.join("; ")}.`,
-        `Reescreva esta cena do zero. ZERO respiração/meditação/relaxamento.`,
+        `Reescreva esta cena do zero. ZERO respiração/meditação/relaxamento. ZERO meta-texto ("hoy vamos a trabajar").`,
+        `Mantenha ~${charsPerScene} caracteres (±20%), máx ${TTS_BLOCK_CHARS}.`,
       ].join("\n");
       ({ text, usage: partUsage } = await complete(retryPrompt));
       part = parseScriptJson(text);
@@ -137,15 +151,16 @@ export async function generateScriptWithGuard(args: {
       }
     }
 
-    // Soft length nudge: if this scene is way too short, ask once more to expand.
-    const partWords = countWords(part.rawText);
-    if (partWords < wordsPerScene * 0.7) {
+    // Too short → expand once (rejects stub meditation intros).
+    let partWords = countWords(part.rawText);
+    let partChars = part.rawText.length;
+    if (partWords < wordsPerScene * 0.55 || partChars < charsPerScene * 0.55) {
       const expandPrompt = [
         prompt,
         ``,
-        `A cena veio CURTA (~${partWords} palavras; meta ~${wordsPerScene}).`,
-        `Reescreva a MESMA cena mais longa e densa, sem inventar meditação, sem repetir prefixos mecânicos.`,
-        `Mantenha ≤ ${TTS_BLOCK_CHARS} caracteres.`,
+        `A cena veio CURTA DEMAIS (~${partWords} palavras / ${partChars} chars; meta ~${wordsPerScene} palavras / ~${charsPerScene} chars).`,
+        `Reescreva a MESMA cena bem mais longa e densa, no tom da oração Amor Amor, sem meditação, sem prefixos mecânicos.`,
+        `Fique perto de ~${charsPerScene} caracteres e NUNCA acima de ${TTS_BLOCK_CHARS}.`,
       ].join("\n");
       ({ text, usage: partUsage } = await complete(expandPrompt));
       const expanded = parseScriptJson(text);
@@ -155,6 +170,30 @@ export async function generateScriptWithGuard(args: {
         countWords(expanded.rawText) > partWords
       ) {
         part = expanded;
+        partWords = countWords(part.rawText);
+        partChars = part.rawText.length;
+      }
+    }
+
+    // Over TTS ceiling → shrink once (keeps scenes TTS-safe and even).
+    if (partChars > TTS_BLOCK_CHARS) {
+      const shrinkPrompt = [
+        prompt,
+        ``,
+        `A cena estourou o limite TTS (${partChars} chars > ${TTS_BLOCK_CHARS}).`,
+        `Reescreva MAIS CURTA, condensando a mesma emoção/invocação, sem cortar o arco desta cena.`,
+        `Alvo: ~${charsPerScene} caracteres (máx ${TTS_BLOCK_CHARS}).`,
+      ].join("\n");
+      ({ text, usage: partUsage } = await complete(shrinkPrompt));
+      const shrunk = parseScriptJson(text);
+      usage = mergeUsage(usage, partUsage);
+      if (
+        findForbiddenPhrases(shrunk.rawText, avoid).length === 0 &&
+        shrunk.rawText.length <= TTS_BLOCK_CHARS
+      ) {
+        part = shrunk;
+      } else if (shrunk.rawText.length < part.rawText.length) {
+        part = shrunk;
       }
     }
 

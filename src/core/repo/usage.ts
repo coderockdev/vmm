@@ -60,6 +60,70 @@ function rowToEvent(row: UsageRow): UsageEvent {
   };
 }
 
+/** When usage_events insert fails, still accumulate a visible cost on the project. */
+async function stampProjectCostFallback(
+  videoProjectId: string,
+  stage: UsageStage,
+  estimatedUsd: number
+): Promise<void> {
+  if (!(estimatedUsd > 0)) return;
+  try {
+    const project = isSupabaseEnabled()
+      ? ((await assertNoError(
+          await getSupabase()
+            .from("video_projects")
+            .select("cost_usd_total, cost_breakdown_json")
+            .eq("id", videoProjectId)
+            .maybeSingle()
+        )) as { cost_usd_total: number | null; cost_breakdown_json: CostBreakdown | string | null } | null)
+      : (getDb()
+          .prepare(`SELECT cost_usd_total, cost_breakdown_json FROM video_projects WHERE id = ?`)
+          .get(videoProjectId) as {
+          cost_usd_total: number | null;
+          cost_breakdown_json: string | null;
+        } | null);
+
+    if (!project) return;
+    const prev =
+      typeof project.cost_breakdown_json === "string"
+        ? (() => {
+            try {
+              return JSON.parse(project.cost_breakdown_json) as CostBreakdown;
+            } catch {
+              return emptyBreakdown();
+            }
+          })()
+        : project.cost_breakdown_json && typeof project.cost_breakdown_json === "object"
+          ? (project.cost_breakdown_json as CostBreakdown)
+          : emptyBreakdown();
+    const breakdown: CostBreakdown = {
+      ideas: Number(prev.ideas) || 0,
+      script: Number(prev.script) || 0,
+      audio: Number(prev.audio) || 0,
+      render: Number(prev.render) || 0,
+    };
+    if (stage in breakdown) {
+      breakdown[stage as keyof CostBreakdown] += estimatedUsd;
+    }
+    const total = breakdown.ideas + breakdown.script + breakdown.audio + breakdown.render;
+    const now = new Date().toISOString();
+    if (isSupabaseEnabled()) {
+      await getSupabase()
+        .from("video_projects")
+        .update({ cost_usd_total: total, cost_breakdown_json: breakdown, updated_at: now })
+        .eq("id", videoProjectId);
+    } else {
+      getDb()
+        .prepare(
+          `UPDATE video_projects SET cost_usd_total = ?, cost_breakdown_json = ?, updated_at = ? WHERE id = ?`
+        )
+        .run(total, JSON.stringify(breakdown), now, videoProjectId);
+    }
+  } catch (err) {
+    console.warn(`[usage] stampProjectCostFallback failed:`, err);
+  }
+}
+
 export async function insertUsageEvent(input: {
   channelId: string;
   contentPlanId?: string | null;
@@ -99,10 +163,14 @@ export async function insertUsageEvent(input: {
         created_at: now,
       });
     if (res.error) {
-      // Schema not migrated yet — don't block content generation.
+      // Schema not migrated yet — don't block content generation, but still
+      // stamp the project cost so the UI keeps showing a number.
       console.warn(
         `[usage] insert failed (${res.error.message}). Run supabase/schema_usage.sql in the Supabase SQL editor.`
       );
+      if (input.videoProjectId) {
+        await stampProjectCostFallback(input.videoProjectId, input.stage, estimatedUsd);
+      }
       return {
         id,
         channelId: input.channelId,
@@ -211,6 +279,41 @@ export async function listUsageForPlan(contentPlanId: string): Promise<UsageEven
   const rows = getDb()
     .prepare(`SELECT * FROM usage_events WHERE content_plan_id = ? ORDER BY created_at ASC`)
     .all(contentPlanId) as UsageRow[];
+  return rows.map(rowToEvent);
+}
+
+/** All usage events for a channel, optionally since an ISO timestamp (inclusive). */
+export async function listUsageForChannel(
+  channelId: string,
+  opts?: { since?: string | null }
+): Promise<UsageEvent[]> {
+  const since = opts?.since ?? null;
+  if (isSupabaseEnabled()) {
+    let query = getSupabase()
+      .from("usage_events")
+      .select("*")
+      .eq("channel_id", channelId)
+      .order("created_at", { ascending: false })
+      .limit(2000);
+    if (since) query = query.gte("created_at", since);
+    const res = await query;
+    if (res.error) {
+      console.warn(`[usage] list channel failed (${res.error.message})`);
+      return [];
+    }
+    return (res.data ?? []).map((r) => rowToEvent(r as UsageRow));
+  }
+  if (since) {
+    const rows = getDb()
+      .prepare(
+        `SELECT * FROM usage_events WHERE channel_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 2000`
+      )
+      .all(channelId, since) as UsageRow[];
+    return rows.map(rowToEvent);
+  }
+  const rows = getDb()
+    .prepare(`SELECT * FROM usage_events WHERE channel_id = ? ORDER BY created_at DESC LIMIT 2000`)
+    .all(channelId) as UsageRow[];
   return rows.map(rowToEvent);
 }
 

@@ -3,13 +3,14 @@ import fs from "fs";
 import { TTSProvider, SynthesizeArgs, SynthesizeResult } from "./TTSProvider";
 import { ffprobeDuration } from "../../audio/ffmpegUtils";
 
-const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"; // "Rachel" — public ElevenLabs default voice
-
 /**
  * Real ElevenLabs TTS integration. Requires ELEVENLABS_API_KEY. Selected via
  * TTS_PROVIDER=elevenlabs (channel default) or a per-generation override, so
  * you can render the same script through `say` and through ElevenLabs and
  * compare which narration sounds better before committing to one.
+ *
+ * Never falls back to a hard-coded voice (old Rachel default produced the wrong
+ * gender when Amor Amor / HeyGen Juan Carlos had no voice_id).
  */
 export class ElevenLabsTTSProvider implements TTSProvider {
   readonly name = "elevenlabs" as const;
@@ -22,7 +23,13 @@ export class ElevenLabsTTSProvider implements TTSProvider {
       );
     }
 
-    const voiceId = args.voiceId || process.env.ELEVENLABS_DEFAULT_VOICE_ID || DEFAULT_VOICE_ID;
+    const voiceId = args.voiceId?.trim() || process.env.ELEVENLABS_DEFAULT_VOICE_ID?.trim() || "";
+    if (!voiceId) {
+      throw new Error(
+        "ElevenLabs precisa de um voice_id explícito. O DNA HeyGen (Juan Carlos) não tem voice_id da API — " +
+          "escolha uma voz masculina em «Voz para o áudio» ao aprovar o roteiro."
+      );
+    }
     const finalPath = path.join(args.outDir, `${args.fileBaseName}.mp3`);
 
     const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {

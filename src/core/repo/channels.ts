@@ -3,8 +3,10 @@ import { getDb } from "../db";
 import { getSupabase, isSupabaseEnabled, assertNoError } from "../supabaseClient";
 import { Channel, ChannelDNA } from "../types";
 import { DEFAULT_CHARS_PER_WORD, DEFAULT_WORDS_PER_MINUTE } from "../scriptBudget";
+import { clampSceneCount, DEFAULT_SCENE_COUNT } from "../providers/tts/ttsLimits";
 import { findVoice } from "../providers/tts/voiceCatalog";
 import { profileFromLegacyVoice } from "../providers/tts/voiceCapabilities";
+import { normalizeCoverDna } from "../providers/image/coverFormats";
 
 interface ChannelRow {
   id: string;
@@ -57,6 +59,9 @@ function normalizeDna(raw: ChannelDNA): ChannelDNA {
     scriptRules: {
       ...raw.scriptRules,
       generationPrompt: raw.scriptRules?.generationPrompt ?? "",
+      defaultSceneCount: clampSceneCount(
+        raw.scriptRules?.defaultSceneCount ?? DEFAULT_SCENE_COUNT
+      ),
       wordsPerMinute,
       charsPerWord,
       performanceTags,
@@ -64,6 +69,10 @@ function normalizeDna(raw: ChannelDNA): ChannelDNA {
     voice: {
       ...raw.voice,
       profile,
+    },
+    visual: {
+      ...raw.visual,
+      cover: normalizeCoverDna(raw.visual?.cover),
     },
   };
 }

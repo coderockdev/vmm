@@ -47,6 +47,7 @@ create table if not exists video_projects (
   error_message text,
   seed bigint not null,
   tts_provider_override text,
+  tts_voice_id_override text,
   script_id uuid,
   audio_asset_id uuid,
   render_path text,

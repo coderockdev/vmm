@@ -76,6 +76,7 @@ export default function NewChannelPage() {
             structure,
             cta: "CTA curto e natural quando apropriado",
             defaultDurationMinutes,
+            defaultSceneCount: 4,
             generationPrompt: "",
             pauses: { betweenLines: 0.5, betweenSections: 1.5 },
           },

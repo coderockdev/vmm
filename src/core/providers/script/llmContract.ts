@@ -11,9 +11,16 @@ export function contentPlanJsonInstructions(quantity: number): string {
     `FORMATO DE RESPOSTA (responda APENAS com este JSON, sem markdown, sem comentários, sem texto fora do JSON):`,
     `{"ideas":[{"title":"...","angle":"...","objective":"..."}]}`,
     `- Gere exatamente ${quantity} idea(s) distintas.`,
+    `- "title" é o título do vídeo no idioma do canal, no estilo editorial do DNA (gancho, urgência ou promessa — nunca genérico de outro nicho).`,
     `- "angle" é o ângulo/abordagem específica desse vídeo dentro do assunto.`,
     `- "objective" é o que o espectador deve sentir ou fazer ao final.`,
-  ].join("\n");
+    `- Varie títulos e situações; não repita a mesma fórmula mecânica nem clones quase idênticos.`,
+    quantity >= 5
+      ? `- Com ${quantity} ideias, espalhe ganchos diferentes (bloqueio, silêncio, orgulho, chamada, mensagem, arrependimento, horário simbólico, etc.).`
+      : ``,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function scriptJsonInstructions(opts?: {
@@ -27,6 +34,8 @@ export function scriptJsonInstructions(opts?: {
     scene: number;
     sceneCount: number;
     minWords: number;
+    /** Ideal spoken length for even scenes (not just the hard TTS ceiling). */
+    targetChars?: number;
     maxChars: number;
   };
 }): string {
@@ -49,9 +58,12 @@ export function scriptJsonInstructions(opts?: {
     ...(scene
       ? [
           `- CENA ${scene.scene}/${scene.sceneCount}: escreva no mínimo ~${scene.minWords} palavras nesta resposta.`,
-          `- LIMITE RÍGIDO: o texto falado desta cena deve ter NO MÁXIMO ${scene.maxChars} caracteres (teto TTS).`,
+          scene.targetChars
+            ? `- META DE TAMANHO DESTA CENA: ~${scene.targetChars} caracteres falados (todas as cenas devem ficar PARELHAS — não faça uma curtíssima e outra enorme).`
+            : ``,
+          `- LIMITE RÍGIDO: o texto falado desta cena deve ter NO MÁXIMO ${scene.maxChars} caracteres (teto TTS). Se passar, a resposta é inválida.`,
           `- Não resuma demais: desenvolva emoção, imagens e invocação — sem enchimento mecânico.`,
-        ]
+        ].filter(Boolean)
       : durationMinutes && targetWords && targetLines
         ? [
             `- Duração alvo: ${durationMinutes} minutos de narração (~${targetWords} palavras no total a ~${wpm} ppm, cerca de ${targetLines} linhas).`,
@@ -68,6 +80,7 @@ export function scriptJsonInstructions(opts?: {
         ]
       : []),
     `- Em especial: NUNCA comece com "Respira profundamente", "Relájate", "Cierra los ojos", exercícios de respiração ou meditação.`,
+    `- NUNCA diga "Hoy vamos a trabajar en…", "Vamos a trabajar en…" ou meta-texto editorial.`,
   ].join("\n");
 }
 
@@ -80,9 +93,12 @@ export function findForbiddenPhrases(scriptText: string, avoid: string[]): strin
     "relájate",
     "relajate",
     "cierra los ojos y encuentra tu centro",
+    "cierra los ojos",
     "ejercicios de respiración",
     "ejercicios de respiracion",
     "permite que tu mente se quede tranquila",
+    "hoy vamos a trabajar",
+    "vamos a trabajar en",
   ];
   const needles = [...avoid.map((a) => a.trim().toLowerCase()).filter(Boolean), ...extras];
   const found: string[] = [];

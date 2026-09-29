@@ -20,6 +20,12 @@ export interface GenerateScriptArgs {
   topic: string;
   contentIdea: ContentIdea;
   durationMinutes: number;
+  /**
+   * How many scenes to split the script into (3–8). Each scene is generated
+   * separately and kept ≤ ~4800 chars for TTS. Falls back to the channel DNA
+   * `defaultSceneCount` (Amor Amor = 4) when omitted.
+   */
+  sceneCount?: number;
   /** Raw text of previous scripts in this channel, to avoid literal repetition. */
   previousScripts: string[];
 }

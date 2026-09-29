@@ -1,26 +1,26 @@
-import { ImageProvider } from "./ImageProvider";
+import { ImageProvider, ImageProviderName } from "./ImageProvider";
 import { OpenAIImageProvider } from "./OpenAIImageProvider";
+import { PollinationsImageProvider } from "./PollinationsImageProvider";
+import { GeminiImageProvider } from "./GeminiImageProvider";
 
 export * from "./ImageProvider";
+export * from "./coverFormats";
 
-export function getImageProvider(): ImageProvider {
-  return new OpenAIImageProvider();
+export function getImageProvider(override?: ImageProviderName | null): ImageProvider {
+  const name =
+    override ||
+    (process.env.IMAGE_PROVIDER as ImageProviderName | undefined) ||
+    (process.env.OPENAI_API_KEY ? "openai" : "pollinations");
+
+  switch (name) {
+    case "openai":
+      return new OpenAIImageProvider();
+    case "gemini":
+      return new GeminiImageProvider();
+    case "pollinations":
+    default:
+      return new PollinationsImageProvider();
+  }
 }
 
-/** Builds a cover-art prompt from the channel's own DNA — no separate input needed. */
-export function buildCoverPrompt(args: {
-  name: string;
-  description: string;
-  tone: string[];
-  topics: string[];
-  palette: string;
-}): string {
-  return [
-    `A YouTube channel cover art thumbnail for a channel called "${args.name}".`,
-    `Theme: ${args.description}`,
-    `Tone: ${args.tone.join(", ")}.`,
-    `Visual motifs: ${args.topics.slice(0, 4).join(", ")}.`,
-    `Color palette inspiration: ${args.palette}.`,
-    "Abstract, atmospheric, no text, no logos, no watermarks, cinematic lighting, square composition.",
-  ].join(" ");
-}
+export { buildCoverPrompt } from "./buildCoverPrompt";

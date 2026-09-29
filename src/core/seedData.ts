@@ -1,4 +1,5 @@
 import { ChannelDNA } from "./types";
+import { defaultAmorAmorCoverDna } from "./providers/image/coverFormats";
 
 export interface SeedChannel {
   id: string;
@@ -112,6 +113,7 @@ El espectador llega emocionalmente activado. No busca una clase sobre relaciones
 12. CTA FINAL — escribe AMÉN, suscríbete a Amor Amor, vuelve mañana.`,
         cta: "CTA temprano integrado en la emoción (Suscríbete a Amor Amor, escribe su nombre en comentarios, quédate hasta el final) y CTA final breve (escribe AMÉN, suscríbete, vuelve mañana). Variar para no sonar grabado.",
         defaultDurationMinutes: 11,
+        defaultSceneCount: 4,
         generationPrompt: `Escribe un guion completo para el canal Amor Amor en español latinoamericano neutro.
 
 IMPORTANTE: Amor Amor NO es un canal de meditación, mindfulness ni autoayuda convencional.
@@ -214,6 +216,7 @@ No empieces en el alivio.`,
         template: "neon-meditation",
         palette: "cosmic",
         textPreset: "bold-scroll",
+        cover: defaultAmorAmorCoverDna(),
       },
       voice: {
         provider: "heygen",
@@ -223,9 +226,11 @@ No empieces en el alivio.`,
         profile: {
           provider: "heygen",
           voice_id: null,
+          elevenlabs_voice_id: "RyfjEHnKbtma4Srae2za",
           voice_name: "Juan Carlos",
           model: "elevenlabs_v3",
           language: "es",
+          accent: "latin american",
           speed: 0.9,
           stability: 0.5,
           heygen_template_id: "c12ae661d2b6442bb079871a697ea4ef",
@@ -251,7 +256,7 @@ No empieces en el alivio.`,
           },
           validated_for_channel: true,
           notes:
-            "Voz, motor, modelo e velocidade 0.9 já salvos no template do HeyGen. Envio via generate_from_template com texto_oracion_1..4, SEM voice_id.",
+            "Mesma voz ElevenLabs v3 (Juan Carlos — Warm, Calm and Deep) que o template HeyGen usa. Vídeo: generate_from_template SEM voice_id. Áudio: elevenlabs_voice_id + speed 0.9 + stability 0.5.",
         },
       },
       usesScript: true,
@@ -279,6 +284,7 @@ No empieces en el alivio.`,
         structure: "introdução → oração principal → reflexão → momento de silêncio → encerramento com bênção",
         cta: "convite gentil para compartilhar ou voltar amanhã",
         defaultDurationMinutes: 10,
+        defaultSceneCount: 4,
         generationPrompt: "",
         pauses: { betweenLines: 0.65, betweenSections: 2 },
         wordsPerMinute: 140,
@@ -319,6 +325,7 @@ No empieces en el alivio.`,
         structure: "gancho → contexto → desenvolvimento → virada → conclusão/moral leve",
         cta: "convite curto para continuar acompanhando as histórias do Zé",
         defaultDurationMinutes: 5,
+        defaultSceneCount: 3,
         generationPrompt: "",
         pauses: { betweenLines: 0.3, betweenSections: 0.9 },
         wordsPerMinute: 150,
@@ -359,6 +366,7 @@ No empieces en el alivio.`,
         structure: "loop ambiente contínuo, sem estrutura narrativa tradicional",
         cta: "nenhum (canal não utiliza narração)",
         defaultDurationMinutes: 20,
+        defaultSceneCount: 4,
         generationPrompt: "",
         pauses: { betweenLines: 0, betweenSections: 0 },
         wordsPerMinute: 145,

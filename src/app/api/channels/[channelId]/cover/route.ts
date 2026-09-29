@@ -15,6 +15,7 @@ export async function POST(_req: NextRequest, { params }: { params: { channelId:
       tone: channel.dna.tone,
       topics: channel.dna.topics,
       palette: channel.dna.visual.palette,
+      channel,
     });
 
     const fileName = "cover.png";

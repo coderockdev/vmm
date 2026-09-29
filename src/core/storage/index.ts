@@ -4,7 +4,7 @@ import path from "path";
 import { getSupabase } from "../supabaseClient";
 import { channelAudioDir, channelRendersDir, channelDir } from "../paths";
 
-export type StorageKind = "audio" | "cover" | "render";
+export type StorageKind = "audio" | "cover" | "render" | "thumbnails";
 
 const BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "media";
 

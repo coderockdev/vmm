@@ -115,6 +115,9 @@ function migrate(db: Database.Database) {
   `);
 
   addColumnIfMissing(db, "video_projects", "tts_provider_override", "TEXT");
+  addColumnIfMissing(db, "video_projects", "tts_voice_id_override", "TEXT");
+  addColumnIfMissing(db, "video_projects", "thumbnail_json", "TEXT");
+  addColumnIfMissing(db, "video_projects", "thumbnail_ref", "TEXT");
   addColumnIfMissing(db, "channels", "cover_ref", "TEXT");
   addColumnIfMissing(db, "video_projects", "cost_usd_total", "REAL");
   addColumnIfMissing(db, "video_projects", "cost_breakdown_json", "TEXT");

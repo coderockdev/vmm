@@ -1,7 +1,10 @@
 import { randomUUID } from "crypto";
+import fs from "fs";
+import path from "path";
 import { getDb } from "../db";
 import { getSupabase, isSupabaseEnabled, assertNoError } from "../supabaseClient";
-import { AudioAsset, JobStatus, Script, ScriptLine, VideoFormat, VideoProject } from "../types";
+import { workingFilePath, persistFile } from "../storage";
+import { AudioAsset, JobStatus, Script, ScriptLine, VideoFormat, VideoProject, VideoConcept } from "../types";
 
 interface ProjectRow {
   id: string;
@@ -15,12 +18,15 @@ interface ProjectRow {
   error_message: string | null;
   seed: number;
   tts_provider_override: string | null;
+  tts_voice_id_override?: string | null;
   script_id: string | null;
   audio_asset_id: string | null;
   render_path: string | null;
   render_duration_seconds: number | null;
   cost_usd_total?: number | null;
   cost_breakdown_json?: string | object | null;
+  thumbnail_json?: string | object | null;
+  thumbnail_ref?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -38,6 +44,13 @@ function parseBreakdown(raw: string | object | null | undefined): VideoProject["
   };
 }
 
+function parseThumbnailConcept(raw: string | object | null | undefined): VideoConcept | null {
+  if (raw == null) return null;
+  const obj = typeof raw === "string" ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
+  if (!obj || typeof obj !== "object") return null;
+  return obj as VideoConcept;
+}
+
 function rowToProject(row: ProjectRow): VideoProject {
   return {
     id: row.id,
@@ -51,12 +64,15 @@ function rowToProject(row: ProjectRow): VideoProject {
     errorMessage: row.error_message,
     seed: row.seed,
     ttsProviderOverride: row.tts_provider_override as VideoProject["ttsProviderOverride"],
+    ttsVoiceIdOverride: row.tts_voice_id_override ?? null,
     scriptId: row.script_id,
     audioAssetId: row.audio_asset_id,
     renderPath: row.render_path,
     renderDurationSeconds: row.render_duration_seconds,
     costUsdTotal: row.cost_usd_total != null ? Number(row.cost_usd_total) : null,
     costBreakdown: parseBreakdown(row.cost_breakdown_json),
+    thumbnailConcept: parseThumbnailConcept(row.thumbnail_json),
+    thumbnailRef: row.thumbnail_ref ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -138,12 +154,35 @@ export async function listProjectsForChannel(channelId: string): Promise<VideoPr
       .select("*")
       .eq("channel_id", channelId)
       .order("created_at", { ascending: false });
-    return assertNoError(res).map(rowToProject);
+    const projects = assertNoError(res).map(rowToProject);
+    return hydrateProjectThumbnails(await hydrateMissingProjectCosts(projects));
   }
   const rows = getDb()
     .prepare(`SELECT * FROM video_projects WHERE channel_id = ? ORDER BY created_at DESC`)
     .all(channelId) as ProjectRow[];
-  return rows.map(rowToProject);
+  return hydrateMissingProjectCosts(rows.map(rowToProject));
+}
+
+/** Recompute cost for projects that have usage events but a null/zero stamp. */
+async function hydrateMissingProjectCosts(projects: VideoProject[]): Promise<VideoProject[]> {
+  const { recomputeProjectCost } = await import("./usage");
+  const needs = projects.filter((p) => p.costUsdTotal == null || p.costUsdTotal <= 0).slice(0, 20);
+  if (needs.length === 0) return projects;
+
+  await Promise.all(
+    needs.map(async (p) => {
+      try {
+        await recomputeProjectCost(p.id);
+      } catch {
+        // ignore — leave as-is
+      }
+    })
+  );
+
+  // Re-read only the ones we tried to fix.
+  const refreshed = await Promise.all(needs.map((p) => getVideoProject(p.id)));
+  const byId = new Map(refreshed.filter(Boolean).map((p) => [p!.id, p!]));
+  return projects.map((p) => byId.get(p.id) ?? p);
 }
 
 export async function listAllProjects(): Promise<VideoProject[]> {
@@ -177,21 +216,150 @@ export async function updateProjectStatus(
 
 export async function setTtsProviderOverride(
   projectId: string,
-  override: VideoProject["ttsProviderOverride"]
+  override: VideoProject["ttsProviderOverride"],
+  voiceIdOverride: string | null = null
 ): Promise<void> {
   const now = new Date().toISOString();
   if (isSupabaseEnabled()) {
-    assertNoError(
-      await getSupabase()
-        .from("video_projects")
-        .update({ tts_provider_override: override, updated_at: now })
-        .eq("id", projectId)
-    );
+    const withVoice = await getSupabase()
+      .from("video_projects")
+      .update({
+        tts_provider_override: override,
+        tts_voice_id_override: voiceIdOverride,
+        updated_at: now,
+      })
+      .eq("id", projectId);
+    if (withVoice.error && /tts_voice_id_override/i.test(withVoice.error.message)) {
+      // Column not migrated yet — still save provider so audio can proceed via DNA voice id.
+      assertNoError(
+        await getSupabase()
+          .from("video_projects")
+          .update({ tts_provider_override: override, updated_at: now })
+          .eq("id", projectId)
+      );
+      console.warn(
+        `[projects] tts_voice_id_override missing — run supabase/schema_tts_voice_override.sql. Saved provider only.`
+      );
+      return;
+    }
+    assertNoError(withVoice);
+    return;
+  }
+  try {
+    getDb()
+      .prepare(
+        `UPDATE video_projects SET tts_provider_override = ?, tts_voice_id_override = ?, updated_at = ? WHERE id = ?`
+      )
+      .run(override, voiceIdOverride, now, projectId);
+  } catch {
+    getDb()
+      .prepare(`UPDATE video_projects SET tts_provider_override = ?, updated_at = ? WHERE id = ?`)
+      .run(override, now, projectId);
+  }
+}
+
+export async function updateProjectThumbnail(
+  projectId: string,
+  concept: VideoConcept | null,
+  thumbnailRef?: string | null
+): Promise<void> {
+  const now = new Date().toISOString();
+  const payload: Record<string, unknown> = {
+    thumbnail_json: concept,
+    updated_at: now,
+  };
+  if (thumbnailRef !== undefined) payload.thumbnail_ref = thumbnailRef;
+  if (concept?.title) payload.title = concept.title;
+
+  if (isSupabaseEnabled()) {
+    const res = await getSupabase().from("video_projects").update(payload).eq("id", projectId);
+    if (res.error && /thumbnail_/i.test(res.error.message)) {
+      // Columns not migrated yet — persist concept+ref to Storage sidecar.
+      await writeThumbnailSidecar(projectId, concept, thumbnailRef);
+      if (concept?.title) {
+        await getSupabase()
+          .from("video_projects")
+          .update({ title: concept.title, updated_at: now })
+          .eq("id", projectId);
+      }
+      console.warn(
+        `[projects] thumbnail_* columns missing — ran supabase sidecar. Apply supabase/schema_thumbnails.sql when possible.`
+      );
+      return;
+    }
+    assertNoError(res);
     return;
   }
   getDb()
-    .prepare(`UPDATE video_projects SET tts_provider_override = ?, updated_at = ? WHERE id = ?`)
-    .run(override, now, projectId);
+    .prepare(
+      `UPDATE video_projects
+       SET thumbnail_json = ?, thumbnail_ref = COALESCE(?, thumbnail_ref), title = COALESCE(?, title), updated_at = ?
+       WHERE id = ?`
+    )
+    .run(
+      concept ? JSON.stringify(concept) : null,
+      thumbnailRef ?? null,
+      concept?.title ?? null,
+      now,
+      projectId
+    );
+}
+
+async function writeThumbnailSidecar(
+  projectId: string,
+  concept: VideoConcept | null,
+  thumbnailRef?: string | null
+): Promise<void> {
+  const project = await getVideoProject(projectId);
+  if (!project) return;
+  const existing = await readThumbnailSidecar(project.channelId, projectId);
+  const body = {
+    concept: concept ?? existing?.concept ?? null,
+    thumbnailRef: thumbnailRef !== undefined ? thumbnailRef : existing?.thumbnailRef ?? null,
+    updatedAt: new Date().toISOString(),
+  };
+  const json = JSON.stringify(body);
+  const fileName = `${projectId}.json`;
+  const outPath = workingFilePath(project.channelId, "thumbnails", fileName);
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  fs.writeFileSync(outPath, json);
+  await persistFile(outPath, project.channelId, "thumbnails", fileName, "application/json");
+}
+
+async function readThumbnailSidecar(
+  channelId: string,
+  projectId: string
+): Promise<{ concept: VideoConcept | null; thumbnailRef: string | null } | null> {
+  try {
+    const { data } = getSupabase()
+      .storage.from(process.env.SUPABASE_STORAGE_BUCKET || "media")
+      .getPublicUrl(`${channelId}/thumbnails/${projectId}.json`);
+    const url = data.publicUrl;
+    const res = await fetch(`${url}?t=${Date.now()}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return {
+      concept: (json.concept as VideoConcept) ?? null,
+      thumbnailRef: (json.thumbnailRef as string) ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function hydrateProjectThumbnails(projects: VideoProject[]): Promise<VideoProject[]> {
+  if (!isSupabaseEnabled()) return projects;
+  const needs = projects.filter((p) => !p.thumbnailConcept && !p.thumbnailRef);
+  if (needs.length === 0) return projects;
+  await Promise.all(
+    needs.slice(0, 30).map(async (p) => {
+      const side = await readThumbnailSidecar(p.channelId, p.id);
+      if (!side) return;
+      p.thumbnailConcept = side.concept;
+      p.thumbnailRef = side.thumbnailRef;
+    })
+  );
+  return projects;
 }
 
 export async function attachScriptToProject(projectId: string, scriptId: string): Promise<void> {

@@ -6,6 +6,7 @@ import {
   createScript,
   attachScriptToProject,
   listScriptTextsForChannel,
+  updateProjectStatus,
 } from "../repo/projects";
 import { createJob } from "../repo/jobs";
 import { insertUsageEvent } from "../repo/usage";
@@ -23,7 +24,8 @@ import { Script } from "../types";
  */
 export async function approveScriptAndProduce(
   projectId: string,
-  ttsProviderOverride: TTSProviderName | null
+  ttsProviderOverride: TTSProviderName | null,
+  ttsVoiceIdOverride: string | null = null
 ): Promise<void> {
   const project = await getVideoProject(projectId);
   if (!project) throw new Error(`Video project not found: ${projectId}`);
@@ -31,10 +33,35 @@ export async function approveScriptAndProduce(
     throw new Error(`Project is not awaiting review (status: ${project.status})`);
   }
 
-  if (ttsProviderOverride) {
-    await setTtsProviderOverride(projectId, ttsProviderOverride);
+  const channel = await getChannel(project.channelId);
+  if (!channel) throw new Error(`Channel not found: ${project.channelId}`);
+
+  const { resolvePipelineAudioVoice } = await import("../providers/tts/voiceCapabilities");
+  const resolved = resolvePipelineAudioVoice({
+    channelProvider: channel.dna.voice.provider,
+    channelVoiceId: channel.dna.voice.voiceId,
+    profile: channel.dna.voice.profile,
+    ttsOverride: ttsProviderOverride,
+    ttsVoiceIdOverride,
+  });
+
+  if (resolved.provider === "heygen") {
+    throw new Error(
+      "HeyGen só gera o vídeo pelo template. O áudio do pipeline usa a voz ElevenLabs do Juan Carlos (elevenlabs_voice_id)."
+    );
+  }
+  if (resolved.provider === "elevenlabs" && !resolved.voiceId) {
+    throw new Error(
+      "ElevenLabs sem voice_id. O DNA precisa de elevenlabs_voice_id (Juan Carlos) ou escolha uma voz ao aprovar."
+    );
   }
 
+  // Persist the resolved audio voice so the worker uses Juan Carlos (not Rachel).
+  await setTtsProviderOverride(projectId, resolved.provider, resolved.voiceId);
+
+  // Flip status immediately so the Áudio tab shows "em produção" before the
+  // worker loop picks the job up (otherwise the card stays on Roteiros).
+  await updateProjectStatus(projectId, "audio");
   const job = await createJob({ videoProjectId: project.id, channelId: project.channelId });
   await enqueueJob(job.id);
 }
@@ -66,6 +93,7 @@ export async function regenerateScript(projectId: string, aiProviderOverride: st
         topic: project.topic,
         contentIdea: idea,
         durationMinutes: project.durationMinutes,
+        sceneCount: channel.dna.scriptRules.defaultSceneCount,
         previousScripts,
       })
     : {

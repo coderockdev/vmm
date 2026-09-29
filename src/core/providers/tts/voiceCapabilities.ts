@@ -32,11 +32,20 @@ export interface VoiceCapabilities {
 
 export interface VoiceProfile {
   provider: VoiceProvider;
+  /** HeyGen template path: leave null (voice is baked in the template). */
   voice_id: string | null;
+  /**
+   * ElevenLabs voice id for the same talent (Juan Carlos). Used for pipeline
+   * audio / previews — HeyGen video still goes through the template without
+   * sending this id.
+   */
+  elevenlabs_voice_id?: string | null;
   voice_name: string;
   model?: string;
   language: string;
   locale?: string;
+  /** Accent label for UI (comes from the voice itself, never from a tag). */
+  accent?: string;
   speed: number;
   stability?: number;
   heygen_template_id?: string;
@@ -45,12 +54,17 @@ export interface VoiceProfile {
   notes?: string;
 }
 
+/** ElevenLabs shared voice: Juan Carlos — Warm, Calm and Deep (LATAM, masculine). */
+export const JUAN_CARLOS_ELEVENLABS_VOICE_ID = "RyfjEHnKbtma4Srae2za";
+
 export const JUAN_CARLOS_HEYGEN: VoiceProfile = {
   provider: "heygen",
   voice_id: null,
+  elevenlabs_voice_id: JUAN_CARLOS_ELEVENLABS_VOICE_ID,
   voice_name: "Juan Carlos",
   model: "elevenlabs_v3",
   language: "es",
+  accent: "latin american",
   speed: 0.9,
   stability: 0.5,
   heygen_template_id: "c12ae661d2b6442bb079871a697ea4ef",
@@ -62,7 +76,9 @@ export const JUAN_CARLOS_HEYGEN: VoiceProfile = {
   },
   validated_for_channel: true,
   notes:
-    "Voz, motor, modelo e velocidade 0.9 já salvos no template do HeyGen. Envio via generate_from_template com texto_oracion_1..4, SEM voice_id.",
+    "Mesma voz ElevenLabs v3 (Juan Carlos — Warm, Calm and Deep) que o template HeyGen usa. " +
+    "Vídeo: generate_from_template texto_oracion_1..4 SEM voice_id. " +
+    "Áudio do pipeline: ElevenLabs eleven_v3 + elevenlabs_voice_id, speed 0.9, stability 0.5.",
 };
 
 const EMPTY_CAPS: VoiceCapabilities = {
@@ -128,14 +144,60 @@ export function toLegacyVoiceFields(profile: VoiceProfile): {
 } {
   const provider: TTSProviderName =
     profile.provider === "heygen"
-      ? "elevenlabs" // pipeline narrates via eleven when testing; heygen is template-video path
+      ? "heygen"
       : profile.provider === "uploaded"
         ? "uploaded"
         : (profile.provider as TTSProviderName);
   return {
-    provider: profile.provider === "heygen" ? ("heygen" as TTSProviderName) : provider,
-    voiceId: profile.voice_id,
+    provider,
+    // Prefer ElevenLabs id for heygen DNA so audio/TTS paths have a real voice.
+    voiceId:
+      profile.provider === "heygen"
+        ? profile.elevenlabs_voice_id ?? profile.voice_id
+        : profile.voice_id,
     speed: profile.speed,
     volume: 1,
+  };
+}
+
+/** Resolve provider + voice for local audio pipeline (not HeyGen video). */
+export function resolvePipelineAudioVoice(args: {
+  channelProvider: TTSProviderName | VoiceProvider;
+  channelVoiceId: string | null;
+  profile?: VoiceProfile | null;
+  ttsOverride?: TTSProviderName | null;
+  ttsVoiceIdOverride?: string | null;
+}): { provider: TTSProviderName; voiceId: string | null; speed: number; stability: number | null } {
+  const profile = args.profile ?? null;
+  const override = args.ttsOverride && args.ttsOverride !== args.channelProvider ? args.ttsOverride : null;
+
+  if (override) {
+    return {
+      provider: override,
+      voiceId: args.ttsVoiceIdOverride?.trim() || null,
+      speed: profile?.speed ?? 0.9,
+      stability: profile?.stability ?? 0.5,
+    };
+  }
+
+  // DNA HeyGen Juan Carlos → same ElevenLabs voice for pipeline audio.
+  if (args.channelProvider === "heygen" || profile?.provider === "heygen") {
+    const voiceId =
+      args.ttsVoiceIdOverride?.trim() ||
+      profile?.elevenlabs_voice_id ||
+      JUAN_CARLOS_ELEVENLABS_VOICE_ID;
+    return {
+      provider: "elevenlabs",
+      voiceId,
+      speed: profile?.speed ?? 0.9,
+      stability: profile?.stability ?? 0.5,
+    };
+  }
+
+  return {
+    provider: args.channelProvider as TTSProviderName,
+    voiceId: args.ttsVoiceIdOverride?.trim() || args.channelVoiceId || profile?.voice_id || null,
+    speed: profile?.speed ?? 0.9,
+    stability: profile?.stability ?? null,
   };
 }

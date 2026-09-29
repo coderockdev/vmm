@@ -8,6 +8,7 @@ import {
 } from "./ScriptProvider";
 import { buildScriptGenerationContext } from "./promptContext";
 import { contentPlanJsonInstructions, parseContentPlanJson } from "./llmContract";
+import { contentPlanDnaBrief } from "./ideaSuggestions";
 import { generateScriptWithGuard } from "./generateScriptWithGuard";
 import { describeProviderError } from "../../httpRetry";
 import { UsageSnapshot } from "../../usage/types";
@@ -65,7 +66,9 @@ export class ClaudeScriptProvider implements ScriptProvider {
       topic: args.topic,
       previousTitles: args.previousTitles,
     });
-    const { text, usage } = await complete(context + contentPlanJsonInstructions(args.quantity));
+    const { text, usage } = await complete(
+      context + contentPlanDnaBrief(args.channel, args.quantity) + contentPlanJsonInstructions(args.quantity)
+    );
     return { ideas: parseContentPlanJson(text, args.quantity), usage };
   }
 

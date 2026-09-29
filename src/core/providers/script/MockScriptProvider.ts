@@ -16,6 +16,7 @@ import {
   buildAmbientSections,
   ScriptSections,
 } from "./phraseBanks";
+import { sampleIdeasFromDna } from "./ideaSuggestions";
 
 /**
  * A deterministic, no-network stand-in for a real LLM. It still goes through
@@ -26,24 +27,24 @@ import {
  */
 export class MockScriptProvider implements ScriptProvider {
   async generateContentPlan(args: GenerateContentPlanArgs): Promise<ContentPlanResult> {
-    // Context is built (and would be sent to a real LLM here) even though the
-    // mock only reads a slice of it — this keeps the seam realistic.
     void buildScriptGenerationContext({
       channel: args.channel,
       topic: args.topic,
       previousTitles: args.previousTitles,
     });
 
+    // Prefer DNA-shaped templates; seed titles with the requested topic.
     const bucket = inferBucket(args.channel.dna.topics);
     const templates = pickAngleTemplates(bucket, args.channel.dna.language);
     const usedTitles = new Set(args.previousTitles.map((t) => t.toLowerCase()));
+    const topicSeed = args.topic.trim() || args.channel.dna.topics[0] || args.channel.name;
 
     const ideas: ContentIdeaDraft[] = [];
     let templateIndex = 0;
     let cycle = 0;
     while (ideas.length < args.quantity && cycle < 10) {
       const template = templates[templateIndex % templates.length];
-      let title = template.title(args.topic);
+      let title = template.title(topicSeed);
       if (cycle > 0) title = `${title} (v${cycle + 1})`;
       templateIndex++;
       if (templateIndex % templates.length === 0) cycle++;
@@ -52,6 +53,19 @@ export class MockScriptProvider implements ScriptProvider {
       usedTitles.add(title.toLowerCase());
       ideas.push({ title, angle: template.angle, objective: template.objective });
     }
+
+    // Fallback if templates somehow empty
+    if (ideas.length === 0) {
+      return {
+        ideas: sampleIdeasFromDna(args.channel, args.quantity).map(({ title, angle, objective }) => ({
+          title,
+          angle,
+          objective,
+        })),
+        usage: { provider: "mock", model: "mock", inputTokens: 0, outputTokens: 0 },
+      };
+    }
+
     return {
       ideas,
       usage: { provider: "mock", model: "mock", inputTokens: 0, outputTokens: 0 },
