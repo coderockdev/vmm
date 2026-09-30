@@ -17,29 +17,19 @@ export type AutoFlowProgress = {
   total: number;
 };
 
-/** Topic from UI, or DNA themes / successful-title vibes when empty. */
+/**
+ * What the narrator is allowed to talk about. A title-bank instruction is for
+ * the model only — if it lands in `topic`, the mock prayer reads it out loud.
+ */
 export function resolveAutoTopic(channel: Channel, topicRaw: string): string {
   const trimmed = topicRaw.trim();
-  if (trimmed) return trimmed;
-  const bank = (channel.dna.successfulTitles ?? [])
-    .map((t) => t.split("|")[0].trim())
-    .filter(Boolean);
-  // Prefer non-mantra hits so auto DNA topic doesn't bias the model.
-  const preferred = bank.filter((t) => !/\bmantra\b/i.test(t));
-  const pool = preferred.length > 0 ? preferred : bank;
-  const start = pool.length > 0 ? Date.now() % pool.length : 0;
-  const hits = pool.length
-    ? Array.from({ length: Math.min(5, pool.length) }, (_, i) => pool[(start + i * 17) % pool.length])
-    : [];
-  if (hits.length > 0) {
-    return `Nuevos títulos al estilo de los más exitosos del canal (urgencia, regreso, oración, aviso/cuidado). Evita la palabra «mantra» salvo rareza (~5%). Referencias: ${hits
-      .map((t) => t.slice(0, 60))
-      .join(" · ")}`;
+  if (trimmed && !/nuevos t[ií]tulos|referencias\s*:|m[aá]s exitosos del canal/i.test(trimmed)) {
+    return trimmed;
   }
   const themes = (channel.dna.topics ?? []).map((t) => t.trim()).filter(Boolean);
-  if (themes.length > 0) return themes.slice(0, 5).join(", ");
+  if (themes.length > 0) return themes[Date.now() % themes.length];
   const chips = suggestTopicsFromDna(channel, 4);
-  if (chips.length > 0) return chips.slice(0, 3).join(" / ");
+  if (chips.length > 0) return chips[0];
   return channel.niche?.trim() || channel.name;
 }
 
@@ -317,8 +307,8 @@ export async function resumeAutoFlow(args: {
       continue;
     }
 
-    // Has script+audio (or mid-pipeline) but job died — re-queue without new TTS if possible.
-    // runProject always re-runs TTS today; still better than regenerating scripts.
+    // Has script+audio (or mid-pipeline) but job died — re-queue.
+    // runProject reuses the existing narration and does not call ElevenLabs again.
     report("audio", {
       done: i,
       projectId: project.id,

@@ -1,0 +1,17 @@
+[Unit]
+Description=VMM render worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/vmm
+Environment=VMM_QUEUE=on
+Environment=VMM_WORKER_NAME=hetzner-cx33
+Environment=NODE_OPTIONS=--dns-result-order=ipv4first
+ExecStart=/bin/bash -lc 'set -a; source /opt/vmm/.env.local; set +a; exec npx tsx scripts/render-worker.ts'
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

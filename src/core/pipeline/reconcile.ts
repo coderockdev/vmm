@@ -1,6 +1,6 @@
 import { listJobs, updateJob } from "../repo/jobs";
 import { JobStatus } from "../types";
-import { forceWake, wake } from "./queue";
+import { forceWake, localQueueEnabled, wake } from "./queue";
 import { readProjectPublish } from "../repo/projectPublish";
 
 declare global {
@@ -60,7 +60,9 @@ export async function reconcileStuckJobs(): Promise<void> {
 
     const age = now - new Date(job.updatedAt).getTime();
     const limit = STUCK_MS[job.status] ?? 20 * 60 * 1000;
-    const shouldRequeue = isBoot || age >= limit;
+    // The page does not own the queue. A fresh in-flight job belongs to the
+    // Hetzner worker — only age it out if that worker stopped updating it.
+    const shouldRequeue = (localQueueEnabled() && isBoot) || age >= limit;
     if (!shouldRequeue) continue;
 
     const reason = isBoot
@@ -104,7 +106,7 @@ export async function reconcileStuckJobs(): Promise<void> {
     console.log(`[reconcile] requeued failed auto job ${job.id.slice(0, 8)}`);
   }
 
-  if (hasPlanned) {
+  if (hasPlanned && localQueueEnabled()) {
     if (requeued > 0 || isBoot) forceWake();
     else wake();
   }

@@ -2,12 +2,14 @@ import { getChannel } from "../repo/channels";
 import { getIdea } from "../repo/plans";
 import {
   getVideoProject,
+  getScript,
   setTtsProviderOverride,
   createScript,
   attachScriptToProject,
   listScriptTextsForChannel,
   updateProjectStatus,
 } from "../repo/projects";
+import { scriptContainsProductionBrief } from "../providers/script/phraseBanks";
 import { createJob } from "../repo/jobs";
 import { insertUsageEvent } from "../repo/usage";
 import { enqueueJob } from "./queue";
@@ -37,6 +39,13 @@ export async function approveScriptAndProduce(
 
   const channel = await getChannel(project.channelId);
   if (!channel) throw new Error(`Channel not found: ${project.channelId}`);
+
+  const scriptText = project.scriptId ? (await getScript(project.scriptId))?.rawText ?? "" : "";
+  if (scriptContainsProductionBrief(scriptText) || scriptContainsProductionBrief(project.topic)) {
+    throw new Error(
+      "Este guion lee la instrucción de títulos («nuevos títulos», «referencias»), no una oración. No se graba ni se sube."
+    );
+  }
 
   const { resolvePipelineAudioVoice, JUAN_CARLOS_ELEVENLABS_VOICE_ID } = await import(
     "../providers/tts/voiceCapabilities"

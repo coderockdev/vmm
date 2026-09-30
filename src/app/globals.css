@@ -3379,6 +3379,160 @@ body:has(.channel-workspace) .main-content {
   gap: 8px 14px;
 }
 
+.control-board {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.control-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  font-size: 13px;
+  color: #4c5160;
+}
+
+.control-stats strong {
+  color: #151619;
+  font-weight: 650;
+}
+
+.control-subtitle {
+  margin: 6px 0 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.control-empty {
+  margin: 0;
+  color: #687082;
+  font-size: 13px;
+}
+
+.control-queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.control-queue li {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #e4e7ec;
+  border-radius: 12px;
+}
+
+.control-queue li strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.control-queue li small,
+.control-row small {
+  color: #687082;
+  font-size: 12px;
+}
+
+.control-pos {
+  color: #151619;
+  font-weight: 700;
+  text-align: center;
+}
+
+.control-queue em {
+  font-style: normal;
+  font-weight: 650;
+  font-size: 13px;
+}
+
+.control-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.control-row {
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #e4e7ec;
+  border-radius: 12px;
+}
+
+.control-row.is-failed {
+  border-color: #f0c9c4;
+}
+
+.control-row.is-done {
+  border-color: #cfe3d8;
+}
+
+.control-row-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.control-row-head span {
+  font-weight: 700;
+}
+
+.control-bar {
+  height: 8px;
+  margin: 8px 0;
+  background: #eef0f3;
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.control-bar span {
+  display: block;
+  height: 100%;
+  background: #151619;
+  border-radius: 99px;
+}
+
+.control-row.is-working .control-bar span {
+  background: #c98412;
+}
+
+.control-row.is-done .control-bar span {
+  background: #2f7d57;
+}
+
+.control-row.is-failed .control-bar span {
+  background: #b42318;
+}
+
+.control-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-bottom: 4px;
+}
+
+.control-steps span {
+  font-size: 11px;
+  color: #98a0ad;
+}
+
+.control-steps span.on {
+  color: #151619;
+  font-weight: 650;
+}
+
 .workspace-global-progress-item {
   font-size: 12px;
   opacity: 0.85;

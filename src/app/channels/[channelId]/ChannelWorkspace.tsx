@@ -11,6 +11,7 @@ import { BooksPanel } from "./BooksPanel";
 import { AudiobookVoicePanel } from "./AudiobookVoicePanel";
 import { YoutubeConnectPanel } from "./YoutubeConnectPanel";
 import { CommentsPanel } from "./CommentsPanel";
+import { ControlPanel } from "./ControlPanel";
 import { AudioBedControls } from "./AudioBedControls";
 import { formatUsd } from "../../../core/usage/types";
 import { findVoice } from "../../../core/providers/tts/voiceCatalog";
@@ -40,6 +41,7 @@ const SCENE_COUNTS = [3, 4, 5, 6, 7, 8] as const;
 const ACTIVE_STATUSES: JobStatus[] = ["planned", "audio", "timing", "composing", "rendering"];
 const PIPELINE_PRODUCING: JobStatus[] = ["planned", "audio", "timing", "composing", "rendering"];
 type WorkspaceTab =
+  | "painel"
   | "criar"
   | "ideias"
   | "roteiros"
@@ -181,8 +183,9 @@ export function ChannelWorkspace({
       if (tab === "comentarios" || tab === "comments") return "comentarios";
       if (tab === "livros" && isAudiobook) return "livros";
       if (tab === "audio") return "audio";
+      if (tab === "painel") return "painel";
     }
-    return isAudiobook ? "livros" : "criar";
+    return isAudiobook ? "livros" : "painel";
   });
   const [portadasFocusId, setPortadasFocusId] = useState<string | null>(null);
   const [createMode, setCreateMode] = useState<CreateMode>("auto");
@@ -235,8 +238,10 @@ export function ChannelWorkspace({
   );
   const hasActive = projects.some((project) => ACTIVE_STATUSES.includes(project.status)) || hasActiveJobs;
 
+  const watchBoard = hasActive || activeTab === "painel";
+
   useEffect(() => {
-    if (hasActive && !pollRef.current) {
+    if (watchBoard && !pollRef.current) {
       pollRef.current = setInterval(() => {
         void refreshProjects();
         void refreshJobs();
@@ -244,18 +249,21 @@ export function ChannelWorkspace({
       void refreshJobs();
       void refreshProjects();
     }
-    if (!hasActive && pollRef.current) {
+    if (!watchBoard && pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
     }
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasActive]);
+  }, [watchBoard]);
 
   useEffect(() => {
-    if (activeTab === "audio" || activeTab === "roteiros" || activeTab === "videos" || activeTab === "descricoes") {
+    if (activeTab === "painel" || activeTab === "audio" || activeTab === "roteiros" || activeTab === "videos" || activeTab === "descricoes") {
       void refreshProjects();
       void refreshJobs();
     }
@@ -1085,6 +1093,12 @@ export function ChannelWorkspace({
           </>
         ) : (
           <>
+            <button type="button" className={activeTab === "painel" ? "active" : ""} onClick={() => setActiveTab("painel")}>
+              Painel
+              {(audioBusyCount + videoBusyCount) > 0 && (
+                <span className="tab-badge">{audioBusyCount + videoBusyCount}</span>
+              )}
+            </button>
             <button type="button" className={activeTab === "criar" ? "active" : ""} onClick={() => setActiveTab("criar")}>Criar conteúdo</button>
             <button type="button" className={activeTab === "ideias" ? "active" : ""} onClick={() => setActiveTab("ideias")}>Ideias</button>
             <button type="button" className={activeTab === "roteiros" ? "active" : ""} onClick={() => setActiveTab("roteiros")}>
@@ -1150,6 +1164,10 @@ export function ChannelWorkspace({
               );
             })}
         </div>
+      )}
+
+      {activeTab === "painel" && !isAudiobook && (
+        <ControlPanel projects={projects} jobByProject={jobByProject} />
       )}
 
       {activeTab === "criar" && !isAudiobook && (

@@ -3,6 +3,7 @@ import {
   getVideoProject,
   updateProjectStatus,
   getScript,
+  getAudioAsset,
   updateScriptLines,
   attachAudioToProject,
   createAudioAsset,
@@ -11,7 +12,7 @@ import {
 import { getChannel } from "../repo/channels";
 import { insertUsageEvent } from "../repo/usage";
 import { synthesizeNarration } from "./narration";
-import { finishAutoFlowAfterAudio } from "./finishAutoFlow";
+import { finishAutoFlowAfterAudio, finishProjectToYoutube } from "./finishAutoFlow";
 import { RawLine, normalizeSceneBreaks } from "../scriptLines";
 import { VideoFormat } from "../types";
 import { UsageProvider } from "../usage/types";
@@ -41,6 +42,19 @@ export async function runProject(jobId: string): Promise<void> {
     let durationInSeconds = project.durationMinutes * 60;
 
     if (channel.dna.usesNarration && project.scriptId) {
+      // Re-read: a restarted or duplicate job must not pay ElevenLabs again.
+      const fresh = await getVideoProject(project.id);
+      const existing = fresh?.audioAssetId ? await getAudioAsset(fresh.audioAssetId) : null;
+      if (existing) {
+        await updateJob(job.id, {
+          status: "timing",
+          progress: 55,
+          statusMessage: "Áudio já gravado — reutilizando, sem nova narração",
+        });
+        await updateProjectStatus(project.id, "timing");
+        audioAbsolutePath = existing.filePath;
+        durationInSeconds = existing.durationSeconds;
+      } else {
       await updateJob(job.id, { status: "audio", progress: 25, statusMessage: "Gerando áudio..." });
       await updateProjectStatus(project.id, "audio");
 
@@ -108,37 +122,70 @@ export async function runProject(jobId: string): Promise<void> {
 
       await updateJob(job.id, { status: "timing", progress: 55, statusMessage: "Sincronizando texto..." });
       await updateProjectStatus(project.id, "timing");
+      }
     }
 
     // Auto-flow: music/SFX → FFmpeg scrolling text → portada (skip Remotion).
+    // Re-read so a restarted job never re-renders or re-uploads work already done.
     if (project.autoFlow) {
-      await updateJob(job.id, { status: "composing", progress: 60, statusMessage: "Música e SFX..." });
-      await updateProjectStatus(project.id, "composing");
-      const finished = await finishAutoFlowAfterAudio({
-        channel,
-        projectId: project.id,
-        voiceOnly: false,
-        uploadYoutube: true,
-        onProgress: async (message, progress) => {
-          await updateJob(job.id, {
-            status: progress >= 94 ? "rendering" : progress >= 72 ? "rendering" : "composing",
-            progress: Math.min(98, progress),
-            statusMessage: message,
-          }).catch(() => undefined);
-          if (progress >= 72) {
-            await updateProjectStatus(project.id, "rendering").catch(() => undefined);
-          }
-        },
-      });
+      const current = (await getVideoProject(project.id)) ?? project;
+      const onProgress = async (message: string, progress: number) => {
+        await updateJob(job.id, {
+          status: progress >= 72 ? "rendering" : "composing",
+          progress: Math.min(98, progress),
+          statusMessage: message,
+        }).catch(() => undefined);
+        if (progress >= 72) {
+          await updateProjectStatus(project.id, "rendering").catch(() => undefined);
+        }
+      };
+
+      if (current.youtubeVideoId) {
+        await updateJob(job.id, {
+          status: "completed",
+          progress: 100,
+          statusMessage: "Já está no YouTube — sem nova narração nem novo vídeo",
+        });
+        return;
+      }
+
+      const finished = current.renderPath
+        ? await (async () => {
+            await updateJob(job.id, {
+              status: "rendering",
+              progress: 90,
+              statusMessage: "Vídeo já pronto — a subir, sem renderizar de novo",
+            });
+            return finishProjectToYoutube({
+              channelId: channel.id,
+              projectId: project.id,
+              onProgress,
+            });
+          })()
+        : await (async () => {
+            await updateJob(job.id, {
+              status: "composing",
+              progress: 60,
+              statusMessage: current.mixAudioRef
+                ? "Vídeo em falta — música já existe, a renderizar"
+                : "Música e SFX...",
+            });
+            await updateProjectStatus(project.id, "composing");
+            return finishAutoFlowAfterAudio({
+              channel,
+              projectId: project.id,
+              voiceOnly: false,
+              uploadYoutube: true,
+              onProgress,
+            });
+          })();
+
       await updateJob(job.id, {
         status: "completed",
         progress: 100,
-        statusMessage:
-          finished === null
-            ? "YouTube OK (privado) — registo leve (sem MP4 local)"
-            : finished.youtubeVideoId
-              ? "YouTube OK (privado) — registo leve"
-              : "Fluxo auto concluído (vídeo + YT se ligado)",
+        statusMessage: finished?.youtubeVideoId
+          ? "YouTube OK (privado)"
+          : "Vídeo pronto — YouTube não ligado",
       });
       return;
     }

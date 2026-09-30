@@ -1,5 +1,11 @@
-import { getJob, updateJob, findNextPendingJobId } from "../repo/jobs";
+import { getJob, updateJob, claimNextPlannedJobId, findNextPendingJobId } from "../repo/jobs";
 import { runProject } from "./runProject";
+
+/** The page sets VMM_QUEUE=off. Only the Hetzner worker renders. */
+export function localQueueEnabled(): boolean {
+  const mode = (process.env.VMM_QUEUE ?? "on").trim().toLowerCase();
+  return mode !== "off" && mode !== "remote";
+}
 
 declare global {
   // eslint-disable-next-line no-var
@@ -17,6 +23,7 @@ const STALE_QUEUE_LOCK_MS = 45 * 60 * 1000;
  * if the loop is already running — unless the lock looks stale.
  */
 export function wake(): void {
+  if (!localQueueEnabled()) return;
   const started = global.__vmmQueueStartedAt ?? 0;
   if (global.__vmmQueueRunning) {
     if (Date.now() - started < STALE_QUEUE_LOCK_MS) return;
@@ -38,8 +45,11 @@ export function forceWake(): void {
 async function loop(): Promise<void> {
   try {
     while (true) {
-      const jobId = await findNextPendingJobId();
-      if (!jobId) break;
+      const jobId = await claimNextPlannedJobId(process.env.VMM_WORKER_NAME || "local");
+      if (!jobId) {
+        if (await findNextPendingJobId()) continue;
+        break;
+      }
       global.__vmmQueueStartedAt = Date.now();
       try {
         await runProject(jobId);

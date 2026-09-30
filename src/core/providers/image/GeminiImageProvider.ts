@@ -53,7 +53,7 @@ export class GeminiImageProvider implements ImageProvider {
 }
 
 async function tryGeminiFlashImage(apiKey: string, prompt: string): Promise<Buffer | null> {
-  const model = process.env.GEMINI_FLASH_IMAGE_MODEL || "gemini-2.0-flash-preview-image-generation";
+  const model = process.env.GEMINI_FLASH_IMAGE_MODEL || "gemini-3.1-flash-image";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   const res = await fetchWithRetry(url, {
     method: "POST",

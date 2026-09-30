@@ -17,6 +17,7 @@ export function LoginForm({
     return n.startsWith("/") ? n : "/";
   }, [search]);
 
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -29,7 +30,7 @@ export function LoginForm({
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ email, password }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Falha ao entrar");
@@ -51,15 +52,28 @@ export function LoginForm({
       <h1>Entrar</h1>
       <p className="login-hint">
         {needsPassword
-          ? `Olá, ${userName}. Digite a senha do time para continuar.`
+          ? "Digite o e-mail e a senha do time para continuar."
           : `Olá, ${userName}. Acesso local — clique em Entrar para abrir o workspace.`}
       </p>
+      {needsPassword && (
+        <label className="login-field">
+          <span>E-mail</span>
+          <input
+            type="email"
+            autoFocus
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="nome@email.com"
+            autoComplete="username"
+            required
+          />
+        </label>
+      )}
       {needsPassword && (
         <label className="login-field">
           <span>Senha</span>
           <input
             type="password"
-            autoFocus
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"

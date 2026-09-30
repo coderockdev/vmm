@@ -299,7 +299,7 @@ export function YoutubeConnectPanel({
       </div>
 
       <div className="audiobook-voice-card">
-        {!status?.oauthReady && (
+        {status && !status.oauthReady && (
           <p className="generation-error">
             Falta OAuth no servidor: <code>YOUTUBE_CLIENT_ID</code> /{" "}
             <code>YOUTUBE_CLIENT_SECRET</code> (ou <code>YOUTUBE_OAUTH_*</code>) no{" "}

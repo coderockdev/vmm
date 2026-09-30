@@ -121,6 +121,42 @@ export async function updateJob(
     .run(status, progress, statusMessage, now, id);
 }
 
+/**
+ * Take the oldest planned job so two machines cannot render it.
+ * Returns null if another worker claimed it first.
+ */
+export async function claimNextPlannedJobId(workerLabel: string): Promise<string | null> {
+  const id = await findNextPendingJobId();
+  if (!id) return null;
+  const now = new Date().toISOString();
+  const message = `Tomado por ${workerLabel}`;
+
+  if (isSupabaseEnabled()) {
+    const res = await getSupabase()
+      .from("production_jobs")
+      .update({
+        status: "audio",
+        progress: 1,
+        status_message: message,
+        updated_at: now,
+      })
+      .eq("id", id)
+      .eq("status", "planned")
+      .select("id");
+    const rows = assertNoError(res) as { id: string }[] | null;
+    return rows && rows.length > 0 ? id : null;
+  }
+
+  const info = getDb()
+    .prepare(
+      `UPDATE production_jobs
+       SET status = 'audio', progress = 1, status_message = ?, updated_at = ?
+       WHERE id = ? AND status = 'planned'`
+    )
+    .run(message, now, id) as { changes: number };
+  return info.changes > 0 ? id : null;
+}
+
 /** Used only by the queue's polling loop to find the next job to run. */
 export async function findNextPendingJobId(): Promise<string | null> {
   if (isSupabaseEnabled()) {

@@ -21,6 +21,10 @@ import { randomUUID } from "crypto";
 import { getYoutubeAccountForChannel } from "../repo/youtubeAccounts";
 import { publishProjectToYoutube } from "../youtube/publishProject";
 import { YoutubeAuthError, YoutubeQuotaError } from "../youtube/oauth";
+import { getChannel } from "../repo/channels";
+import { getIdea } from "../repo/plans";
+import { generateYoutubeCopy } from "./generateYoutubeCopy";
+import { writeProjectPublish } from "../repo/projectPublish";
 
 export type AutoFlowStageHook = (message: string, progress: number) => void | Promise<void>;
 
@@ -42,9 +46,12 @@ export async function finishAutoFlowAfterAudio(args: {
     await onProgress?.(message, progress);
   };
 
+  const beforeBed = await getVideoProject(projectId);
   if (voiceOnly) {
     await report("Pulando música/SFX (só voz)…", 58);
     await produceAudioBed({ projectId, musicOff: true, sfxOff: true });
+  } else if (beforeBed?.mixAudioRef) {
+    await report("Música já gravada — reutilizando, sem gerar de novo", 58);
   } else {
     await report("Gerando música e SFX…", 58);
     await produceAudioBed({ projectId });
@@ -56,55 +63,94 @@ export async function finishAutoFlowAfterAudio(args: {
   await report("Renderizando vídeo (texto rolante)…", 72);
   await renderScrollingAutoVideo({ channel, project, voiceOnly });
 
-  project = (await getVideoProject(projectId))!;
-
-  try {
-    await report("Gerando 3 portadas (formatos distintos)…", 88);
-    await generateAutoThumbnail({ channel, project, onProgress: report });
-  } catch (err) {
-    console.warn(
-      "[auto-flow] thumbnail failed (video kept):",
-      err instanceof Error ? err.message : err
-    );
-  }
-
-  project = (await getVideoProject(projectId))!;
-
   if (uploadYoutube) {
-    const account = await getYoutubeAccountForChannel(channel.id);
-    if (!account) {
-      await report("Vídeo pronto — YouTube não ligado (aba YouTube → Conectar)", 100);
-    } else {
-      try {
-        await report("A subir para YouTube (privado)…", 94);
-        const published = await publishProjectToYoutube({
-          channelId: channel.id,
-          projectId,
-          onProgress: async (msg) => report(msg, 96),
-        });
-        await report(
-          published.thumbnailOk
-            ? `YouTube privado OK · registo leve · Studio`
-            : `YouTube privado OK (capa: ${published.thumbnailError?.slice(0, 80) || "pendente"}) · registo leve`,
-          100
-        );
-        return (await getVideoProject(projectId)) ?? null;
-      } catch (err) {
-        const msg =
-          err instanceof YoutubeAuthError || err instanceof YoutubeQuotaError
-            ? err.message
-            : err instanceof Error
-              ? err.message
-              : String(err);
-        console.warn("[auto-flow] YouTube upload failed (video kept local):", msg);
-        await report(`Vídeo local OK — YouTube falhou: ${msg.slice(0, 120)}`, 100);
-      }
-    }
-  } else {
-    await report("Vídeo + portada prontos (upload YT desligado)", 100);
+    return finishProjectToYoutube({
+      channelId: channel.id,
+      projectId,
+      onProgress: report,
+    });
   }
 
+  await report("Vídeo pronto (upload YT desligado)", 100);
   return (await getVideoProject(projectId)) ?? null;
+}
+
+/**
+ * Video already on disk: fill missing title/description and covers, then upload
+ * private to the connected YouTube channel. Does not re-render or re-run TTS.
+ */
+export async function finishProjectToYoutube(args: {
+  channelId: string;
+  projectId: string;
+  onProgress?: AutoFlowStageHook;
+}): Promise<VideoProject | null> {
+  const channel = await getChannel(args.channelId);
+  if (!channel) throw new Error("Canal não encontrado");
+  const report = async (message: string, progress: number) => {
+    await args.onProgress?.(message, progress);
+  };
+
+  let project = await getVideoProject(args.projectId);
+  if (!project) throw new Error("Projeto não encontrado");
+  if (project.youtubeVideoId) {
+    await report("Já está no YouTube", 100);
+    return project;
+  }
+  if (!project.renderPath) throw new Error("Sem vídeo renderizado — gera o vídeo antes de subir.");
+
+  if (!project.headline || !project.youtubeDescription) {
+    await report("Manchete e descrição…", 86);
+    const script = project.scriptId ? await getScript(project.scriptId) : null;
+    const idea = project.contentIdeaId ? await getIdea(project.contentIdeaId) : null;
+    const copy = await generateYoutubeCopy({
+      channel,
+      idea: idea ?? { title: project.title, angle: project.topic, objective: "" },
+      scriptText:
+        script?.rawText ??
+        (script?.lines ?? []).map((l) => l.text).join("\n") ??
+        project.title,
+      aiProviderOverride: "anthropic",
+    });
+    writeProjectPublish(project.id, {
+      headline: copy.headline,
+      youtubeDescription: copy.youtubeDescription,
+      autoFlow: true,
+    });
+    project = (await getVideoProject(project.id))!;
+  }
+
+  if (!project.thumbnailRef) {
+    try {
+      await report("Gerando 3 portadas…", 88);
+      await generateAutoThumbnail({ channel, project, onProgress: report });
+    } catch (err) {
+      console.warn(
+        "[auto-flow] thumbnail failed (video kept):",
+        err instanceof Error ? err.message : err
+      );
+    }
+    project = (await getVideoProject(project.id))!;
+  }
+
+  const account = await getYoutubeAccountForChannel(channel.id);
+  if (!account) {
+    await report("Vídeo pronto — YouTube não ligado (aba YouTube → Conectar)", 100);
+    return project;
+  }
+
+  await report("A subir para YouTube (privado)…", 94);
+  const published = await publishProjectToYoutube({
+    channelId: channel.id,
+    projectId: project.id,
+    onProgress: async (msg) => report(msg, 96),
+  });
+  await report(
+    published.thumbnailOk
+      ? "YouTube privado OK"
+      : `YouTube privado OK (capa: ${published.thumbnailError?.slice(0, 80) || "pendente"})`,
+    100
+  );
+  return (await getVideoProject(project.id)) ?? null;
 }
 
 async function renderScrollingAutoVideo(args: {
@@ -209,11 +255,13 @@ async function generateAutoThumbnail(args: {
   }
 
   const primary = getImageProvider(null);
-  // Distinct engines so a rate-limit / outage on the first still fills the other slots.
+  // OpenAI first when the key exists. If it has no credits, Gemini still follows
+  // the cover brief. Pollinations is last: it ignores the text and stamps a watermark.
   const engineChain = [
     primary,
-    getImageProvider("pollinations"),
+    getImageProvider("gemini"),
     getImageProvider("pollinations-gptimage"),
+    getImageProvider("pollinations"),
     getImageProvider("pollinations-turbo"),
   ].filter((eng, idx, arr) => arr.findIndex((e) => e.name === eng.name) === idx);
 

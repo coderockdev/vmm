@@ -29,4 +29,5 @@ exec env -i \
   WATCHPACK_POLLING=true \
   CHOKIDAR_USEPOLLING=true \
   PORT="$PORT" \
-  bash -lc "set -a; source .env.local; set +a; npx next dev -p $PORT"
+  VMM_QUEUE=off \
+  bash -lc "set -a; source .env.local; set +a; export VMM_QUEUE=off; npx next dev -p $PORT"

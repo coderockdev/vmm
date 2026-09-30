@@ -5,6 +5,21 @@
 
 export type ContentBucket = "affirmation" | "prayer" | "story" | "ambient";
 
+const PRODUCTION_BRIEF_RE =
+  /nuevos t[ií]tulos|referencias\s*:|m[aá]s exitosos del canal|al estilo de los m[aá]s exitosos/i;
+
+/** The auto-flow title brief is an instruction for the model, never words to speak. */
+export function scriptContainsProductionBrief(text: string): boolean {
+  return PRODUCTION_BRIEF_RE.test(text);
+}
+
+/** Subject safe to put in a spoken line. A production brief becomes a prayer subject. */
+export function spokenTopic(topic: string, fallback = "su regreso"): string {
+  const trimmed = topic.replace(/\s+/g, " ").trim();
+  if (!trimmed || scriptContainsProductionBrief(trimmed)) return fallback;
+  return trimmed;
+}
+
 export function inferBucket(topics: string[]): ContentBucket {
   const joined = topics.join(" ").toLowerCase();
   // PT + ES prayer / oración channels (Amor Amor lives here).
@@ -191,7 +206,7 @@ export function buildPrayerSections(
   if (language === "es") {
     // Intense love-prayer mock (Amor Amor style) — NO breathing / meditation.
     const pool = [
-      `Hoy no vengo a pedirte que te calmes. Vengo a orar por ${topic}.`,
+      `Hoy no vengo a pedirte que te calmes. Vengo a orar por ${spokenTopic(topic)}.`,
       "Si te duele el silencio, quédate. Esta oración es para ese dolor exacto.",
       "Que esa persona recuerde lo que vivieron juntos cuando menos lo espere.",
       "Que el orgullo se quiebre. Que la distancia duela también del otro lado.",
@@ -207,7 +222,7 @@ export function buildPrayerSections(
       opening: [
         "Cuidado.",
         "No digas su nombre todavía.",
-        `Si llegaste aquí por ${topic}, esta oración no es suave: es urgente.`,
+        `Si llegaste aquí por ${spokenTopic(topic)}, esta oración no es suave: es urgente.`,
       ],
       preparation: [
         "Suscríbete a Amor Amor si esto te está hablando al pecho.",
