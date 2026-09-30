@@ -5,6 +5,8 @@
 export const YOUTUBE_OAUTH_SCOPES = [
   "https://www.googleapis.com/auth/youtube.upload",
   "https://www.googleapis.com/auth/youtube",
+  /** Required for comments.insert / commentThreads (Comment Manager). */
+  "https://www.googleapis.com/auth/youtube.force-ssl",
 ] as const;
 
 /** Expected YouTube channel id when connecting Amor Amor (confirm in UI). */
@@ -29,9 +31,15 @@ export function getYoutubeOAuthConfig(): {
     process.env.YOUTUBE_CLIENT_SECRET?.trim() ||
     process.env.YOUTUBE_OAUTH_CLIENT_SECRET?.trim() ||
     "";
-  const redirectUri =
+  // Prefer env; in local multi-port chaos, PORT (next -p) wins over a stale 3000 in .env.
+  const fromEnv =
     process.env.YOUTUBE_OAUTH_REDIRECT_URI?.trim() ||
     "http://localhost:3000/api/youtube/oauth/callback";
+  const livePort = process.env.PORT?.trim();
+  const redirectUri =
+    livePort && /localhost:3000\//.test(fromEnv)
+      ? `http://localhost:${livePort}/api/youtube/oauth/callback`
+      : fromEnv;
 
   if (!clientId || !clientSecret) {
     throw new Error(
@@ -48,8 +56,13 @@ export function isYoutubeOAuthConfigured(): boolean {
   );
 }
 
-export function buildYoutubeAuthUrl(args: { state: string }): string {
-  const { clientId, redirectUri } = getYoutubeOAuthConfig();
+export function oauthRedirectUriForOrigin(origin: string): string {
+  return `${origin.replace(/\/$/, "")}/api/youtube/oauth/callback`;
+}
+
+export function buildYoutubeAuthUrl(args: { state: string; redirectUri?: string }): string {
+  const { clientId, redirectUri: configured } = getYoutubeOAuthConfig();
+  const redirectUri = args.redirectUri?.trim() || configured;
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
@@ -63,13 +76,17 @@ export function buildYoutubeAuthUrl(args: { state: string }): string {
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
 
-export async function exchangeCodeForTokens(code: string): Promise<{
+export async function exchangeCodeForTokens(
+  code: string,
+  redirectUriOverride?: string
+): Promise<{
   accessToken: string;
   refreshToken: string | null;
   expiresIn: number;
   scope: string;
 }> {
-  const { clientId, clientSecret, redirectUri } = getYoutubeOAuthConfig();
+  const { clientId, clientSecret, redirectUri: configured } = getYoutubeOAuthConfig();
+  const redirectUri = redirectUriOverride?.trim() || configured;
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },

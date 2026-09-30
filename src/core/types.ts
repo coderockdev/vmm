@@ -15,6 +15,7 @@ export type {
 import type { VoiceProfile } from "./providers/tts/voiceCapabilities";
 import type { MusicalDna } from "./providers/music/musicalDna";
 import type { VideoStyleChoice } from "./videoRenderers/types";
+import type { CommentAutomationConfig } from "./comments/types";
 
 /**
  * ChannelDNA is the permanent editorial identity of a channel.
@@ -103,6 +104,12 @@ export interface ChannelDNA {
 
   /** Instrumental bed + SFX identity. */
   musical?: MusicalDna;
+
+  /**
+   * YouTube Comment Manager automation (rules-first, optional AI later).
+   * Per-channel — Amor Amor ships with Spanish templates and aiEnabled=false.
+   */
+  commentAutomation?: CommentAutomationConfig;
 
   /** Whether this channel's pipeline needs a script/narration at all. */
   usesScript: boolean;

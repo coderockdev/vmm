@@ -10,6 +10,7 @@ import { PortadasPanel } from "./PortadasPanel";
 import { BooksPanel } from "./BooksPanel";
 import { AudiobookVoicePanel } from "./AudiobookVoicePanel";
 import { YoutubeConnectPanel } from "./YoutubeConnectPanel";
+import { CommentsPanel } from "./CommentsPanel";
 import { AudioBedControls } from "./AudioBedControls";
 import { formatUsd } from "../../../core/usage/types";
 import { findVoice } from "../../../core/providers/tts/voiceCatalog";
@@ -48,6 +49,7 @@ type WorkspaceTab =
   | "portadas"
   | "custos"
   | "youtube"
+  | "comentarios"
   | "livros";
 type CreateMode = "manual" | "auto";
 
@@ -176,6 +178,7 @@ export function ChannelWorkspace({
     if (typeof window !== "undefined") {
       const tab = new URLSearchParams(window.location.search).get("tab");
       if (tab === "youtube") return "youtube";
+      if (tab === "comentarios" || tab === "comments") return "comentarios";
       if (tab === "livros" && isAudiobook) return "livros";
       if (tab === "audio") return "audio";
     }
@@ -1076,6 +1079,9 @@ export function ChannelWorkspace({
             <button type="button" className={activeTab === "youtube" ? "active" : ""} onClick={() => setActiveTab("youtube")}>
               YouTube
             </button>
+            <button type="button" className={activeTab === "comentarios" ? "active" : ""} onClick={() => setActiveTab("comentarios")}>
+              Comentarios
+            </button>
           </>
         ) : (
           <>
@@ -1106,6 +1112,9 @@ export function ChannelWorkspace({
             <button type="button" className={activeTab === "custos" ? "active" : ""} onClick={() => setActiveTab("custos")}>Custos</button>
             <button type="button" className={activeTab === "youtube" ? "active" : ""} onClick={() => setActiveTab("youtube")}>
               YouTube
+            </button>
+            <button type="button" className={activeTab === "comentarios" ? "active" : ""} onClick={() => setActiveTab("comentarios")}>
+              Comentarios
             </button>
           </>
         )}
@@ -2029,6 +2038,12 @@ export function ChannelWorkspace({
       {activeTab === "youtube" && (
         <section className="review-queue-section">
           <YoutubeConnectPanel channelId={channel.id} channelName={channel.name} />
+        </section>
+      )}
+
+      {activeTab === "comentarios" && (
+        <section className="review-queue-section">
+          <CommentsPanel channel={channel} />
         </section>
       )}
 

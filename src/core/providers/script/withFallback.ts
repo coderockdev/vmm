@@ -1,17 +1,19 @@
 import { getScriptProvider, type ScriptProvider, type ScriptProviderName } from "./index";
 
-const FALLBACK_CHAIN: ScriptProviderName[] = ["openai", "anthropic", "gemini"];
+const FALLBACK_CHAIN: ScriptProviderName[] = ["openai", "anthropic", "gemini", "mock"];
 
-export function isTransientAiError(err: unknown): boolean {
-  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
-  if (
+function isBillingQuotaMessage(msg: string): boolean {
+  return (
     msg.includes("insufficient_quota") ||
     msg.includes("sem créditos") ||
     msg.includes("billing_not_active") ||
     msg.includes("exceeded your current quota")
-  ) {
-    return false;
-  }
+  );
+}
+
+export function isTransientAiError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  if (isBillingQuotaMessage(msg)) return false;
   return (
     msg.includes("limite de requisições") ||
     msg.includes("rate limit") ||
@@ -50,9 +52,25 @@ function buildChain(preferred?: string | null): ScriptProviderName[] {
   });
 }
 
+/** Quota, a dead key, or a transient outage moves to the next IA (Claude, Gemini, then mock). */
+function shouldFailover(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  if (isBillingQuotaMessage(msg)) return true;
+  if (
+    msg.includes("invalid x-api-key") ||
+    msg.includes("authentication_error") ||
+    msg.includes("api key not valid") ||
+    msg.includes("http 401") ||
+    msg.includes("(http 401)")
+  ) {
+    return true;
+  }
+  return isTransientAiError(err);
+}
+
 /**
  * Run an LLM call with automatic failover across configured providers when
- * the current one is rate-limited / overloaded (not billing-exhausted).
+ * the current one is rate-limited, overloaded, or out of credits.
  */
 export async function withScriptProviderFallback<T>(args: {
   preferred?: string | null;
@@ -72,9 +90,9 @@ export async function withScriptProviderFallback<T>(args: {
     } catch (err) {
       lastErr = err;
       const next = chain[i + 1];
-      if (!next || !isTransientAiError(err)) throw err;
+      if (!next || !shouldFailover(err)) throw err;
       const reason = err instanceof Error ? err.message : String(err);
-      console.warn(`[ai-fallback] ${name} falhou (transitório) → ${next}:`, reason.slice(0, 160));
+      console.warn(`[ai-fallback] ${name} falhou → ${next}:`, reason.slice(0, 160));
       args.onFallback?.(name, next, reason);
     }
   }

@@ -193,6 +193,50 @@ function migrate(db: Database.Database) {
       settings_json TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS youtube_comments (
+      id TEXT PRIMARY KEY,
+      channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+      youtube_comment_id TEXT NOT NULL,
+      youtube_thread_id TEXT NOT NULL,
+      video_id TEXT NOT NULL,
+      video_title TEXT,
+      author_name TEXT,
+      author_channel_id TEXT,
+      author_profile_image_url TEXT,
+      comment_text TEXT NOT NULL,
+      published_at TEXT,
+      updated_at_yt TEXT,
+      like_count INTEGER NOT NULL DEFAULT 0,
+      reply_count INTEGER NOT NULL DEFAULT 0,
+      our_reply_id TEXT,
+      our_reply_text TEXT,
+      category TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      error_message TEXT,
+      processed_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (channel_id, youtube_comment_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS youtube_comment_runs (
+      id TEXT PRIMARY KEY,
+      channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'running',
+      dry_run INTEGER NOT NULL DEFAULT 0,
+      max_items INTEGER NOT NULL DEFAULT 50,
+      processed INTEGER NOT NULL DEFAULT 0,
+      answered INTEGER NOT NULL DEFAULT 0,
+      skipped INTEGER NOT NULL DEFAULT 0,
+      needs_review INTEGER NOT NULL DEFAULT 0,
+      errors INTEGER NOT NULL DEFAULT 0,
+      stop_requested INTEGER NOT NULL DEFAULT 0,
+      log_json TEXT NOT NULL DEFAULT '[]',
+      error_message TEXT,
+      started_at TEXT NOT NULL,
+      finished_at TEXT
+    );
   `);
 
   addColumnIfMissing(db, "video_projects", "tts_provider_override", "TEXT");

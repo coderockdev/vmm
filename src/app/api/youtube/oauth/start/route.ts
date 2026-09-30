@@ -3,6 +3,7 @@ import { getChannel } from "../../../../../core/repo/channels";
 import {
   buildYoutubeAuthUrl,
   isYoutubeOAuthConfigured,
+  oauthRedirectUriForOrigin,
 } from "../../../../../core/youtube/oauth";
 import { isEncryptionConfigured } from "../../../../../core/crypto/secrets";
 import { signOAuthState } from "../../../../../core/youtube/oauthState";
@@ -39,7 +40,8 @@ export async function GET(req: NextRequest) {
 
   try {
     const state = signOAuthState(channelId);
-    const url = buildYoutubeAuthUrl({ state });
+    const redirectUri = oauthRedirectUriForOrigin(req.nextUrl.origin);
+    const url = buildYoutubeAuthUrl({ state, redirectUri });
     return NextResponse.redirect(url);
   } catch (err) {
     return NextResponse.json(
