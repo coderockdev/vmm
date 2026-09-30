@@ -11,11 +11,10 @@ import {
 } from "../repo/projects";
 import { ensureLocalFile, persistFile, persistRenderLocalFirst, workingFilePath } from "../storage";
 import { renderVideo, mergePresetSettings } from "../videoRenderers";
-import { generateCoverConcept } from "../providers/script/coverConcept";
+import { generateCoverConcept, buildThumbnailImagePrompt } from "../providers/script/coverConcept";
 import { getImageProvider } from "../providers/image";
-import { stylesForCount, mergeThumbnailHistory } from "../providers/image/thumbnailStyles";
-import { buildThumbnailImagePrompt } from "../providers/script/coverConcept";
-import { normalizeCoverDna } from "../providers/image/coverFormats";
+import { mergeThumbnailHistory, type ThumbnailCandidate } from "../providers/image/thumbnailStyles";
+import { normalizeCoverDna, pickRotatingCoverFormats } from "../providers/image/coverFormats";
 import { updateChannelDna } from "../repo/channels";
 import { insertUsageEvent } from "../repo/usage";
 import { randomUUID } from "crypto";
@@ -37,7 +36,7 @@ export async function finishAutoFlowAfterAudio(args: {
   voiceOnly?: boolean;
   /** Default true = upload to YouTube when account is connected. */
   uploadYoutube?: boolean;
-}): Promise<VideoProject> {
+}): Promise<VideoProject | null> {
   const { channel, projectId, onProgress, voiceOnly = false, uploadYoutube = true } = args;
   const report = async (message: string, progress: number) => {
     await onProgress?.(message, progress);
@@ -60,8 +59,8 @@ export async function finishAutoFlowAfterAudio(args: {
   project = (await getVideoProject(projectId))!;
 
   try {
-    await report("Gerando portada…", 88);
-    await generateAutoThumbnail({ channel, project });
+    await report("Gerando 3 portadas (formatos distintos)…", 88);
+    await generateAutoThumbnail({ channel, project, onProgress: report });
   } catch (err) {
     console.warn(
       "[auto-flow] thumbnail failed (video kept):",
@@ -85,10 +84,11 @@ export async function finishAutoFlowAfterAudio(args: {
         });
         await report(
           published.thumbnailOk
-            ? `YouTube privado OK · Studio`
-            : `YouTube privado OK (capa: ${published.thumbnailError?.slice(0, 80) || "pendente"})`,
+            ? `YouTube privado OK · registo leve · Studio`
+            : `YouTube privado OK (capa: ${published.thumbnailError?.slice(0, 80) || "pendente"}) · registo leve`,
           100
         );
+        return (await getVideoProject(projectId)) ?? null;
       } catch (err) {
         const msg =
           err instanceof YoutubeAuthError || err instanceof YoutubeQuotaError
@@ -104,7 +104,7 @@ export async function finishAutoFlowAfterAudio(args: {
     await report("Vídeo + portada prontos (upload YT desligado)", 100);
   }
 
-  return (await getVideoProject(projectId))!;
+  return (await getVideoProject(projectId)) ?? null;
 }
 
 async function renderScrollingAutoVideo(args: {
@@ -172,16 +172,29 @@ async function renderScrollingAutoVideo(args: {
 async function generateAutoThumbnail(args: {
   channel: Channel;
   project: VideoProject;
+  onProgress?: AutoFlowStageHook;
 }): Promise<void> {
-  const { channel, project } = args;
+  const { channel, project, onProgress } = args;
   const script = project.scriptId ? await getScript(project.scriptId) : null;
   const titleHint = project.headline || project.title;
+  const cover = normalizeCoverDna(channel.dna.visual?.cover);
+  const formats = pickRotatingCoverFormats(cover, 3);
 
-  const { concept, usage } = await generateCoverConcept({
+  if (formats.length === 0) {
+    throw new Error("Nenhum formato de portada habilitado no DNA do canal.");
+  }
+
+  await onProgress?.(
+    `3 portadas: ${formats.map((f) => f.name).join(" · ")}`,
+    88
+  );
+
+  // One concept (LLM) — then 3 images with distinct cover formats (cheaper + more reliable).
+  const { concept: baseConcept, usage } = await generateCoverConcept({
     channel,
     project,
     script,
-    formatChoice: "auto",
+    formatChoice: formats[0].id,
     titleHint,
   });
 
@@ -195,52 +208,96 @@ async function generateAutoThumbnail(args: {
     }).catch(() => undefined);
   }
 
-  await updateProjectThumbnail(project.id, {
-    ...concept,
-    history: mergeThumbnailHistory(project.thumbnailConcept?.history, project.thumbnailConcept?.candidates ?? []),
-  });
+  const primary = getImageProvider(null);
+  // Distinct engines so a rate-limit / outage on the first still fills the other slots.
+  const engineChain = [
+    primary,
+    getImageProvider("pollinations"),
+    getImageProvider("pollinations-gptimage"),
+    getImageProvider("pollinations-turbo"),
+  ].filter((eng, idx, arr) => arr.findIndex((e) => e.name === eng.name) === idx);
 
-  const provider = getImageProvider(null);
-  const style = stylesForCount(1)[0];
-  const prompt = buildThumbnailImagePrompt({
-    channel,
-    concept,
-    styleExtra: style.promptExtra,
-  });
-  const fileName = `thumb-${project.id}-auto-${Date.now()}.png`;
-  const outPath = workingFilePath(channel.id, "thumbnails", fileName);
-  await provider.generate({ prompt, outPath });
-  const ref = await persistFile(outPath, channel.id, "thumbnails", fileName, "image/png");
-
-  const candidate = {
-    id: randomUUID(),
-    styleId: style.id,
-    styleLabel: style.label,
-    ref,
-    createdAt: new Date().toISOString(),
-  };
-  const history = mergeThumbnailHistory(concept.history, [candidate]);
-  await updateProjectThumbnail(
-    project.id,
-    {
-      ...concept,
-      imageProvider: provider.name,
-      candidates: [candidate],
-      selectedCandidateIndex: 0,
-      history,
-      status: "generated",
-      updatedAt: new Date().toISOString(),
-    },
-    ref
+  const candidates: ThumbnailCandidate[] = [];
+  let history = mergeThumbnailHistory(
+    project.thumbnailConcept?.history,
+    project.thumbnailConcept?.candidates ?? []
   );
 
-  const cover = normalizeCoverDna(channel.dna.visual?.cover);
-  const formatId = String(concept.thumbnailFormatId ?? "");
-  if (formatId && formatId !== "auto" && formatId !== "invent") {
-    cover.recentFormatIds = [...cover.recentFormatIds, formatId].slice(-20);
-    await updateChannelDna(channel.id, {
-      ...channel.dna,
-      visual: { ...channel.dna.visual, cover },
-    }).catch(() => undefined);
+  for (let i = 0; i < formats.length; i++) {
+    const format = formats[i];
+    await onProgress?.(`Portada ${i + 1}/3 · ${format.name}…`, 88 + Math.min(5, i + 1));
+
+    const conceptForImage = {
+      ...baseConcept,
+      thumbnailFormatId: format.id,
+      thumbnailFormatName: format.name,
+    };
+    const prompt = buildThumbnailImagePrompt({
+      channel,
+      concept: conceptForImage,
+      styleExtra: `COVER FORMAT LOCK — ${format.name} (${format.previewHint}). Structure: ${format.structure}. Text: ${format.textStrategy}. Visually DISTINCT from the other two variants of this same video.`,
+    });
+    const fileName = `thumb-${project.id}-${format.id}-${Date.now()}-${i}.png`;
+    const outPath = workingFilePath(channel.id, "thumbnails", fileName);
+
+    let generated = false;
+    for (let attempt = 0; attempt < engineChain.length && !generated; attempt++) {
+      const eng = engineChain[attempt];
+      try {
+        await eng.generate({ prompt, outPath });
+        const ref = await persistFile(outPath, channel.id, "thumbnails", fileName, "image/png");
+        const candidate: ThumbnailCandidate = {
+          id: randomUUID(),
+          styleId: format.id,
+          styleLabel: format.name,
+          ref,
+          createdAt: new Date().toISOString(),
+        };
+        candidates.push(candidate);
+        history = mergeThumbnailHistory(history, [candidate]);
+        // Persist after each success so a crash mid-loop still leaves what we have.
+        await updateProjectThumbnail(
+          project.id,
+          {
+            ...conceptForImage,
+            imageProvider: eng.name,
+            candidates: [...candidates],
+            selectedCandidateIndex: 0,
+            history,
+            status: "generated",
+            updatedAt: new Date().toISOString(),
+          },
+          candidates[0].ref
+        );
+        generated = true;
+      } catch (err) {
+        console.warn(
+          `[auto-flow] portada ${format.id} via ${eng.name} falhou:`,
+          err instanceof Error ? err.message : err
+        );
+      }
+    }
   }
+
+  if (candidates.length === 0) {
+    throw new Error("Nenhuma portada gerada (3 tentativas falharam).");
+  }
+  if (candidates.length < 3) {
+    console.warn(
+      `[auto-flow] só ${candidates.length}/3 portadas geradas para ${project.id.slice(0, 8)}`
+    );
+    await onProgress?.(
+      `Portadas: ${candidates.length}/3 OK (algumas falharam — podes regenerar na aba Portadas)`,
+      92
+    );
+  } else {
+    await onProgress?.("3 portadas prontas", 92);
+  }
+
+  const usedIds = formats.slice(0, candidates.length).map((f) => f.id);
+  cover.recentFormatIds = [...cover.recentFormatIds, ...usedIds].slice(-20);
+  await updateChannelDna(channel.id, {
+    ...channel.dna,
+    visual: { ...channel.dna.visual, cover },
+  }).catch(() => undefined);
 }

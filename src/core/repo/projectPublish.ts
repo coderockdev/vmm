@@ -44,3 +44,11 @@ export function writeProjectPublish(projectId: string, meta: ProjectPublishMeta)
   fs.writeFileSync(overlayPath(projectId), JSON.stringify(merged, null, 2), "utf8");
   return merged;
 }
+
+export function deleteProjectPublish(projectId: string): void {
+  try {
+    fs.rmSync(overlayPath(projectId), { force: true });
+  } catch {
+    // best-effort
+  }
+}

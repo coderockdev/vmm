@@ -97,6 +97,9 @@ El espectador llega emocionalmente activado. No busca una clase sobre relaciones
         "Repeticiones mecánicas sin aumento emocional",
         "Garantizar como hecho que una persona específica actuará contra su voluntad",
         "Empezar en paz o alivio antes del clímax",
+        // Titles: "mantra" is rare in the hit bank (~1/111). Prefer oración/aviso/cuidado/regreso.
+        "Títulos con la palabra MANTRA (usar como máximo en ~5% de los videos; casi siempre preferir oración, advertencia, cuidado, regreso, mensaje, llamada)",
+        "Repetir MANTRA en títulos consecutivos o en la mayoría de ideas de un lote",
       ],
       scriptRules: {
         opening:
@@ -187,6 +190,12 @@ Amén."
 Después realizar un CTA final breve para comentar y suscribirse a Amor Amor.
 
 Cada guion debe sentirse escrito específicamente para su título y situación. Evitar plantillas obvias, relleno, frases genéricas y repeticiones que no hagan avanzar la emoción.
+
+REGLA DE TÍTULOS (canal):
+En el banco de 111 títulos taquilleros, MANTRA es excepción (casi no aparece).
+Usa "mantra" como máximo en ~5% de los títulos — o menos.
+Prioriza ganchos tipo: CUIDADO / ADVERTENCIA / ORACIÓN / REGRESA / ESCRIBE / LLAMA / DI SU NOMBRE / 3:33 / 7:07 / silencio / bloqueo / orgullo.
+Si el título lleva "mantra", debe ser una variación rara y distinta — nunca el default del lote.
 
 REGLA PRINCIPAL:
 AMOR AMOR EMPIEZA EN LA HERIDA Y TERMINA EN EL ALIVIO.

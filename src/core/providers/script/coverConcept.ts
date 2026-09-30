@@ -9,6 +9,7 @@ import {
 } from "../image/coverFormats";
 import { fetchWithRetry, describeProviderError } from "../../httpRetry";
 import { UsageSnapshot } from "../../usage/types";
+import { sampleSuccessfulTitles } from "./ideaSuggestions";
 
 const MODEL = process.env.OPENAI_SCRIPT_MODEL || "gpt-4o";
 
@@ -57,7 +58,7 @@ function buildPrompt(args: GenerateCoverConceptArgs): string {
   const cover = coverDna(args.channel);
   const scriptExcerpt = (args.script?.rawText ?? "").slice(0, 3500);
   const choice = args.formatChoice;
-  const titles = (args.channel.dna.successfulTitles ?? []).slice(0, 25);
+  const titles = sampleSuccessfulTitles(args.channel, 25);
   const skill = (args.channel.scriptSkill || args.channel.dna.scriptRules?.generationPrompt || "").slice(0, 1200);
   const mode =
     choice === "auto"

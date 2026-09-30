@@ -2,7 +2,11 @@ import fs from "fs";
 import path from "path";
 import { Readable } from "stream";
 import { getChannel } from "../repo/channels";
-import { getVideoProject } from "../repo/projects";
+import {
+  getVideoProject,
+  archiveHeavyMediaAfterYoutube,
+  prunePublishedArchives,
+} from "../repo/projects";
 import { writeProjectPublish } from "../repo/projectPublish";
 import { ensureLocalFile } from "../storage";
 import { getYoutubeClientForChannel } from "./client";
@@ -22,6 +26,8 @@ export type PublishProjectResult = {
   thumbnailError?: string;
   youtubeChannelId: string;
   youtubeChannelTitle: string;
+  /** Heavy local MP4/audio removed; project kept as light registry. */
+  purged: boolean;
 };
 
 /**
@@ -190,11 +196,31 @@ export async function publishProjectToYoutube(args: {
     // cost logging must never block upload success
   }
 
+  // Confirmed on YouTube — drop heavy MP4/audio; keep portadas + títulos + YT link.
+  let purged = false;
+  try {
+    await args.onProgress?.("A limpar ficheiros pesados (vídeo/áudio)…");
+    await archiveHeavyMediaAfterYoutube(project.id);
+    await prunePublishedArchives(args.channelId, 15);
+    purged = true;
+  } catch (err) {
+    console.warn("[youtube] archive after upload failed:", err);
+  }
+
   await args.onProgress?.(
     thumbnailOk
-      ? `YouTube OK (privado) · ${studioUrl}`
-      : `YouTube OK (privado, capa pendente) · ${studioUrl}`
+      ? `YouTube OK (privado) · registo leve · ${studioUrl}`
+      : `YouTube OK (privado, capa pendente) · registo leve · ${studioUrl}`
   );
 
-  return { videoId, studioUrl, title, thumbnailOk, thumbnailError, youtubeChannelId: liveId, youtubeChannelTitle: liveTitle };
+  return {
+    videoId,
+    studioUrl,
+    title,
+    thumbnailOk,
+    thumbnailError,
+    youtubeChannelId: liveId,
+    youtubeChannelTitle: liveTitle,
+    purged,
+  };
 }

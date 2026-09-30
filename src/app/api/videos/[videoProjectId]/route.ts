@@ -3,10 +3,9 @@ import {
   getVideoProject,
   getScript,
   getAudioAsset,
-  deleteVideoProject,
+  purgeProjectAfterYoutube,
 } from "../../../../core/repo/projects";
 import { getJobForProject } from "../../../../core/repo/jobs";
-import { deleteStoredFile } from "../../../../core/storage";
 
 export async function GET(_req: NextRequest, { params }: { params: { videoProjectId: string } }) {
   const project = await getVideoProject(params.videoProjectId);
@@ -23,10 +22,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: { videoPro
   const project = await getVideoProject(params.videoProjectId);
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  await deleteStoredFile(project.channelId, project.renderPath);
-  const audio = project.audioAssetId ? await getAudioAsset(project.audioAssetId) : null;
-  if (audio) await deleteStoredFile(project.channelId, audio.filePath);
-
-  await deleteVideoProject(project.id);
+  await purgeProjectAfterYoutube(project.id);
   return NextResponse.json({ ok: true });
 }

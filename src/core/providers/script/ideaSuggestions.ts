@@ -80,15 +80,25 @@ export function sampleIdeasFromDna(channel: Channel, quantity = 3): Array<Conten
 
 /**
  * Sample proven titles for prompts (stable shuffle by quantity so batches vary).
+ * Deprioritizes rare "mantra" hits so the model doesn't overfit that word.
  */
 export function sampleSuccessfulTitles(channel: Channel, limit = 16): string[] {
   const bank = (channel.dna.successfulTitles ?? []).map((t) => t.trim()).filter(Boolean);
   if (bank.length === 0) return [];
-  if (bank.length <= limit) return bank;
-  const start = (limit * 7 + bank.length) % bank.length;
+  const preferred = bank.filter((t) => !/\bmantra\b/i.test(t));
+  const rare = bank.filter((t) => /\bmantra\b/i.test(t));
+  // ~5% chance to include one mantra example when the bank has any.
+  const includeMantraExample = rare.length > 0 && (limit * 13 + bank.length) % 20 === 0;
+  const pool = includeMantraExample
+    ? [...preferred, rare[(limit * 3) % rare.length]]
+    : preferred.length > 0
+      ? preferred
+      : bank;
+  if (pool.length <= limit) return pool;
+  const start = (limit * 7 + pool.length) % pool.length;
   const out: string[] = [];
   for (let i = 0; i < limit; i++) {
-    out.push(bank[(start + i * 11) % bank.length]);
+    out.push(pool[(start + i * 11) % pool.length]);
   }
   return out;
 }
@@ -110,6 +120,17 @@ export function contentPlanDnaBrief(channel: Channel, quantity = 1): string {
           ]
         : [];
 
+  const isAmorAmor = channel.id === "amor-amor" || dna.language === "es";
+  const mantraRule = isAmorAmor
+    ? [
+        `- TÍTULO / PALAVRA «MANTRA»: no banco de hits do canal quase NÃO aparece. Use «mantra» no máximo em ~5% dos títulos (ou 0 neste lote).`,
+        `- Prefira: CUIDADO, ADVERTENCIA, ORACIÓN, REGRESA, ESCRIBE, LLAMA, DI SU NOMBRE, 3:33/7:07, silencio, bloqueo, orgullo.`,
+        quantity > 1
+          ? `- Neste lote de ${quantity}, no máximo UMA ideia pode trazer «mantra» (ideal: zero).`
+          : `- Nesta ideia única, NÃO use «mantra» salvo se o tópico do utilizador pedir explicitamente.`,
+      ]
+    : [];
+
   const titleBankBlock =
     hitTitles.length > 0
       ? [
@@ -130,10 +151,11 @@ export function contentPlanDnaBrief(channel: Channel, quantity = 1): string {
     `- Temas preferidos: ${(dna.topics ?? []).join(", ") || "os temas do DNA"}.`,
     `- Público: ${dna.audience}`,
     `- Cada ideia deve parecer nativa deste canal — se trocar o nome do canal, a ideia NÃO deveria servir para outro nicho.`,
+    ...mantraRule,
     ...diversity,
     ...titleBankBlock,
     dna.avoid.length
-      ? `- NÃO proponha ideias sobre: ${dna.avoid.slice(0, 12).join("; ")}.`
+      ? `- NÃO proponha ideias sobre: ${dna.avoid.slice(0, 14).join("; ")}.`
       : ``,
     dna.scriptRules.generationPrompt?.trim()
       ? `- Respeite o espírito do MODELO DE ROTEIRO do canal (gancho, emoção, CTA) ao formular título/ângulo.`

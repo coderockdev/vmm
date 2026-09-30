@@ -36,20 +36,19 @@ interface AngleTemplate {
 }
 
 const AFFIRMATION_ANGLES_ES: AngleTemplate[] = [
-  { title: (t) => `Mantra para abrir caminhos hacia ${t}`, angle: "mantra de abertura", objective: "gerar esperança inicial" },
+  { title: (t) => `Oración urgente para ${t}`, angle: "oración de urgencia", objective: "gerar esperança inicial" },
   { title: (t) => `Afirmaciones para liberar resentimientos sobre ${t}`, angle: "liberação emocional", objective: "soltar mágoas antigas" },
   { title: (t) => `Cómo preparar tu mente para ${t}`, angle: "preparação mental", objective: "criar clareza e intenção" },
-  { title: (t) => `Mantra nocturno para restaurar vínculos: ${t}`, angle: "mantra noturno", objective: "acalmar antes de dormir" },
+  { title: (t) => `Oración nocturna para restaurar vínculos: ${t}`, angle: "oración nocturna", objective: "acalmar antes de dormir" },
   { title: (t) => `Afirmaciones de autoestima después de ${t}`, angle: "autoestima", objective: "reconstruir autovalor" },
-  { title: (t) => `Ritual breve de energía para ${t}`, angle: "ritual energético", objective: "renovar energia emocional" },
   { title: (t) => `Palabras de esperanza sobre ${t}`, angle: "esperança", objective: "reforçar fé no processo" },
 ];
 
 const AFFIRMATION_ANGLES_PT: AngleTemplate[] = [
-  { title: (t) => `Mantra para abrir caminhos para ${t}`, angle: "mantra de abertura", objective: "gerar esperança inicial" },
+  { title: (t) => `Oração urgente para ${t}`, angle: "oração de urgência", objective: "gerar esperança inicial" },
   { title: (t) => `Afirmações para liberar ressentimentos sobre ${t}`, angle: "liberação emocional", objective: "soltar mágoas antigas" },
   { title: (t) => `Como preparar sua mente para ${t}`, angle: "preparação mental", objective: "criar clareza e intenção" },
-  { title: (t) => `Mantra noturno para restaurar vínculos: ${t}`, angle: "mantra noturno", objective: "acalmar antes de dormir" },
+  { title: (t) => `Oração noturna para restaurar vínculos: ${t}`, angle: "oração noturna", objective: "acalmar antes de dormir" },
   { title: (t) => `Afirmações de autoestima depois de ${t}`, angle: "autoestima", objective: "reconstruir autovalor" },
   { title: (t) => `Ritual breve de energia para ${t}`, angle: "ritual energético", objective: "renovar energia emocional" },
 ];
@@ -156,7 +155,7 @@ export function buildAffirmationSections(
       preparation: ["Permite que tu mente se quede tranquila.", "Suelta la tensión de los hombros y del pecho."],
       main: expandPool(pool, targetMainLineCount(durationMinutes, 5), connectors),
       reflection: ["Quédate unos segundos con esa sensación.", "Nota cómo tu respiración se vuelve más calma."],
-      closing: ["Lleva esta energía contigo el resto del día.", "Si este mantra te ayudó, vuelve mañana para el siguiente."],
+      closing: ["Lleva esta energía contigo el resto del día.", "Si esta oración te ayudó, vuelve mañana para la siguiente."],
     };
   }
   const pool = [
@@ -179,7 +178,7 @@ export function buildAffirmationSections(
     preparation: ["Permita que sua mente fique tranquila.", "Solte a tensão dos ombros e do peito."],
     main: expandPool(pool, targetMainLineCount(durationMinutes, 5), connectors),
     reflection: ["Fique alguns segundos com essa sensação.", "Perceba sua respiração ficando mais calma."],
-    closing: ["Leve essa energia com você pelo resto do dia.", "Se esse mantra te ajudou, volte amanhã para o próximo."],
+    closing: ["Leve essa energia com você pelo resto do dia.", "Se essa oração te ajudou, volte amanhã para a próxima."],
   };
 }
 

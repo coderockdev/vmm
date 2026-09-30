@@ -114,7 +114,7 @@ export async function runProject(jobId: string): Promise<void> {
     if (project.autoFlow) {
       await updateJob(job.id, { status: "composing", progress: 60, statusMessage: "Música e SFX..." });
       await updateProjectStatus(project.id, "composing");
-      await finishAutoFlowAfterAudio({
+      const finished = await finishAutoFlowAfterAudio({
         channel,
         projectId: project.id,
         voiceOnly: false,
@@ -133,7 +133,12 @@ export async function runProject(jobId: string): Promise<void> {
       await updateJob(job.id, {
         status: "completed",
         progress: 100,
-        statusMessage: "Fluxo auto concluído (vídeo + YT se ligado)",
+        statusMessage:
+          finished === null
+            ? "YouTube OK (privado) — registo leve (sem MP4 local)"
+            : finished.youtubeVideoId
+              ? "YouTube OK (privado) — registo leve"
+              : "Fluxo auto concluído (vídeo + YT se ligado)",
       });
       return;
     }

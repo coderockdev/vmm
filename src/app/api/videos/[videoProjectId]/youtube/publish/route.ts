@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { getChannel } from "../../../../../core/repo/channels";
-import { getVideoProject } from "../../../../../core/repo/projects";
-import { publishProjectToYoutube } from "../../../../../core/youtube/publishProject";
+import { getChannel } from "../../../../../../core/repo/channels";
+import { getVideoProject } from "../../../../../../core/repo/projects";
+import { publishProjectToYoutube } from "../../../../../../core/youtube/publishProject";
 import {
   YoutubeAuthError,
   YoutubeQuotaError,
-} from "../../../../../core/youtube/oauth";
+} from "../../../../../../core/youtube/oauth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -25,6 +25,7 @@ export async function POST(
       channelId: channel.id,
       projectId: project.id,
     });
+    // Archive keeps the row (light registry); always reload.
     return NextResponse.json({
       ...result,
       project: await getVideoProject(project.id),
