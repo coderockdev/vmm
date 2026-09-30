@@ -61,14 +61,26 @@ export interface MusicalDna {
   allowedSfx: SfxKind[];
   forbiddenSfx: SfxKind[];
   customMusicInstructions: string;
+  /**
+   * Channel music standards — rotate through these library entry ids
+   * (Voxscape → Rest Now → Vastness → …) when auto-picking.
+   */
+  standardMusicIds: string[];
 }
+
+/** Amor Amor channel standards (Mixkit, no attribution). */
+export const AMOR_AMOR_STANDARD_MUSIC_IDS = [
+  "music-mixkit-571", // Voxscape
+  "music-mixkit-584", // Rest Now
+  "music-mixkit-184", // Vastness
+] as const;
 
 export const DEFAULT_AMOR_AMOR_MUSICAL: MusicalDna = {
   useMusicByDefault: true,
   defaultStyle: "espiritual",
   intensity: "soft",
-  /** Soft under voice — oración, never meditation drone competing with Juan Carlos. */
-  volume: 0.06,
+  /** 8% under voice — audible but never competes with Juan Carlos. */
+  volume: 0.08,
   /** SFX must cut through voice briefly. */
   sfxVolume: 0.72,
   ducking: true,
@@ -79,8 +91,9 @@ export const DEFAULT_AMOR_AMOR_MUSICAL: MusicalDna = {
   sfxIntensity: "medium",
   allowedSfx: ["phone_vibrate", "phone_ring", "message", "wind", "night", "heartbeat", "whoosh", "impact", "silence"],
   forbiddenSfx: ["thunder", "city", "footsteps", "birds", "fire"],
+  standardMusicIds: [...AMOR_AMOR_STANDARD_MUSIC_IDS],
   customMusicInstructions:
-    "Canal de ORACIÓN y AMOR (no meditación). Trilha 100% instrumental, SUAVE, piano/pad espiritual romântico sob a voz. Sem drone ambient de mindfulness, sem bateria, sem melodia agressiva, sem vocal. Volume discreto — a oração manda.",
+    "Canal de ORACIÓN y AMOR (no meditación). Trilha 100% instrumental, SUAVE, piano/pad espiritual romântico sob a voz. Sem drone ambient de mindfulness, sem bateria, sem melodia agressiva, sem vocal. Volume 8% — a oração manda. Rodízio: Voxscape → Rest Now → Vastness.",
 };
 
 export const DEFAULT_MUSICAL_DNA: MusicalDna = {
@@ -98,11 +111,15 @@ export const DEFAULT_MUSICAL_DNA: MusicalDna = {
   allowedSfx: [],
   forbiddenSfx: [],
   customMusicInstructions: "",
+  standardMusicIds: [],
 };
 
 export function normalizeMusicalDna(raw: Partial<MusicalDna> | null | undefined): MusicalDna {
   const base = DEFAULT_MUSICAL_DNA;
   if (!raw || typeof raw !== "object") return { ...base };
+  const standardMusicIds = Array.isArray(raw.standardMusicIds)
+    ? raw.standardMusicIds.map(String).filter(Boolean)
+    : base.standardMusicIds;
   return {
     useMusicByDefault: Boolean(raw.useMusicByDefault ?? base.useMusicByDefault),
     defaultStyle: (raw.defaultStyle as MusicStyleId) || base.defaultStyle,
@@ -118,6 +135,7 @@ export function normalizeMusicalDna(raw: Partial<MusicalDna> | null | undefined)
     allowedSfx: Array.isArray(raw.allowedSfx) ? (raw.allowedSfx as SfxKind[]) : base.allowedSfx,
     forbiddenSfx: Array.isArray(raw.forbiddenSfx) ? (raw.forbiddenSfx as SfxKind[]) : base.forbiddenSfx,
     customMusicInstructions: typeof raw.customMusicInstructions === "string" ? raw.customMusicInstructions : "",
+    standardMusicIds,
   };
 }
 

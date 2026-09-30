@@ -9,6 +9,7 @@ import {
 } from "../image/coverFormats";
 import { fetchWithRetry, describeProviderError } from "../../httpRetry";
 import { UsageSnapshot } from "../../usage/types";
+import { sampleSuccessfulTitles } from "./ideaSuggestions";
 
 const MODEL = process.env.OPENAI_SCRIPT_MODEL || "gpt-4o";
 
@@ -57,6 +58,8 @@ function buildPrompt(args: GenerateCoverConceptArgs): string {
   const cover = coverDna(args.channel);
   const scriptExcerpt = (args.script?.rawText ?? "").slice(0, 3500);
   const choice = args.formatChoice;
+  const titles = sampleSuccessfulTitles(args.channel, 25);
+  const skill = (args.channel.scriptSkill || args.channel.dna.scriptRules?.generationPrompt || "").slice(0, 1200);
   const mode =
     choice === "auto"
       ? "MODE: AUTOMATIC — pick the best format using the decision rules. If none fits strongly, invent a NEW format."
@@ -79,6 +82,16 @@ CHANNEL COVER DNA
 Style: ${cover.styleRules}
 Avoid: ${cover.avoid.join("; ")}
 Accents: primary=${cover.accentColors.primary}, emphasis=${cover.accentColors.emphasis}
+Tone: ${(args.channel.dna.tone ?? []).slice(0, 8).join(", ") || "—"}
+Audience: ${args.channel.dna.audience || "—"}
+
+TITLE PATTERNS (successful titles bank — invent NEW titles that rhyme with these patterns, never clone verbatim)
+${titles.length ? titles.map((t) => `- ${t}`).join("\n") : "(empty — invent from script + channel voice)"}
+
+CHANNEL SCRIPT / SKILL DNA (use for emotional angle, not to paste on the thumbnail)
+"""
+${skill || "(none)"}
+"""
 
 FORMAT LIBRARY
 ${formatCatalogBlock(cover)}
@@ -101,12 +114,15 @@ ${antiRepetitionBlock(cover)}
 
 VIDEO
 Topic: ${args.project.topic}
-Current title hint: ${args.titleHint ?? args.project.title}
-Idea angle/objective may be in the title/topic.
-Script excerpt:
+Current title hint: ${args.titleHint ?? args.project.headline ?? args.project.title}
+YouTube headline (if any): ${args.project.headline ?? "—"}
+Script excerpt (source of truth for emotion + story beats):
 """
-${scriptExcerpt || "(no script yet — use title/topic only)"}
+${scriptExcerpt || "(no script yet — use title/topic + successful-title patterns)"}
 """
+
+Fill thumbnailText + thumbnailScene yourself from the script/DNA — the user may leave those fields empty.
+thumbnailText rules: 2–5 short punchy words; prefer COMPLETE words that fit large type with margin (never rely on letters at the extreme left/right edge — image models often clip Q, J, g, y).
 
 Return ONLY a JSON object:
 {
@@ -215,14 +231,72 @@ function mockConcept(args: GenerateCoverConceptArgs): VideoConcept {
   };
 }
 
+async function completeClaudeJson(prompt: string): Promise<{ text: string; usage: UsageSnapshot }> {
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
+  const model = process.env.ANTHROPIC_SCRIPT_MODEL || "claude-sonnet-5";
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 2500,
+      messages: [{ role: "user", content: `${prompt}\n\nResponde SOLO el JSON pedido.` }],
+    }),
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(describeProviderError(`Claude cover (modelo "${model}")`, response.status, body));
+  }
+  const json = await response.json();
+  const text = (json.content ?? [])
+    .filter((block: { type?: string }) => block.type === "text")
+    .map((block: { text?: string }) => block.text ?? "")
+    .join("\n")
+    .trim();
+  if (!text) throw new Error("Claude returned empty cover concept.");
+  const usageRaw = json.usage ?? null;
+  return {
+    text,
+    usage: {
+      provider: "anthropic",
+      model,
+      inputTokens: usageRaw?.input_tokens ?? null,
+      outputTokens: usageRaw?.output_tokens ?? null,
+      raw: usageRaw,
+    },
+  };
+}
+
 export async function generateCoverConcept(args: GenerateCoverConceptArgs): Promise<CoverConceptResult> {
+  const prompt = buildPrompt(args);
   try {
-    const { text, usage } = await completeJson(buildPrompt(args));
+    const { text, usage } = await completeJson(prompt);
     const concept = parseConcept(text, args.formatChoice);
     if (args.titleHint?.trim() && !concept.title) concept.title = args.titleHint.trim();
     return { concept, usage };
   } catch (err) {
-    if (!process.env.OPENAI_API_KEY) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const quota = /insufficient_quota|sem créditos|billing_not_active|exceeded your current quota/i.test(msg);
+    if (quota && process.env.ANTHROPIC_API_KEY?.trim()) {
+      try {
+        const { text, usage } = await completeClaudeJson(prompt);
+        const concept = parseConcept(text, args.formatChoice);
+        if (args.titleHint?.trim() && !concept.title) concept.title = args.titleHint.trim();
+        return { concept, usage };
+      } catch (claudeErr) {
+        console.warn(
+          "[cover-concept] Claude fallback failed:",
+          claudeErr instanceof Error ? claudeErr.message : claudeErr
+        );
+      }
+    }
+    if (!process.env.OPENAI_API_KEY || quota) {
+      console.warn("[cover-concept] using local concept:", msg.slice(0, 160));
       return { concept: mockConcept(args), usage: null };
     }
     throw err;
@@ -252,10 +326,11 @@ export function buildThumbnailImagePrompt(args: {
     `Scene: ${args.concept.thumbnailScene}.`,
     `Emotion: ${args.concept.thumbnailEmotion}.`,
     `ON-IMAGE TEXT (large, readable on mobile, max ~6 words): "${args.concept.thumbnailText}".`,
+    "TEXT LAYOUT (critical): keep ALL letters fully inside a safe margin — at least 8% inset from every edge (left, right, top, bottom). Never crop, clip, or cut off any letter (especially first/last letters like Q, J, g, y). Full glyphs must be visible. Prefer centered or slightly upper text block with padding around it.",
     `Do NOT write this title on the image: "${args.concept.title}".`,
     cover.styleRules,
     `Accent colors: ${cover.accentColors.primary} and ${cover.accentColors.emphasis}.`,
-    `Avoid: ${cover.avoid.join(", ")}.`,
+    `Avoid: ${cover.avoid.join(", ")}, cropped text, cut-off letters, text touching frame edges.`,
     args.styleExtra?.trim() || "",
     "No watermarks, no logos, no tiny paragraphs, no deformed hands or phones.",
   ]

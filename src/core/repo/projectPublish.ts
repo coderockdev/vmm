@@ -7,6 +7,9 @@ export type ProjectPublishMeta = {
   youtubeDescription?: string | null;
   /** When true, after TTS run music/SFX + scrolling video automatically. */
   autoFlow?: boolean;
+  youtubeVideoId?: string | null;
+  youtubeUrl?: string | null;
+  youtubeUploadedAt?: string | null;
   updatedAt?: string;
 };
 
@@ -40,4 +43,12 @@ export function writeProjectPublish(projectId: string, meta: ProjectPublishMeta)
   };
   fs.writeFileSync(overlayPath(projectId), JSON.stringify(merged, null, 2), "utf8");
   return merged;
+}
+
+export function deleteProjectPublish(projectId: string): void {
+  try {
+    fs.rmSync(overlayPath(projectId), { force: true });
+  } catch {
+    // best-effort
+  }
 }

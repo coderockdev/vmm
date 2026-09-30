@@ -23,6 +23,8 @@ export interface GenerateMusicArgs {
   scriptText?: string;
   outDir: string;
   fileBaseName: string;
+  /** Force a specific library track (from Audio tab picker). */
+  libraryEntryId?: string | null;
 }
 
 export interface MusicProvider {

@@ -5,13 +5,7 @@
  * automatic retries turns a flaky request into a successful one without the
  * user needing to click "gerar" again.
  */
-/**
- * Turns a raw HTTP failure from an AI provider into a message that tells the
- * user WHOSE fault it is — "Gemini is overloaded, try again" reads very
- * differently from a silent-looking failure, even though today both cases
- * already had *some* error surfaced; this makes that message actually say
- * what's going on instead of just the raw status/body.
- */
+
 function isBillingQuotaError(body: string): boolean {
   const lower = body.toLowerCase();
   return (
@@ -35,6 +29,21 @@ function isNetworkFetchError(err: unknown): boolean {
   );
 }
 
+function retryAfterMs(response: Response, fallbackMs: number): number {
+  const raw = response.headers.get("retry-after");
+  if (!raw) return fallbackMs;
+  const asInt = Number(raw);
+  if (Number.isFinite(asInt) && asInt >= 0) {
+    // Retry-After can be seconds
+    return Math.min(120_000, Math.max(fallbackMs, asInt * 1000));
+  }
+  const asDate = Date.parse(raw);
+  if (Number.isFinite(asDate)) {
+    return Math.min(120_000, Math.max(fallbackMs, asDate - Date.now()));
+  }
+  return fallbackMs;
+}
+
 export function describeProviderError(providerLabel: string, status: number, body: string): string {
   if (status === 429 && isBillingQuotaError(body)) {
     return `${providerLabel} sem créditos/quota na conta (HTTP 429 insufficient_quota — não é bug do app). Coloque crédito em platform.openai.com (Billing) ou troque de IA no seletor (Claude/Gemini/Mock).`;
@@ -53,8 +62,9 @@ export async function fetchWithRetry(
   init: RequestInit,
   options: { retries?: number; baseDelayMs?: number } = {}
 ): Promise<Response> {
-  const retries = options.retries ?? 3;
-  const baseDelayMs = options.baseDelayMs ?? 1000;
+  // Rate limits often need ~20–60s; give more attempts + honor Retry-After.
+  const retries = options.retries ?? 5;
+  const baseDelayMs = options.baseDelayMs ?? 2000;
 
   let lastNetworkError: unknown;
   for (let attempt = 0; ; attempt++) {
@@ -70,7 +80,10 @@ export async function fetchWithRetry(
       if (response.ok || !retryable || attempt >= retries) {
         return response;
       }
-      await new Promise((resolve) => setTimeout(resolve, baseDelayMs * 2 ** attempt));
+      const backoff = baseDelayMs * 2 ** attempt;
+      const waitMs =
+        response.status === 429 ? retryAfterMs(response, backoff) : backoff;
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
     } catch (err) {
       lastNetworkError = err;
       if (!isNetworkFetchError(err) || attempt >= retries) {

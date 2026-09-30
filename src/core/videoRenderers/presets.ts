@@ -23,7 +23,7 @@ export const STYLE_PRESETS: StylePreset[] = [
       highlightColor: "#E8C547",
       maxTextWidthPct: 0.84,
       lineHeight: 1.38,
-      readingZone: 0.4,
+      readingZone: 0.5,
       scrollSpeedFactor: 1,
       aspectRatio: "9:16",
       background: {

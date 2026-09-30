@@ -70,6 +70,7 @@ export function estimateUsd(snapshot: UsageSnapshot): number {
     case "local":
     case "mock":
     case "uploaded":
+    case "youtube":
     default:
       return 0;
   }

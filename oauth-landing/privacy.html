@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacidade — VMM</title>
+    <meta name="description" content="Política de privacidade do VMM e da integração YouTube." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Source+Sans+3:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="atmosphere" aria-hidden="true"></div>
+    <header class="top">
+      <a class="brand" href="/">VMM</a>
+      <nav>
+        <a href="/privacy">Privacidade</a>
+      </nav>
+    </header>
+
+    <main class="doc">
+      <h1>Política de privacidade</h1>
+      <p class="meta">Última atualização: 29 de setembro de 2026</p>
+
+      <h2>1. Quem somos</h2>
+      <p>
+        O <strong>VMM (Viral Money Machine)</strong> é uma ferramenta de produção de conteúdo
+        para YouTube. A aplicação principal corre <strong>localmente</strong> no computador do
+        utilizador. Este site público existe para documentar o produto e cumprir os requisitos
+        do Google OAuth / YouTube Data API.
+      </p>
+
+      <h2>2. Que dados usamos</h2>
+      <p>Quando autorizas a ligação ao YouTube através do VMM:</p>
+      <ul>
+        <li>
+          Pedimos acesso OAuth aos scopes
+          <code>youtube.upload</code> e <code>youtube</code> para enviar vídeos privados e
+          gerir uploads associados à conta que escolheres.
+        </li>
+        <li>
+          Guardamos um <strong>refresh token</strong> encriptado no servidor/base de dados do
+          VMM (no teu ambiente), associado ao canal VMM — não no browser.
+        </li>
+        <li>
+          Podemos ler o nome e o ID do canal YouTube ligado (<code>channels.list?mine=true</code>)
+          só para confirmares que é a conta correta.
+        </li>
+        <li>
+          Ficheiros de vídeo, áudio e miniaturas são gerados e, por defeito, ficam no teu
+          computador; o upload para YouTube ou armazenamento na nuvem só acontece quando tu
+          inicias essa ação.
+        </li>
+      </ul>
+
+      <h2>3. O que não fazemos</h2>
+      <ul>
+        <li>Não vendemos dados pessoais.</li>
+        <li>Não usamos os teus dados do YouTube para publicidade a terceiros.</li>
+        <li>Não publicamos vídeos como públicos automaticamente via API sem a tua ação no fluxo.</li>
+      </ul>
+
+      <h2>4. YouTube API Services</h2>
+      <p>
+        O uso e a transferência para outras apps de informação recebida das APIs do Google
+        cumprem a
+        <a href="https://developers.google.com/youtube/terms/api-services-terms-of-service" rel="noreferrer" target="_blank"
+          >YouTube API Services Terms of Service</a
+        >, incluindo a
+        <a href="https://developers.google.com/youtube/terms/developer-policies#definition-youtube-api-services" rel="noreferrer" target="_blank"
+          >YouTube API Services Developer Policies</a
+        >.
+        Podes revogar o acesso a qualquer momento em
+        <a href="https://myaccount.google.com/permissions" rel="noreferrer" target="_blank"
+          >Google Account → Segurança → Acesso de apps de terceiros</a
+        >
+        ou no VMM com «Desligar» YouTube.
+      </p>
+
+      <h2>5. Conservação</h2>
+      <p>
+        Tokens OAuth permanecem enquanto a conta estiver ligada no VMM. Ao desligar, o token é
+        apagado da base do VMM. Vídeos já enviados ao YouTube ficam sob as regras da tua conta
+        YouTube.
+      </p>
+
+      <h2>6. Contacto</h2>
+      <p>
+        Dúvidas sobre privacidade: contacta o administrador do projeto Google Cloud / canal
+        YouTube associado (ex.: conta usada para o OAuth do Amor Amor).
+      </p>
+    </main>
+
+    <footer class="foot">
+      <a href="/">← VMM</a>
+      <a href="/privacy">Privacy</a>
+    </footer>
+  </body>
+</html>

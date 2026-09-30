@@ -15,6 +15,7 @@ export type {
 import type { VoiceProfile } from "./providers/tts/voiceCapabilities";
 import type { MusicalDna } from "./providers/music/musicalDna";
 import type { VideoStyleChoice } from "./videoRenderers/types";
+import type { CommentAutomationConfig } from "./comments/types";
 
 /**
  * ChannelDNA is the permanent editorial identity of a channel.
@@ -104,9 +105,21 @@ export interface ChannelDNA {
   /** Instrumental bed + SFX identity. */
   musical?: MusicalDna;
 
+  /**
+   * YouTube Comment Manager automation (rules-first, optional AI later).
+   * Per-channel — Amor Amor ships with Spanish templates and aiEnabled=false.
+   */
+  commentAutomation?: CommentAutomationConfig;
+
   /** Whether this channel's pipeline needs a script/narration at all. */
   usesScript: boolean;
   usesNarration: boolean;
+
+  /**
+   * Pipeline mode. Default "viral" = ideias/roteiros flow.
+   * "audiobook" = 1 chapter = 1 video from imported book texts.
+   */
+  mode?: "viral" | "audiobook";
 }
 
 export type VisualTemplateId = "neon-meditation";
@@ -288,6 +301,9 @@ export interface VideoProject {
   youtubeDescription: string | null;
   /** Auto-flow: continue music/SFX after TTS. */
   autoFlow: boolean;
+  /** Set after successful YouTube upload (Data API). */
+  youtubeVideoId: string | null;
+  youtubeUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -301,4 +317,99 @@ export interface ProductionJob {
   statusMessage: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Audiobook (1 chapter = 1 video)
+// ---------------------------------------------------------------------------
+
+export type BookStatus = "queued" | "in_progress" | "completed" | "paused";
+
+export type ChapterStatus =
+  | "pending"
+  | "text_ready"
+  | "tts_running"
+  | "audio_ready"
+  | "images_ready"
+  | "video_ready"
+  | "thumb_ready"
+  | "uploading"
+  | "uploaded"
+  | "scheduled"
+  | "published"
+  | "failed";
+
+export interface Book {
+  id: string;
+  channelId: string;
+  orderIndex: number;
+  number: number;
+  title: string;
+  folder: string;
+  totalChapters: number;
+  totalChars: number;
+  totalWords: number;
+  status: BookStatus;
+  youtubePlaylistId: string | null;
+  playlistTitle: string | null;
+  playlistDescription: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Chapter {
+  id: string;
+  bookId: string;
+  index: number;
+  label: string;
+  sourceFile: string;
+  words: number;
+  chars: number;
+  status: ChapterStatus;
+  ttsTextPath: string | null;
+  audioPath: string | null;
+  audioDurationSec: number | null;
+  videoPath: string | null;
+  thumbPath: string | null;
+  imagePrompts: Array<{ startSec: number; prompt: string }> | null;
+  imagePaths: string[] | null;
+  youtubeVideoId: string | null;
+  youtubeUrl: string | null;
+  publishAt: string | null;
+  errorMessage: string | null;
+  attempts: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChannelAudiobookSettings {
+  ttsProvider: "google-chirp3-hd";
+  ttsVoice: string;
+  ttsLanguageCode: string;
+  ttsSpeakingRate: number;
+  ttsMonthlyCharLimit: number;
+  ttsHardStop: boolean;
+  publishTimeLocal: string;
+  publishEveryDays: number;
+  maxUploadsPerDay: number;
+  youtubeCategoryId: string;
+}
+
+export const DEFAULT_AUDIOBOOK_SETTINGS: ChannelAudiobookSettings = {
+  ttsProvider: "google-chirp3-hd",
+  ttsVoice: "pt-BR-Chirp3-HD-Charon",
+  ttsLanguageCode: "pt-BR",
+  ttsSpeakingRate: 0.95,
+  ttsMonthlyCharLimit: 950_000,
+  ttsHardStop: true,
+  publishTimeLocal: "19:00",
+  publishEveryDays: 1,
+  maxUploadsPerDay: 5,
+  youtubeCategoryId: "27",
+};
+
+/** Book list row with progress counters for the Livros tab. */
+export interface BookListItem extends Book {
+  chaptersDone: number;
+  estimatedMinutes: number;
 }

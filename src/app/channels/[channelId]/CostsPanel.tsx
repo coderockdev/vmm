@@ -55,6 +55,7 @@ const STAGE_ROWS: { key: keyof CostBreakdown; label: string }[] = [
   { key: "transcription", label: "Transcrição/sync" },
   { key: "thumbnail", label: "Portadas" },
   { key: "render", label: "Vídeo / render" },
+  { key: "youtube", label: "YouTube upload ($0)" },
 ];
 
 export function CostsPanel({ channelId }: { channelId: string }) {
@@ -85,10 +86,14 @@ export function CostsPanel({ channelId }: { channelId: string }) {
 
   return (
     <section className="costs-section">
-      <div className="costs-heading">
+          <div className="costs-heading">
         <div className="workspace-section-title">
           <h2>Custos de geração</h2>
-          <p>Estimativa por etapa (ideias, roteiro, áudio, portadas, vídeo), por projeto e por período.</p>
+          <p>
+            Estimativa por etapa (ideias, roteiro, áudio, portadas, vídeo), por projeto e por
+            período. Upload YouTube = <strong>$0</strong> (só quota diária da API, ~1600
+            unidades por vídeo).
+          </p>
         </div>
         <div className="costs-period-pills" role="group" aria-label="Período">
           {PERIODS.map((item) => (
@@ -170,6 +175,7 @@ export function CostsPanel({ channelId }: { channelId: string }) {
                     <span>Áudio</span>
                     <span>Portada</span>
                     <span>Vídeo</span>
+                    <span>YT</span>
                     <span>Total</span>
                   </div>
                   {data.projects.map((p) => (
@@ -185,6 +191,7 @@ export function CostsPanel({ channelId }: { channelId: string }) {
                       <span>{formatUsd(p.breakdown.audio)}</span>
                       <span>{formatUsd(p.breakdown.thumbnail ?? 0)}</span>
                       <span>{formatUsd(p.breakdown.render)}</span>
+                      <span>{formatUsd(p.breakdown.youtube ?? 0)}</span>
                       <span className="costs-total-cell">{formatUsd(p.totalUsd)}</span>
                     </div>
                   ))}

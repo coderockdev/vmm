@@ -1,6 +1,8 @@
 node_modules
 .next
 data
+storage/
+secrets/
 public/render-tmp/*
 !public/render-tmp/.gitkeep
 .env.local

@@ -1,5 +1,6 @@
 import { ChannelDNA } from "./types";
 import { defaultAmorAmorCoverDna } from "./providers/image/coverFormats";
+import { defaultAmorAmorCommentAutomation } from "./comments/defaults";
 import { DEFAULT_AMOR_AMOR_MUSICAL } from "./providers/music/musicalDna";
 import { AMOR_AMOR_SUCCESSFUL_TITLES } from "./channels/amorAmorSuccessfulTitles";
 
@@ -97,6 +98,9 @@ El espectador llega emocionalmente activado. No busca una clase sobre relaciones
         "Repeticiones mecánicas sin aumento emocional",
         "Garantizar como hecho que una persona específica actuará contra su voluntad",
         "Empezar en paz o alivio antes del clímax",
+        // Titles: "mantra" is rare in the hit bank (~1/111). Prefer oración/aviso/cuidado/regreso.
+        "Títulos con la palabra MANTRA (usar como máximo en ~5% de los videos; casi siempre preferir oración, advertencia, cuidado, regreso, mensaje, llamada)",
+        "Repetir MANTRA en títulos consecutivos o en la mayoría de ideas de un lote",
       ],
       scriptRules: {
         opening:
@@ -188,6 +192,12 @@ Después realizar un CTA final breve para comentar y suscribirse a Amor Amor.
 
 Cada guion debe sentirse escrito específicamente para su título y situación. Evitar plantillas obvias, relleno, frases genéricas y repeticiones que no hagan avanzar la emoción.
 
+REGLA DE TÍTULOS (canal):
+En el banco de 111 títulos taquilleros, MANTRA es excepción (casi no aparece).
+Usa "mantra" como máximo en ~5% de los títulos — o menos.
+Prioriza ganchos tipo: CUIDADO / ADVERTENCIA / ORACIÓN / REGRESA / ESCRIBE / LLAMA / DI SU NOMBRE / 3:33 / 7:07 / silencio / bloqueo / orgullo.
+Si el título lleva "mantra", debe ser una variación rara y distinta — nunca el default del lote.
+
 REGLA PRINCIPAL:
 AMOR AMOR EMPIEZA EN LA HERIDA Y TERMINA EN EL ALIVIO.
 No empieces en el alivio.`,
@@ -221,6 +231,7 @@ No empieces en el alivio.`,
         cover: defaultAmorAmorCoverDna(),
       },
       musical: DEFAULT_AMOR_AMOR_MUSICAL,
+      commentAutomation: defaultAmorAmorCommentAutomation(),
       voice: {
         provider: "heygen",
         voiceId: null,
@@ -390,6 +401,61 @@ No empieces en el alivio.`,
       },
       usesScript: false,
       usesNarration: false,
+    },
+  },
+  {
+    id: "julio-verne-audiolivro",
+    name: "Júlio Verne em Audiolivro",
+    niche: "Audiolivros • Clássicos • Júlio Verne",
+    coverColor: "#1a3a5c",
+    dna: {
+      mode: "audiobook",
+      description:
+        "Canal de audiolivros capítulo a capítulo das obras de Júlio Verne em português. Cada vídeo é exatamente um capítulo; cada obra vira uma playlist completa.",
+      purpose:
+        "Produzir e publicar o catálogo de Júlio Verne em audiolivro completo, obra a obra, com narração fiel ao texto original (sem resumir nem modernizar).",
+      audience:
+        "Ouvintes de audiolivros e literatura clássica em português que querem acompanhar romances de Verne capítulo a capítulo.",
+      language: "pt",
+      tone: ["clássico", "narrativo", "sereno", "literário"],
+      topics: [
+        "Júlio Verne",
+        "audiolivro",
+        "ficção científica clássica",
+        "aventura",
+        "literatura do século XIX",
+      ],
+      avoid: [
+        "Resumir o texto",
+        "Modernizar / abrasileirar a prosa",
+        "Alterar o conteúdo literário",
+        "Spoilers na descrição da playlist",
+      ],
+      scriptRules: {
+        opening: "Abertura falada fixa: «Júlio Verne em Audiolivro. {Obra}. {capítulo}.»",
+        structure: "1 capítulo = 1 vídeo. Texto integral do capítulo + abertura/encerramento técnicos.",
+        cta: "Encerramento aponta para o próximo capítulo na playlist e pede inscrição.",
+        defaultDurationMinutes: 15,
+        defaultSceneCount: 4,
+        generationPrompt: "",
+        pauses: { betweenLines: 0.4, betweenSections: 1.0 },
+        wordsPerMinute: 150,
+        charsPerWord: 6,
+        performanceTags: { enabled: false, selected: [], tagsPerThousandWords: 0 },
+      },
+      visual: {
+        template: "neon-meditation",
+        palette: "night-sky",
+        textPreset: "none",
+      },
+      voice: {
+        provider: "local",
+        voiceId: null,
+        speed: 0.95,
+        volume: 1,
+      },
+      usesScript: false,
+      usesNarration: true,
     },
   },
 ];

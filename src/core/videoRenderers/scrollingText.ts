@@ -41,15 +41,15 @@ function buildAssFile(args: {
 }): string {
   const { lines, settings, duration, width, height } = args;
   const blockH = estimateBlockHeightPx(lines.length, settings);
-  const readingY = height * (1 - Math.min(1, Math.max(0, settings.readingZone)));
-  // Start: top of block just below bottom of frame. End: bottom of block just above top.
-  const startY = height + settings.fontSize;
+  // readingZone: 0 = bottom, 0.5 = mid, 1 = top (see VideoStyleSettings).
+  const zone = Math.min(1, Math.max(0, settings.readingZone));
+  // Start with the top of the text block at the reading line (mid screen by default),
+  // not below the frame — so the first lines are readable from t=0.
+  const startY = height * (1 - zone);
   const endY = -blockH - settings.fontSize;
-  const travel = startY - endY;
-  const effectiveDuration = duration / Math.max(0.5, settings.scrollSpeedFactor);
-  // We still span the real audio duration; speed factor stretches travel conceptually
-  // by adjusting end position slightly when factor ≠ 1.
-  const adjustedEndY = startY - travel * settings.scrollSpeedFactor;
+  const travel = Math.max(1, startY - endY);
+  // Span the real audio duration; speed factor stretches travel when ≠ 1.
+  const adjustedEndY = startY - travel * Math.max(0.5, settings.scrollSpeedFactor);
   const x = Math.round(width / 2);
   const alignNum = settings.align === "left" ? 7 : settings.align === "right" ? 9 : 8;
   const body = lines.map((l) => (l === "" ? "\\N" : escapeAss(l))).join("\\N");
@@ -85,7 +85,8 @@ function solidColorHex(settings: VideoStyleSettings): string {
 }
 
 /**
- * Continuous bottom→top scrolling text burned with FFmpeg + ASS.
+ * Continuous scrolling text (bottom→top) burned with FFmpeg + ASS.
+ * First lines appear at the reading zone (~mid screen), then scroll up.
  * Audio is muxed untouched (duration = ffprobe).
  */
 export async function renderScrollingText(
@@ -145,6 +146,8 @@ export async function renderScrollingText(
     ].join(";");
 
     onProgress?.(40, "Renderizando vídeo (FFmpeg)…");
+    // Solid-color + text compresses very well — without CRF, libx264 can balloon
+    // to hundreds of MB for an 11‑min 1080×1920 file and break Storage uploads.
     await runFfmpeg("ffmpeg", [
       "-y",
       "-i",
@@ -159,12 +162,22 @@ export async function renderScrollingText(
       "libx264",
       "-preset",
       "veryfast",
+      "-crf",
+      "28",
+      "-maxrate",
+      "2.5M",
+      "-bufsize",
+      "5M",
       "-pix_fmt",
       "yuv420p",
       "-c:a",
       "aac",
       "-b:a",
-      "192k",
+      "128k",
+      "-ac",
+      "2",
+      "-ar",
+      "44100",
       "-shortest",
       "-movflags",
       "+faststart",

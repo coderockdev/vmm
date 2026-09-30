@@ -112,6 +112,131 @@ function migrate(db: Database.Database) {
       raw_usage TEXT,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS books (
+      id TEXT PRIMARY KEY,
+      channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+      order_index INTEGER NOT NULL,
+      number INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      folder TEXT NOT NULL,
+      total_chapters INTEGER NOT NULL DEFAULT 0,
+      total_chars INTEGER NOT NULL DEFAULT 0,
+      total_words INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'queued',
+      youtube_playlist_id TEXT,
+      playlist_title TEXT,
+      playlist_description TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (channel_id, folder)
+    );
+
+    CREATE TABLE IF NOT EXISTS chapters (
+      id TEXT PRIMARY KEY,
+      book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+      chapter_index INTEGER NOT NULL,
+      label TEXT NOT NULL,
+      source_file TEXT NOT NULL,
+      words INTEGER NOT NULL DEFAULT 0,
+      chars INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending',
+      tts_text_path TEXT,
+      audio_path TEXT,
+      audio_duration_sec REAL,
+      video_path TEXT,
+      thumb_path TEXT,
+      image_prompts_json TEXT,
+      image_paths_json TEXT,
+      youtube_video_id TEXT,
+      youtube_url TEXT,
+      publish_at TEXT,
+      error_message TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (book_id, source_file)
+    );
+
+    CREATE TABLE IF NOT EXISTS tts_usage (
+      id TEXT PRIMARY KEY,
+      month TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      chars INTEGER NOT NULL DEFAULT 0,
+      requests INTEGER NOT NULL DEFAULT 0,
+      chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS youtube_accounts (
+      id TEXT PRIMARY KEY,
+      channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+      youtube_channel_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      refresh_token_encrypted TEXT NOT NULL,
+      scopes TEXT NOT NULL,
+      connected_at TEXT NOT NULL,
+      UNIQUE (channel_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS youtube_quota_log (
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      units INTEGER NOT NULL DEFAULT 0,
+      operation TEXT NOT NULL,
+      chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS channel_audiobook_settings (
+      channel_id TEXT PRIMARY KEY REFERENCES channels(id) ON DELETE CASCADE,
+      settings_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS youtube_comments (
+      id TEXT PRIMARY KEY,
+      channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+      youtube_comment_id TEXT NOT NULL,
+      youtube_thread_id TEXT NOT NULL,
+      video_id TEXT NOT NULL,
+      video_title TEXT,
+      author_name TEXT,
+      author_channel_id TEXT,
+      author_profile_image_url TEXT,
+      comment_text TEXT NOT NULL,
+      published_at TEXT,
+      updated_at_yt TEXT,
+      like_count INTEGER NOT NULL DEFAULT 0,
+      reply_count INTEGER NOT NULL DEFAULT 0,
+      our_reply_id TEXT,
+      our_reply_text TEXT,
+      category TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      error_message TEXT,
+      processed_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (channel_id, youtube_comment_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS youtube_comment_runs (
+      id TEXT PRIMARY KEY,
+      channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'running',
+      dry_run INTEGER NOT NULL DEFAULT 0,
+      max_items INTEGER NOT NULL DEFAULT 50,
+      processed INTEGER NOT NULL DEFAULT 0,
+      answered INTEGER NOT NULL DEFAULT 0,
+      skipped INTEGER NOT NULL DEFAULT 0,
+      needs_review INTEGER NOT NULL DEFAULT 0,
+      errors INTEGER NOT NULL DEFAULT 0,
+      stop_requested INTEGER NOT NULL DEFAULT 0,
+      log_json TEXT NOT NULL DEFAULT '[]',
+      error_message TEXT,
+      started_at TEXT NOT NULL,
+      finished_at TEXT
+    );
   `);
 
   addColumnIfMissing(db, "video_projects", "tts_provider_override", "TEXT");

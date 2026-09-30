@@ -61,7 +61,7 @@ export async function POST(req: NextRequest, { params }: { params: { channelId: 
           planId: result.planId,
           projectIds: result.projectIds,
           topic: result.topic,
-          message: `${result.projectIds.length} vídeo(s) na fila: voz → música/SFX → vídeo → portada`,
+          message: `${result.projectIds.length} vídeo(s) na fila: voz → música/SFX → vídeo → portada → YouTube`,
         });
       } catch (err) {
         send({

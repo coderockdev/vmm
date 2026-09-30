@@ -12,7 +12,10 @@ type LibEntry = {
   file: string;
   type: string;
   mood: string[];
+  intensity?: string;
   attributionRequired: boolean;
+  previewUrl?: string;
+  score?: number | null;
 };
 
 type BedBusy = "music" | "sfx" | "mix" | "video" | "preview" | null;
@@ -52,11 +55,14 @@ export function AudioBedControls({
   const [flashOk, setFlashOk] = useState<string | null>(null);
   const [musicStyle, setMusicStyle] = useState(project.musicStyle || "romantico-cinematico");
   const [entries, setEntries] = useState<LibEntry[]>([]);
+  const [selectedLibraryId, setSelectedLibraryId] = useState<string | null>(
+    project.musicLibraryId ?? null
+  );
   const [videoStyle, setVideoStyle] = useState("scrolling-text");
   const [presetId, setPresetId] = useState("amor-amor");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [musicPct, setMusicPct] = useState(
-    clampPct((project.musicVolume ?? 0.06) * 100, 6)
+    clampPct((project.musicVolume ?? 0.08) * 100, 8)
   );
   const [sfxPct, setSfxPct] = useState(clampPct((project.sfxVolume ?? 0.5) * 100, 50));
 
@@ -75,6 +81,11 @@ export function AudioBedControls({
       .then((r) => r.json())
       .then((d) => {
         setEntries(d.entries ?? []);
+        if (typeof d.selectedLibraryId === "string") {
+          setSelectedLibraryId(d.selectedLibraryId);
+        } else if (project.musicLibraryId) {
+          setSelectedLibraryId(project.musicLibraryId);
+        }
         if (d.project?.id === project.id) {
           const hydrated = d.project as VideoProject;
           if (
@@ -82,6 +93,7 @@ export function AudioBedControls({
             hydrated.mixSfxRef !== project.mixSfxRef ||
             hydrated.mixAudioRef !== project.mixAudioRef ||
             hydrated.musicTrackName !== project.musicTrackName ||
+            hydrated.musicLibraryId !== project.musicLibraryId ||
             JSON.stringify(hydrated.sfxCues) !== JSON.stringify(project.sfxCues)
           ) {
             onUpdated(hydrated);
@@ -99,6 +111,10 @@ export function AudioBedControls({
     // Intentionally only re-fetch when project id changes — onUpdated would loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
+
+  useEffect(() => {
+    if (project.musicLibraryId) setSelectedLibraryId(project.musicLibraryId);
+  }, [project.musicLibraryId]);
 
   useEffect(() => {
     if (typeof project.musicVolume === "number") {
@@ -184,16 +200,18 @@ export function AudioBedControls({
     setBusySource(source);
     setError(null);
     setFlashOk(null);
+    let latestProject = project;
     try {
       const ready = await ensureAudioForSource(source);
       if (source !== "voice" && !ready) {
         throw new Error("Não foi possível preparar o áudio desta versão.");
       }
+      latestProject = ready ?? project;
 
       // Optimistic status so other tabs keep showing progress via poll.
       if (!preview) {
         onUpdated({
-          ...(ready ?? project),
+          ...latestProject,
           status: "rendering",
           errorMessage: null,
         });
@@ -226,7 +244,13 @@ export function AudioBedControls({
         preview ? `Preview (${labels[source]}) pronto` : `Vídeo gerado (${labels[source]})`
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      onUpdated({
+        ...latestProject,
+        status: "failed",
+        errorMessage: message,
+      });
     } finally {
       setBusy(null);
       setBusySource(null);
@@ -256,9 +280,13 @@ export function AudioBedControls({
   const musicReady = Boolean(project.mixMusicRef);
   const sfxReady = Boolean(project.mixSfxRef);
   const fullReady = Boolean(project.mixAudioRef);
+  // Only lock bed buttons while music/sfx/mix is running — a long video render
+  // must not freeze "Gerar música / SFX".
+  const bedBusy = busy === "music" || busy === "sfx" || busy === "mix";
+  const anyBusy = busy != null;
 
   return (
-    <div className={`audio-bed-controls${busy ? " is-busy" : ""}`}>
+    <div className={`audio-bed-controls${anyBusy ? " is-busy" : ""}`}>
       {busy && (
         <p className="audio-bed-banner is-working" role="status" aria-live="polite">
           <span className="audio-bed-spinner" />
@@ -276,8 +304,8 @@ export function AudioBedControls({
       <div className="audio-bed-block audio-bed-block-listen">
         <h4>Ouvir versões</h4>
         <p className="portadas-actions-hint">
-          1 = só voz · 2 = voz+música · 3 = voz+SFX · 4 = tudo. Em cada uma:{" "}
-          <strong>Gerar vídeo</strong> prepara o áudio se faltar e renderiza.
+          Fluxo recomendado: <strong>Gerar áudio</strong> → ouvir no player → só depois{" "}
+          <strong>Gerar vídeo</strong> (opcional).
         </p>
         <div className="audio-bed-chips">
           <StatusChip label="Voz" state={voiceUrl ? "ready" : "idle"} busy={false} />
@@ -339,7 +367,7 @@ export function AudioBedControls({
             url={voiceUrl}
             state={voiceUrl ? "ready" : "idle"}
             videoBusy={busySource === "voice" && (busy === "video" || busy === "preview")}
-            disabled={!!busy}
+            videoDisabled={anyBusy}
             onGenerateVideo={() => void runVideoFromSource("voice")}
           />
           <AudioVersion
@@ -347,15 +375,19 @@ export function AudioBedControls({
             url={mixMusicUrl}
             meta={project.musicTrackName ? `Tema em loop: ${project.musicTrackName}` : undefined}
             state={
-              busySource === "music" && (busy === "music" || busy === "mix" || busy === "video")
+              busy === "music"
                 ? "working"
                 : musicReady
                   ? "ready"
                   : "idle"
             }
-            emptyHint="Clica «Gerar vídeo» — gera a música se faltar"
+            emptyHint="Gera a música, ouve aqui, e só depois gera o vídeo se quiseres."
             videoBusy={busySource === "music" && (busy === "video" || busy === "music" || busy === "mix")}
-            disabled={!!busy}
+            audioBusy={busy === "music"}
+            audioDisabled={bedBusy}
+            videoDisabled={anyBusy}
+            audioButtonLabel={musicReady ? "Regenerar música" : "Gerar música"}
+            onGenerateAudio={() => void runBedUi({ musicOnly: true, style: musicStyle }, "music")}
             onGenerateVideo={() => void runVideoFromSource("music")}
           />
           <AudioVersion
@@ -367,34 +399,48 @@ export function AudioBedControls({
                 : undefined
             }
             state={
-              busySource === "sfx" && (busy === "sfx" || busy === "mix" || busy === "video")
+              busy === "sfx"
                 ? "working"
                 : sfxReady
                   ? "ready"
                   : "idle"
             }
-            emptyHint="Clica «Gerar vídeo» — gera os SFX se faltarem"
+            emptyHint="Gera os SFX, ouve aqui, e só depois gera o vídeo se quiseres."
             videoBusy={busySource === "sfx" && (busy === "video" || busy === "sfx" || busy === "mix")}
-            disabled={!!busy}
+            audioBusy={busy === "sfx"}
+            audioDisabled={bedBusy}
+            videoDisabled={anyBusy}
+            audioButtonLabel={sfxReady ? "Regenerar SFX" : "Gerar SFX"}
+            onGenerateAudio={() => void runBedUi({ sfxOnly: true }, "sfx")}
             onGenerateVideo={() => void runVideoFromSource("sfx")}
           />
           <AudioVersion
             label="4. Tudo (voz + música + SFX)"
             url={mixFullUrl}
             state={
-              busySource === "full" &&
-              (busy === "music" || busy === "sfx" || busy === "mix" || busy === "video")
+              busySource === "full" && bedBusy
                 ? "working"
-                : fullReady
-                  ? "ready"
-                  : "idle"
+                : busy === "music" || busy === "sfx" || busy === "mix"
+                  ? "working"
+                  : fullReady
+                    ? "ready"
+                    : "idle"
             }
-            emptyHint="Clica «Gerar vídeo» — gera mix completo se faltar"
+            emptyHint="Gera o mix completo, ouve, e só depois gera o vídeo se quiseres."
             videoBusy={
               busySource === "full" &&
               (busy === "video" || busy === "music" || busy === "sfx" || busy === "mix")
             }
-            disabled={!!busy}
+            audioBusy={busy === "music" || busy === "sfx" || busy === "mix"}
+            audioDisabled={bedBusy}
+            videoDisabled={anyBusy}
+            audioButtonLabel={fullReady ? "Regenerar mix" : "Gerar mix"}
+            onGenerateAudio={() => {
+              void (async () => {
+                const ready = await ensureAudioForSource("full");
+                if (ready) setFlashOk("Mix pronto — ouve a versão 4; o vídeo fica opcional.");
+              })();
+            }}
             onGenerateVideo={() => void runVideoFromSource("full")}
           />
         </div>
@@ -407,20 +453,78 @@ export function AudioBedControls({
           {busy === "music" && <span className="audio-bed-inline-working"> · a gerar…</span>}
         </h4>
         <p className="portadas-actions-hint">
-          Um único tema da biblioteca, em <strong>loop</strong> durante todo o vídeo. 100%
-          instrumental · zero custo.
+          Ouves as faixas em <strong>loop</strong>, escolhes uma, e aplicas sob a voz. Instrumental
+          Mixkit (sem atribuição). Volume ~10%.
         </p>
         {project.musicTrackName && (
           <p className="audio-bed-track-name">
             Faixa actual: <strong>{project.musicTrackName}</strong>
           </p>
         )}
+
+        {entries.length > 0 && (
+          <div className="audio-bed-picker" role="list">
+            <p className="portadas-actions-hint">
+              Sugestões para este vídeo — ouve e clica <strong>Usar esta</strong>:
+            </p>
+            {entries.slice(0, 8).map((entry) => {
+              const isSelected = selectedLibraryId === entry.id || project.musicLibraryId === entry.id;
+              const preview =
+                entry.previewUrl ||
+                `/api/audio-library/file?file=${encodeURIComponent(entry.file)}`;
+              return (
+                <div
+                  key={entry.id}
+                  className={`audio-bed-pick${isSelected ? " is-selected" : ""}`}
+                  role="listitem"
+                >
+                  <div className="audio-bed-pick-head">
+                    <strong>{entry.name}</strong>
+                    <span className="books-muted">
+                      {(entry.mood ?? []).slice(0, 3).join(" · ") || "instrumental"}
+                      {entry.intensity ? ` · ${entry.intensity}` : ""}
+                    </span>
+                  </div>
+                  <audio
+                    className="review-queue-audio"
+                    controls
+                    loop
+                    preload="none"
+                    src={preview}
+                  />
+                  <button
+                    type="button"
+                    disabled={bedBusy}
+                    onClick={() => {
+                      setSelectedLibraryId(entry.id);
+                      void runBedUi(
+                        {
+                          musicOnly: true,
+                          style: musicStyle,
+                          libraryEntryId: entry.id,
+                        },
+                        "music"
+                      );
+                    }}
+                  >
+                    {busy === "music" && selectedLibraryId === entry.id
+                      ? "A aplicar…"
+                      : isSelected && musicReady
+                        ? "Em uso · reaplicar"
+                        : "Usar esta"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <label className="portadas-label">
-          Estilo musical
+          Estilo musical (ao regenerar sem escolha)
           <select
             value={musicStyle}
             onChange={(e) => setMusicStyle(e.target.value)}
-            disabled={!!busy}
+            disabled={bedBusy}
           >
             {MUSIC_STYLE_OPTIONS.map((o) => (
               <option key={o.id} value={o.id}>
@@ -434,35 +538,47 @@ export function AudioBedControls({
           <input
             type="range"
             min={0}
-            max={20}
+            max={25}
             step={1}
             value={musicPct}
-            disabled={!!busy}
+            disabled={bedBusy}
             onChange={(e) => setMusicPct(Number(e.target.value))}
           />
-          <span className="portadas-actions-hint">Recomendado 5–10% (não compete com a voz).</span>
+          <span className="portadas-actions-hint">
+            Padrão do canal: 8%. Rodízio automático Voxscape → Rest Now → Vastness.
+          </span>
         </label>
         <div className="portadas-actions">
           <button
             type="button"
-            disabled={!!busy}
-            onClick={() => void runBedUi({ musicOnly: true, style: musicStyle }, "music")}
+            disabled={bedBusy}
+            onClick={() =>
+              void runBedUi(
+                {
+                  musicOnly: true,
+                  style: musicStyle,
+                },
+                "music"
+              )
+            }
           >
-            {busy === "music" ? "A gerar música…" : project.musicRef ? "Regenerar música" : "Gerar música"}
+            {busy === "music"
+              ? "A gerar música…"
+              : project.musicRef
+                ? "Sortear outra faixa"
+                : "Gerar música automática"}
           </button>
           <button
             type="button"
-            disabled={!!busy}
-            onClick={() => void runBedUi({ musicOff: true, remixOnly: true }, "music")}
+            disabled={bedBusy}
+            onClick={() => {
+              setSelectedLibraryId(null);
+              void runBedUi({ musicOff: true, remixOnly: true }, "music");
+            }}
           >
             Sem música
           </button>
         </div>
-        {entries.length > 0 && (
-          <p className="portadas-actions-hint">
-            {entries.length} faixas na biblioteca (sem atribuição preferidas).
-          </p>
-        )}
       </div>
 
       <div className="audio-bed-block">
@@ -483,7 +599,7 @@ export function AudioBedControls({
             max={100}
             step={5}
             value={sfxPct}
-            disabled={!!busy}
+            disabled={bedBusy}
             onChange={(e) => setSfxPct(Number(e.target.value))}
           />
           <span className="portadas-actions-hint">Recomendado ~50%.</span>
@@ -491,21 +607,21 @@ export function AudioBedControls({
         <div className="portadas-actions">
           <button
             type="button"
-            disabled={!!busy}
+            disabled={bedBusy}
             onClick={() => void runBedUi({ sfxOnly: true }, "sfx")}
           >
             {busy === "sfx" ? "A gerar SFX…" : "Gerar SFX"}
           </button>
           <button
             type="button"
-            disabled={!!busy}
+            disabled={bedBusy}
             onClick={() => void runBedUi({ sfxOff: true, remixOnly: true }, "sfx")}
           >
             Sem SFX
           </button>
           <button
             type="button"
-            disabled={!!busy || !hasBed}
+            disabled={bedBusy || !hasBed}
             onClick={() => void runBedUi({ remixOnly: true }, "mix")}
             title={!hasBed ? "Gera música ou SFX primeiro" : undefined}
           >
@@ -533,7 +649,7 @@ export function AudioBedControls({
           Estilo
           <select
             value={videoStyle}
-            disabled={!!busy}
+            disabled={anyBusy}
             onChange={(e) => setVideoStyle(e.target.value)}
           >
             <option value="scrolling-text">Texto rolando contínuo</option>
@@ -548,7 +664,7 @@ export function AudioBedControls({
           Preset
           <select
             value={presetId}
-            disabled={!!busy}
+            disabled={anyBusy}
             onChange={(e) => setPresetId(e.target.value)}
           >
             {STYLE_PRESETS.map((p) => (
@@ -559,10 +675,10 @@ export function AudioBedControls({
           </select>
         </label>
         <div className="portadas-actions">
-          <button type="button" disabled={!!busy} onClick={() => void runVideoFromSource("voice", true)}>
+          <button type="button" disabled={anyBusy} onClick={() => void runVideoFromSource("voice", true)}>
             {busy === "preview" ? "Preview…" : "Preview 12s (só voz)"}
           </button>
-          <button type="button" disabled={!!busy} onClick={() => void runVideoFromSource("voice")}>
+          <button type="button" disabled={anyBusy} onClick={() => void runVideoFromSource("voice")}>
             {busy === "video" && busySource === "voice" ? "A renderizar…" : "Gerar vídeo (só voz)"}
           </button>
         </div>
@@ -594,8 +710,12 @@ function AudioVersion({
   emptyHint,
   state,
   meta,
-  disabled,
+  audioDisabled,
+  videoDisabled,
   videoBusy,
+  audioBusy,
+  onGenerateAudio,
+  audioButtonLabel,
   onGenerateVideo,
 }: {
   label: string;
@@ -603,8 +723,12 @@ function AudioVersion({
   emptyHint?: string;
   state: "idle" | "working" | "ready";
   meta?: string;
-  disabled?: boolean;
+  audioDisabled?: boolean;
+  videoDisabled?: boolean;
   videoBusy?: boolean;
+  audioBusy?: boolean;
+  onGenerateAudio?: () => void;
+  audioButtonLabel?: string;
   onGenerateVideo?: () => void;
 }) {
   return (
@@ -615,16 +739,30 @@ function AudioVersion({
           {state === "working" && <span className="audio-bed-inline-working"> · a gerar…</span>}
           {state === "ready" && url && <span className="audio-bed-inline-ok"> · pronto</span>}
         </p>
-        {onGenerateVideo && (
-          <button
-            type="button"
-            className="audio-bed-version-video-btn"
-            disabled={disabled}
-            onClick={onGenerateVideo}
-          >
-            {videoBusy ? "A gerar vídeo…" : "Gerar vídeo"}
-          </button>
-        )}
+        <div className="audio-bed-version-actions">
+          {onGenerateAudio && (
+            <button
+              type="button"
+              className="audio-bed-version-audio-btn"
+              disabled={Boolean(audioDisabled || audioBusy)}
+              onClick={onGenerateAudio}
+            >
+              {audioBusy
+                ? "A gerar áudio…"
+                : audioButtonLabel ?? (url ? "Regenerar áudio" : "Gerar áudio")}
+            </button>
+          )}
+          {onGenerateVideo && (
+            <button
+              type="button"
+              className="audio-bed-version-video-btn"
+              disabled={Boolean(videoDisabled)}
+              onClick={onGenerateVideo}
+            >
+              {videoBusy ? "A gerar vídeo…" : "Gerar vídeo"}
+            </button>
+          )}
+        </div>
       </div>
       {meta && <p className="portadas-actions-hint">{meta}</p>}
       {url ? (

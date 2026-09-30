@@ -69,6 +69,7 @@ export const AMOR_AMOR_COVER_STYLE_RULES = [
   "saturated but believable colors",
   "expressive faces when relevant",
   "VERY LARGE text, max mobile readability",
+  "ALL letters fully inside the frame with ~8% safe margin — never crop or cut off glyphs",
   "red as recurring accent, yellow as emphasis color",
   "everyday scenes, real-story feeling",
   "composition designed specifically for YouTube thumbnail",
@@ -83,6 +84,8 @@ export const AMOR_AMOR_COVER_AVOID = [
   "deformed phones",
   "tiny text",
   "paragraphs of text",
+  "cropped or cut-off letters",
+  "text touching or overflowing frame edges",
   "illegible UI chrome",
   "generic stock backgrounds",
   "identical composition across videos",
@@ -213,4 +216,33 @@ export function normalizeCoverDna(raw: CoverVisualDna | null | undefined): Cover
 
 export function findCoverFormat(cover: CoverVisualDna, id: string): CoverFormat | undefined {
   return cover.formats.find((f) => f.id === id && f.enabled !== false);
+}
+
+/**
+ * Pick `count` distinct enabled cover formats, preferring ones least recently used
+ * (rotation across the 10 Amor Amor models so auto A/B options stay different).
+ */
+export function pickRotatingCoverFormats(cover: CoverVisualDna, count: number): CoverFormat[] {
+  let enabled = cover.formats.filter((f) => f.enabled !== false);
+  // Auto A/B needs 3 distinct formats — if DNA was trimmed, fill from Amor Amor library.
+  if (enabled.length < 3) {
+    const have = new Set(enabled.map((f) => f.id));
+    for (const f of AMOR_AMOR_COVER_FORMATS) {
+      if (have.has(f.id)) continue;
+      enabled.push({ ...f });
+      have.add(f.id);
+      if (enabled.length >= 10) break;
+    }
+  }
+  if (enabled.length === 0) return [];
+  const n = Math.min(Math.max(1, Math.round(count) || 1), enabled.length, 3);
+  const lastSeen = new Map<string, number>();
+  cover.recentFormatIds.forEach((id, i) => lastSeen.set(id, i));
+  const ranked = [...enabled].sort((a, b) => {
+    const ia = lastSeen.has(a.id) ? (lastSeen.get(a.id) as number) : -1000 - enabled.indexOf(a);
+    const ib = lastSeen.has(b.id) ? (lastSeen.get(b.id) as number) : -1000 - enabled.indexOf(b);
+    if (ia !== ib) return ia - ib;
+    return a.id.localeCompare(b.id);
+  });
+  return ranked.slice(0, n);
 }

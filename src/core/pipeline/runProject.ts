@@ -114,21 +114,32 @@ export async function runProject(jobId: string): Promise<void> {
     if (project.autoFlow) {
       await updateJob(job.id, { status: "composing", progress: 60, statusMessage: "Música e SFX..." });
       await updateProjectStatus(project.id, "composing");
-      await finishAutoFlowAfterAudio({
+      const finished = await finishAutoFlowAfterAudio({
         channel,
         projectId: project.id,
+        voiceOnly: false,
+        uploadYoutube: true,
         onProgress: async (message, progress) => {
           await updateJob(job.id, {
-            status: progress >= 75 ? "rendering" : "composing",
+            status: progress >= 94 ? "rendering" : progress >= 72 ? "rendering" : "composing",
             progress: Math.min(98, progress),
             statusMessage: message,
           }).catch(() => undefined);
-          if (progress >= 75) {
+          if (progress >= 72) {
             await updateProjectStatus(project.id, "rendering").catch(() => undefined);
           }
         },
       });
-      await updateJob(job.id, { status: "completed", progress: 100, statusMessage: "Vídeo pronto (auto)" });
+      await updateJob(job.id, {
+        status: "completed",
+        progress: 100,
+        statusMessage:
+          finished === null
+            ? "YouTube OK (privado) — registo leve (sem MP4 local)"
+            : finished.youtubeVideoId
+              ? "YouTube OK (privado) — registo leve"
+              : "Fluxo auto concluído (vídeo + YT se ligado)",
+      });
       return;
     }
 

@@ -1,20 +1,21 @@
 /**
  * Style variants for multi-thumbnail generation (YouTube allows up to 3).
  * Same concept/format, different visual treatment so the editor can pick/upload several.
+ * styleId may be a legacy cinematic variant OR a cover-format id (01-antes-despues…).
  */
 
-export type ThumbnailStyleId = "cinematic" | "high-contrast" | "emotional-close";
+export type ThumbnailStyleId = "cinematic" | "high-contrast" | "emotional-close" | string;
 
 export type ThumbnailCandidate = {
   id: string;
-  styleId: ThumbnailStyleId;
+  styleId: string;
   styleLabel: string;
   ref: string;
   createdAt: string;
 };
 
 export const THUMBNAIL_STYLE_VARIANTS: Array<{
-  id: ThumbnailStyleId;
+  id: "cinematic" | "high-contrast" | "emotional-close";
   label: string;
   /** Extra direction appended to the image prompt. */
   promptExtra: string;
@@ -35,7 +36,7 @@ export const THUMBNAIL_STYLE_VARIANTS: Array<{
     id: "emotional-close",
     label: "Close emocional",
     promptExtra:
-      "STYLE VARIANT — Emotional close: tighter crop on the hero object or face, intimate framing, urgent feeling, warm human detail.",
+      "STYLE VARIANT — Emotional close: tighter crop on the hero object or face ONLY (not the text). Keep on-image text fully inside an 8% safe margin — never clip letters.",
   },
 ];
 
@@ -62,4 +63,3 @@ export function mergeThumbnailHistory(
     .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
     .slice(-HISTORY_MAX);
 }
-

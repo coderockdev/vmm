@@ -15,6 +15,7 @@ export function contentPlanJsonInstructions(quantity: number): string {
     `- "angle" é o ângulo/abordagem específica desse vídeo dentro do assunto.`,
     `- "objective" é o que o espectador deve sentir ou fazer ao final.`,
     `- Varie títulos e situações; não repita a mesma fórmula mecânica nem clones quase idênticos.`,
+    `- Evite saturar a palavra «mantra» nos títulos (no Amor Amor: no máximo ~5%; prefira oración / aviso / cuidado / regreso).`,
     quantity >= 5
       ? `- Com ${quantity} ideias, espalhe ganchos diferentes (bloqueio, silêncio, orgulho, chamada, mensagem, arrependimento, horário simbólico, etc.).`
       : ``,

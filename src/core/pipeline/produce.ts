@@ -11,7 +11,7 @@ import {
 import { createJob } from "../repo/jobs";
 import { insertUsageEvent } from "../repo/usage";
 import { enqueueJob } from "./queue";
-import { getScriptProvider } from "../providers/script";
+import { withScriptProviderFallback } from "../providers/script/withFallback";
 import { parseGeneratedScript, normalizeSceneBreaks } from "../scriptLines";
 import { TTSProviderName } from "../providers/tts/TTSProvider";
 import { Script } from "../types";
@@ -95,17 +95,20 @@ export async function regenerateScript(projectId: string, aiProviderOverride: st
   const idea = project.contentIdeaId ? await getIdea(project.contentIdeaId) : null;
   if (!idea) throw new Error("Original content idea not found; cannot regenerate this script.");
 
-  const provider = getScriptProvider(aiProviderOverride);
   const previousScripts = await listScriptTextsForChannel(channel.id);
 
   const generated = channel.dna.usesScript
-    ? await provider.generateScript({
-        channel,
-        topic: project.topic,
-        contentIdea: idea,
-        durationMinutes: project.durationMinutes,
-        sceneCount: channel.dna.scriptRules.defaultSceneCount,
-        previousScripts,
+    ? await withScriptProviderFallback({
+        preferred: aiProviderOverride,
+        run: (provider) =>
+          provider.generateScript({
+            channel,
+            topic: project.topic,
+            contentIdea: idea,
+            durationMinutes: project.durationMinutes,
+            sceneCount: channel.dna.scriptRules.defaultSceneCount,
+            previousScripts,
+          }),
       })
     : {
         rawText: `Ambiente contínuo sobre ${project.topic}.`,

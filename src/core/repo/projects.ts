@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { getDb } from "../db";
 import { getSupabase, isSupabaseEnabled, assertNoError } from "../supabaseClient";
-import { workingFilePath, persistFile } from "../storage";
+import { workingFilePath, persistFile, deleteStoredFile } from "../storage";
 import { AudioAsset, JobStatus, Script, ScriptLine, VideoFormat, VideoProject, VideoConcept } from "../types";
 import {
   mergeAudioBed,
@@ -11,7 +11,7 @@ import {
   writeAudioBedOverlay,
   type AudioBedOverlay,
 } from "./audioBedOverlay";
-import { readProjectPublish } from "./projectPublish";
+import { deleteProjectPublish, readProjectPublish } from "./projectPublish";
 
 interface ProjectRow {
   id: string;
@@ -140,6 +140,8 @@ function rowToProject(row: ProjectRow): VideoProject {
     headline: publish?.headline ?? null,
     youtubeDescription: publish?.youtubeDescription ?? null,
     autoFlow: Boolean(publish?.autoFlow),
+    youtubeVideoId: publish?.youtubeVideoId ?? null,
+    youtubeUrl: publish?.youtubeUrl ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -505,6 +507,92 @@ export async function deleteVideoProject(id: string): Promise<void> {
     return;
   }
   getDb().prepare(`DELETE FROM video_projects WHERE id = ?`).run(id);
+}
+
+/**
+ * Full wipe (user Excluir): media + publish overlay + row.
+ */
+export async function purgeProjectAfterYoutube(projectId: string): Promise<void> {
+  const project = await getVideoProject(projectId);
+  if (!project) return;
+
+  await deleteStoredFile(project.channelId, project.renderPath);
+  const audio = project.audioAssetId ? await getAudioAsset(project.audioAssetId) : null;
+  if (audio) await deleteStoredFile(project.channelId, audio.filePath);
+  if (project.mixAudioRef) await deleteStoredFile(project.channelId, project.mixAudioRef);
+  if (project.musicRef) await deleteStoredFile(project.channelId, project.musicRef);
+  await deleteStoredFile(project.channelId, project.thumbnailRef);
+  for (const c of project.thumbnailConcept?.candidates ?? []) {
+    await deleteStoredFile(project.channelId, c.ref);
+  }
+  deleteProjectPublish(projectId);
+  await deleteVideoProject(projectId);
+}
+
+/**
+ * After YouTube OK: drop heavy MP4/audio (disk), keep the project row + portadas +
+ * títulos + youtubeVideoId as a light registry (history lives on YouTube).
+ */
+export async function archiveHeavyMediaAfterYoutube(projectId: string): Promise<void> {
+  const project = await getVideoProject(projectId);
+  if (!project) return;
+
+  await deleteStoredFile(project.channelId, project.renderPath);
+  const audio = project.audioAssetId ? await getAudioAsset(project.audioAssetId) : null;
+  if (audio) await deleteStoredFile(project.channelId, audio.filePath);
+  if (project.mixAudioRef) await deleteStoredFile(project.channelId, project.mixAudioRef);
+  if (project.musicRef) await deleteStoredFile(project.channelId, project.musicRef);
+  // Keep thumbnailRef + candidates (light PNGs for the gallery).
+
+  const now = new Date().toISOString();
+  if (isSupabaseEnabled()) {
+    assertNoError(
+      await getSupabase()
+        .from("video_projects")
+        .update({
+          render_path: null,
+          audio_asset_id: null,
+          updated_at: now,
+        })
+        .eq("id", projectId)
+    );
+  } else {
+    getDb()
+      .prepare(
+        `UPDATE video_projects SET render_path = NULL, audio_asset_id = NULL, updated_at = ? WHERE id = ?`
+      )
+      .run(now, projectId);
+  }
+
+  // Clear bed overlay mix/music paths (voice file already deleted).
+  try {
+    const { writeAudioBedOverlay, readAudioBedOverlay } = await import("./audioBedOverlay");
+    const prev = readAudioBedOverlay(projectId);
+    if (prev) {
+      writeAudioBedOverlay(projectId, {
+        ...prev,
+        musicRef: null,
+        mixAudioRef: null,
+        mixMusicRef: null,
+        mixSfxRef: null,
+        sfxRef: null,
+      });
+    }
+  } catch {
+    // overlay optional
+  }
+}
+
+/** Keep at most `keep` YouTube-published light records per channel (oldest fully purged). */
+export async function prunePublishedArchives(channelId: string, keep = 15): Promise<void> {
+  const all = await listProjectsForChannel(channelId);
+  const published = all
+    .filter((p) => Boolean(p.youtubeVideoId))
+    .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  const excess = published.slice(keep);
+  for (const p of excess) {
+    await purgeProjectAfterYoutube(p.id);
+  }
 }
 
 // ---------------------------------------------------------------------------

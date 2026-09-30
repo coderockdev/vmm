@@ -1,7 +1,13 @@
 import { Channel, ContentIdea, VideoFormat } from "../types";
-import { getScriptProvider } from "../providers/script";
+import { withScriptProviderFallback } from "../providers/script/withFallback";
 import { createContentPlan, listAllIdeaTitlesForChannel } from "../repo/plans";
-import { createVideoProject, createScript, attachScriptToProject, updateProjectStatus, listScriptTextsForChannel } from "../repo/projects";
+import {
+  createVideoProject,
+  createScript,
+  attachScriptToProject,
+  updateProjectStatus,
+  listScriptTextsForChannel,
+} from "../repo/projects";
 import { insertUsageEvent, recomputeProjectCost } from "../repo/usage";
 import { parseGeneratedScript, normalizeSceneBreaks } from "../scriptLines";
 import { hashStringToSeed } from "../../remotion/seededRandom";
@@ -14,15 +20,20 @@ export async function generateContentPlanForChannel(args: {
   durationMinutes: number;
   format: VideoFormat;
   aiProviderOverride?: string | null;
+  onAiFallback?: (from: string, to: string, reason: string) => void;
 }) {
-  const provider = getScriptProvider(args.aiProviderOverride);
   const previousTitles = await listAllIdeaTitlesForChannel(args.channel.id);
 
-  const { ideas, usage } = await provider.generateContentPlan({
-    channel: args.channel,
-    topic: args.topic,
-    quantity: args.quantity,
-    previousTitles,
+  const { ideas, usage } = await withScriptProviderFallback({
+    preferred: args.aiProviderOverride,
+    onFallback: args.onAiFallback,
+    run: (provider) =>
+      provider.generateContentPlan({
+        channel: args.channel,
+        topic: args.topic,
+        quantity: args.quantity,
+        previousTitles,
+      }),
   });
 
   const plan = await createContentPlan({
@@ -61,22 +72,28 @@ export async function generateScriptsForIdeas(args: {
   aiProviderOverride?: string | null;
   /** 3–8 scenes; defaults to channel DNA `defaultSceneCount`. */
   sceneCount?: number;
+  onAiFallback?: (from: string, to: string, reason: string) => void;
 }): Promise<string[]> {
-  const provider = getScriptProvider(args.aiProviderOverride);
   const previousScripts = await listScriptTextsForChannel(args.channel.id);
   const createdProjectIds: string[] = [];
 
-  const formats: Exclude<VideoFormat, "both">[] = args.format === "both" ? ["video", "short"] : [args.format];
+  const formats: Exclude<VideoFormat, "both">[] =
+    args.format === "both" ? ["video", "short"] : [args.format];
 
   for (const idea of args.ideas) {
     const generated = args.channel.dna.usesScript
-      ? await provider.generateScript({
-          channel: args.channel,
-          topic: args.topic,
-          contentIdea: idea,
-          durationMinutes: args.durationMinutes,
-          sceneCount: args.sceneCount,
-          previousScripts,
+      ? await withScriptProviderFallback({
+          preferred: args.aiProviderOverride,
+          onFallback: args.onAiFallback,
+          run: (provider) =>
+            provider.generateScript({
+              channel: args.channel,
+              topic: args.topic,
+              contentIdea: idea,
+              durationMinutes: args.durationMinutes,
+              sceneCount: args.sceneCount,
+              previousScripts,
+            }),
         })
       : {
           rawText: `Ambiente contínuo sobre ${args.topic}.`,
@@ -89,7 +106,10 @@ export async function generateScriptsForIdeas(args: {
       args.sceneCount ?? args.channel.dna.scriptRules.defaultSceneCount ?? 4,
       args.channel.dna.scriptRules.pauses
     );
-    const wordCount = rawLines.reduce((sum, l) => sum + l.text.split(/\s+/).filter(Boolean).length, 0);
+    const wordCount = rawLines.reduce(
+      (sum, l) => sum + l.text.split(/\s+/).filter(Boolean).length,
+      0
+    );
 
     let firstProjectId: string | null = null;
     for (const format of formats) {
@@ -108,7 +128,13 @@ export async function generateScriptsForIdeas(args: {
       const script = await createScript({
         videoProjectId: project.id,
         rawText: generated.rawText,
-        lines: rawLines.map((l) => ({ text: l.text, start: 0, end: 0, pauseAfter: l.pauseAfter, sectionBreak: l.sectionBreak })),
+        lines: rawLines.map((l) => ({
+          text: l.text,
+          start: 0,
+          end: 0,
+          pauseAfter: l.pauseAfter,
+          sectionBreak: l.sectionBreak,
+        })),
         wordCount,
       });
       await attachScriptToProject(project.id, script.id);

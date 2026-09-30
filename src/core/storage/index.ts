@@ -50,6 +50,22 @@ export function workingFilePath(channelId: string, kind: StorageKind, fileName: 
  * reference to store in the DB: unchanged (relative-to-channel-dir path) in
  * local mode, or the uploaded object's public URL in remote mode.
  */
+function relativeRefForKind(kind: StorageKind, fileName: string): string {
+  if (kind === "render") return path.join("renders", fileName);
+  if (kind === "audio") return path.join("audio", fileName);
+  return fileName;
+}
+
+function durableLocalPath(channelId: string, kind: StorageKind, fileName: string): string {
+  const dir =
+    kind === "render"
+      ? channelRendersDir(channelId)
+      : kind === "audio"
+        ? channelAudioDir(channelId)
+        : channelDir(channelId);
+  return path.join(dir, fileName);
+}
+
 export async function persistFile(
   localFilePath: string,
   channelId: string,
@@ -58,9 +74,7 @@ export async function persistFile(
   contentType: string
 ): Promise<string> {
   if (!isRemoteStorageEnabled()) {
-    if (kind === "render") return path.join("renders", fileName);
-    if (kind === "audio") return path.join("audio", fileName);
-    return fileName;
+    return relativeRefForKind(kind, fileName);
   }
 
   const buffer = fs.readFileSync(localFilePath);
@@ -74,6 +88,131 @@ export async function persistFile(
 
   const { data } = getSupabase().storage.from(BUCKET).getPublicUrl(objectKey);
   return data.publicUrl;
+}
+
+export type PersistWithFallbackResult = {
+  ref: string;
+  /** Absolute path on this machine when the bytes live here (local mode or upload fallback). */
+  localAbsolutePath: string | null;
+  /** Set when Supabase upload failed but the file was kept on this PC. */
+  uploadWarning: string | null;
+};
+
+/**
+ * Video renders: always keep a durable copy under data/channels/…/renders/
+ * first. Optionally try Supabase afterwards — failure does NOT lose the file
+ * (YouTube/Studio upload can use the local path later).
+ */
+export async function persistRenderLocalFirst(
+  localFilePath: string,
+  channelId: string,
+  fileName: string
+): Promise<PersistWithFallbackResult> {
+  const durablePath = durableLocalPath(channelId, "render", fileName);
+  if (path.resolve(localFilePath) !== path.resolve(durablePath)) {
+    fs.mkdirSync(path.dirname(durablePath), { recursive: true });
+    fs.copyFileSync(localFilePath, durablePath);
+    // Clean scratch tmp from workingFilePath in remote mode.
+    try {
+      const tmpDir = path.dirname(localFilePath);
+      if (tmpDir.includes(`${path.sep}vmm-render-`) || tmpDir.startsWith(os.tmpdir())) {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    } catch {
+      // best-effort
+    }
+  }
+
+  const localRef = relativeRefForKind("render", fileName);
+  const sizeMb = (fs.statSync(durablePath).size / (1024 * 1024)).toFixed(1);
+  const host = os.hostname();
+
+  if (!isRemoteStorageEnabled()) {
+    return {
+      ref: localRef,
+      localAbsolutePath: durablePath,
+      uploadWarning: null,
+    };
+  }
+
+  try {
+    const sizeBytes = fs.statSync(durablePath).size;
+    // Free Supabase Storage plans often cap ~50 MB; skip cloud upload for large MP4s.
+    const maxUploadBytes = Number(process.env.SUPABASE_RENDER_MAX_UPLOAD_MB || 45) * 1024 * 1024;
+    if (sizeBytes > maxUploadBytes) {
+      return {
+        ref: localRef,
+        localAbsolutePath: durablePath,
+        uploadWarning: `Vídeo ${sizeMb} MB guardado só NESTE PC «${host}» (acima do limite de upload ${Math.round(maxUploadBytes / (1024 * 1024))} MB). Pronto para YouTube local.`,
+      };
+    }
+    const buffer = fs.readFileSync(durablePath);
+    const objectKey = `${channelId}/render/${fileName}`;
+    const { error } = await getSupabase()
+      .storage.from(BUCKET)
+      .upload(objectKey, buffer, { contentType: "video/mp4", upsert: true });
+    if (error) throw new Error(error.message);
+    const { data } = getSupabase().storage.from(BUCKET).getPublicUrl(objectKey);
+    // Prefer public URL when cloud upload works, but local file stays on disk.
+    return {
+      ref: data.publicUrl,
+      localAbsolutePath: durablePath,
+      uploadWarning: null,
+    };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    return {
+      ref: localRef,
+      localAbsolutePath: durablePath,
+      uploadWarning: `Vídeo guardado só NESTE PC «${host}» (${sizeMb} MB): ${durablePath}. Upload Supabase falhou (${reason}). Sobe depois para Storage ou YouTube.`,
+    };
+  }
+}
+
+/**
+ * Prefer Supabase when remote storage is on; if upload fails (size limit, network),
+ * keep a durable copy under data/channels/… so the file isn't lost on this machine.
+ */
+export async function persistFileWithLocalFallback(
+  localFilePath: string,
+  channelId: string,
+  kind: StorageKind,
+  fileName: string,
+  contentType: string
+): Promise<PersistWithFallbackResult> {
+  if (!isRemoteStorageEnabled()) {
+    const ref = relativeRefForKind(kind, fileName);
+    return {
+      ref,
+      localAbsolutePath: resolveChannelRelativePath(channelId, ref),
+      uploadWarning: null,
+    };
+  }
+
+  try {
+    const ref = await persistFile(localFilePath, channelId, kind, fileName, contentType);
+    return { ref, localAbsolutePath: null, uploadWarning: null };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    const durablePath = durableLocalPath(channelId, kind, fileName);
+    fs.copyFileSync(localFilePath, durablePath);
+    try {
+      const tmpDir = path.dirname(localFilePath);
+      if (tmpDir !== path.dirname(durablePath)) {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    } catch {
+      // scratch cleanup is best-effort
+    }
+    const sizeMb = (fs.statSync(durablePath).size / (1024 * 1024)).toFixed(1);
+    const host = os.hostname();
+    const ref = relativeRefForKind(kind, fileName);
+    return {
+      ref,
+      localAbsolutePath: durablePath,
+      uploadWarning: `Upload Supabase falhou (${reason}). O ficheiro (${sizeMb} MB) ficou NESTE PC «${host}» em: ${durablePath}. Noutro PC/Vercel não aparece — copia daqui ou sobe o limite do Storage e regenera.`,
+    };
+  }
 }
 
 /** Resolves a relative-mode ref back into an absolute local path (local storage only — callers must check the ref isn't a URL first). */

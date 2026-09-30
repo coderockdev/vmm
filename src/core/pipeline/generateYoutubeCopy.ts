@@ -47,16 +47,17 @@ Devuelve SOLO JSON:
 }`;
 
   const provider = (args.aiProviderOverride || process.env.AI_PROVIDER || "mock").toLowerCase();
+  const tryOrder = [provider, "anthropic", "openai", "gemini"].filter(
+    (p, i, arr) => arr.indexOf(p) === i
+  );
 
-  try {
-    if (provider === "openai" && process.env.OPENAI_API_KEY) {
-      return await completeOpenAI(prompt);
+  for (const name of tryOrder) {
+    try {
+      if (name === "openai" && process.env.OPENAI_API_KEY) return await completeOpenAI(prompt);
+      if (name === "anthropic" && process.env.ANTHROPIC_API_KEY) return await completeAnthropic(prompt);
+    } catch (err) {
+      console.warn(`[youtube-copy] ${name} failed:`, err instanceof Error ? err.message : err);
     }
-    if (provider === "anthropic" && process.env.ANTHROPIC_API_KEY) {
-      return await completeAnthropic(prompt);
-    }
-  } catch (err) {
-    console.warn("[youtube-copy] LLM failed, using template:", err instanceof Error ? err.message : err);
   }
 
   return templateCopy(args);
