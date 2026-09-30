@@ -3,16 +3,16 @@ import { getChannel } from "../../../../../../core/repo/channels";
 import { getAudiobookSettings, saveAudiobookSettings } from "../../../../../../core/repo/books";
 import {
   DEFAULT_AUDIOBOOK_SETTINGS,
+  type AudiobookTtsProvider,
   type ChannelAudiobookSettings,
 } from "../../../../../../core/types";
+import {
+  AUDITION_PROVIDERS,
+  AUDITION_VOICES,
+  findAuditionVoice,
+} from "../../../../../../core/audiobook/auditionVoices";
 
 export const dynamic = "force-dynamic";
-
-const CHIRP_VOICES = [
-  "pt-BR-Chirp3-HD-Charon",
-  "pt-BR-Chirp3-HD-Orus",
-  "pt-BR-Chirp3-HD-Fenrir",
-] as const;
 
 export async function GET(
   _req: Request,
@@ -27,11 +27,20 @@ export async function GET(
   const settings = await getAudiobookSettings(channel.id);
   return NextResponse.json({
     settings,
-    voices: CHIRP_VOICES.map((id) => ({
-      id,
-      label: id.replace("pt-BR-Chirp3-HD-", ""),
-    })),
+    providers: AUDITION_PROVIDERS,
+    voices: AUDITION_VOICES,
   });
+}
+
+function storedProvider(raw: string, voiceId: string): AudiobookTtsProvider | null {
+  if (raw === "edge" || raw === "edge-neural") return "edge-neural";
+  if (raw === "google" || raw === "google-chirp3-hd") return "google-chirp3-hd";
+  if (raw === "cartesia" || raw === "elevenlabs" || raw === "openai" || raw === "gemini") return raw;
+  const found = AUDITION_VOICES.find((v) => v.id === voiceId);
+  if (!found) return null;
+  if (found.provider === "edge") return "edge-neural";
+  if (found.provider === "google") return "google-chirp3-hd";
+  return found.provider;
 }
 
 export async function PATCH(
@@ -52,7 +61,18 @@ export async function PATCH(
   };
 
   if (typeof body.ttsVoice === "string" && body.ttsVoice.trim()) {
-    next.ttsVoice = body.ttsVoice.trim();
+    const voiceId = body.ttsVoice.trim();
+    const known = findAuditionVoice(String(body.ttsProvider ?? ""), voiceId) ??
+      AUDITION_VOICES.find((v) => v.id === voiceId);
+    if (!known) {
+      return NextResponse.json({ error: "Voz desconhecida." }, { status: 400 });
+    }
+    const provider = storedProvider(String(body.ttsProvider ?? known.provider), voiceId);
+    if (!provider) {
+      return NextResponse.json({ error: "Provedor desconhecido." }, { status: 400 });
+    }
+    next.ttsVoice = voiceId;
+    next.ttsProvider = provider;
   }
   if (typeof body.ttsSpeakingRate === "number" && body.ttsSpeakingRate > 0) {
     next.ttsSpeakingRate = body.ttsSpeakingRate;

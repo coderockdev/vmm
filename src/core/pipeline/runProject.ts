@@ -127,7 +127,9 @@ export async function runProject(jobId: string): Promise<void> {
 
     // Auto-flow: music/SFX → FFmpeg scrolling text → portada (skip Remotion).
     // Re-read so a restarted job never re-renders or re-uploads work already done.
-    if (project.autoFlow) {
+    // The Hetzner worker always finishes with scrolling-text FFmpeg.
+    // Remotion Lambda ignores remote audio and bills per minute.
+    if (project.autoFlow || process.env.VMM_WORKER_NAME) {
       const current = (await getVideoProject(project.id)) ?? project;
       const onProgress = async (message: string, progress: number) => {
         await updateJob(job.id, {

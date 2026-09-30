@@ -21,6 +21,7 @@ const NAV = [
   { href: "/queue", label: "Fila de produção", icon: ListIcon },
   { href: "/renders", label: "Biblioteca", icon: BoxIcon },
   { href: "/settings", label: "Modelos", icon: GridIcon },
+  { href: "/custos", label: "Custos", icon: ListIcon },
   { href: "/renders", label: "Exportações", icon: UploadIcon },
 ];
 

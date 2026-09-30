@@ -36,6 +36,7 @@ interface ProjectRow {
   thumbnail_ref?: string | null;
   video_style_json?: string | object | null;
   audio_bed_json?: string | object | null;
+  publish_json?: string | object | null;
   created_at: string;
   updated_at: string;
 }
@@ -104,6 +105,14 @@ function bedFieldsFromJson(bed: AudioBedJson | null): Pick<
   };
 }
 
+function mergePublish(
+  fromDb: ReturnType<typeof readProjectPublish>,
+  fromFile: ReturnType<typeof readProjectPublish>
+): ReturnType<typeof readProjectPublish> {
+  if (!fromDb && !fromFile) return null;
+  return { ...(fromDb ?? {}), ...(fromFile ?? {}) };
+}
+
 function resolveAudioBed(projectId: string, raw: string | object | null | undefined): AudioBedJson | null {
   const fromDb = parseJsonObject<AudioBedJson>(raw);
   const fromOverlay = readAudioBedOverlay(projectId);
@@ -113,7 +122,10 @@ function resolveAudioBed(projectId: string, raw: string | object | null | undefi
 function rowToProject(row: ProjectRow): VideoProject {
   const style = parseJsonObject<NonNullable<VideoProject["videoStyle"]>>(row.video_style_json);
   const bed = resolveAudioBed(row.id, row.audio_bed_json);
-  const publish = readProjectPublish(row.id);
+  const publish = mergePublish(
+    parseJsonObject<NonNullable<ReturnType<typeof readProjectPublish>>>(row.publish_json),
+    readProjectPublish(row.id)
+  );
   return {
     id: row.id,
     channelId: row.channel_id,

@@ -1,3 +1,4 @@
+import React from "react";
 import { JobStatus, VideoProject } from "../../../core/types";
 
 type JobSnap = { progress: number; statusMessage: string; status: string };
@@ -38,7 +39,7 @@ export function controlSnapshot(project: VideoProject, job?: JobSnap) {
     percent = Math.max(floor, Math.min(99, Math.round(job.progress || floor)));
   }
   const stage = project.youtubeVideoId
-    ? "No YouTube"
+    ? "Enviado ao YouTube"
     : failed
       ? job?.statusMessage || project.errorMessage || "Parado"
       : live
@@ -57,13 +58,118 @@ function queueRank(status: string): number {
   return 9;
 }
 
+const PROVIDER_LABEL: Record<string, string> = {
+  elevenlabs: "ElevenLabs",
+  openai: "OpenAI",
+  anthropic: "Claude",
+  gemini: "Gemini",
+  cartesia: "Cartesia",
+  heygen: "HeyGen",
+  "remotion-lambda": "Lambda",
+  pollinations: "Pollinations",
+  local: "FFmpeg",
+};
+
+function money(n: number): string {
+  return `US$ ${n.toFixed(2)}`;
+}
+
+function when(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(iso));
+}
+
+function durationLabel(seconds: number | null): string | null {
+  if (!seconds || seconds <= 0) return null;
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function CostLine({
+  cost,
+  fallback,
+}: {
+  cost?: { totalUsd: number; byProvider: { provider: string; usd: number }[] };
+  fallback: number | null;
+}) {
+  const parts = (cost?.byProvider ?? []).filter((p) => p.usd > 0);
+  const total = cost && cost.totalUsd > 0 ? cost.totalUsd : fallback && fallback > 0 ? fallback : 0;
+  if (total <= 0 && parts.length === 0) {
+    return <p className="control-cost">Custo variável: ainda sem registro</p>;
+  }
+  return (
+    <p className="control-cost">
+      {parts.map((p) => (
+        <span key={p.provider}>
+          {PROVIDER_LABEL[p.provider] || p.provider} {money(p.usd)}
+        </span>
+      ))}
+      <strong>Total {money(total)}</strong>
+    </p>
+  );
+}
+
 export function ControlPanel({
+  channelId,
   projects,
   jobByProject,
 }: {
+  channelId: string;
   projects: VideoProject[];
   jobByProject: Record<string, JobSnap>;
 }) {
+  const [costs, setCosts] = React.useState<
+    Record<
+      string,
+      {
+        totalUsd: number;
+        byProvider: { provider: string; usd: number }[];
+        youtubeVideoId: string | null;
+        publishedAt: string | null;
+      }
+    >
+  >({});
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/channels/${channelId}/usage?period=all`);
+        const json = (await res.json()) as {
+          projects?: {
+            id: string;
+            totalUsd: number;
+            byProvider?: { provider: string; usd: number }[];
+            youtubeVideoId?: string | null;
+            publishedAt?: string | null;
+          }[];
+        };
+        if (cancelled || !json.projects) return;
+        const map: typeof costs = {};
+        for (const row of json.projects) {
+          map[row.id] = {
+            totalUsd: row.totalUsd,
+            byProvider: row.byProvider ?? [],
+            youtubeVideoId: row.youtubeVideoId ?? null,
+            publishedAt: row.publishedAt ?? null,
+          };
+        }
+        setCosts(map);
+      } catch {
+        /* the board still shows progress without money */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [channelId, projects.length]);
   const rows = [...projects].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
   const queue = rows
     .filter((project) => {
@@ -77,7 +183,13 @@ export function ControlPanel({
       return a.createdAt < b.createdAt ? -1 : 1;
     });
 
-  const onYoutube = rows.filter((p) => p.youtubeVideoId).length;
+  const seen = (project: VideoProject) => {
+    const extra = costs[project.id];
+    const youtubeVideoId = project.youtubeVideoId || extra?.youtubeVideoId || null;
+    return youtubeVideoId ? { ...project, youtubeVideoId } : project;
+  };
+
+  const onYoutube = rows.filter((p) => seen(p).youtubeVideoId).length;
   const working = queue.filter((p) => (jobByProject[p.id]?.status || p.status) !== "planned").length;
 
   return (
@@ -101,7 +213,7 @@ export function ControlPanel({
         <ol className="control-queue">
           {queue.map((project, index) => {
             const job = jobByProject[project.id];
-            const snap = controlSnapshot(project, job);
+            const snap = controlSnapshot(seen(project), job);
             const waiting = (job?.status || project.status) === "planned";
             return (
               <li key={project.id}>
@@ -119,14 +231,35 @@ export function ControlPanel({
 
       <h3 className="control-subtitle">Todos os vídeos</h3>
       <ul className="control-list">
-        {rows.map((project) => {
+        {rows.map((raw) => {
+          const project = seen(raw);
+          const extra = costs[raw.id];
           const snap = controlSnapshot(project, jobByProject[project.id]);
+          const length = durationLabel(project.renderDurationSeconds);
+          const covers = project.thumbnailConcept?.candidates?.length ?? (project.thumbnailRef ? 1 : 0);
           return (
             <li key={project.id} className={`control-row is-${snap.kind}`}>
               <div className="control-row-head">
                 <strong>{project.title}</strong>
                 <span>{snap.percent}%</span>
               </div>
+              <p className="control-when">
+                <span>Começou {when(project.createdAt)}</span>
+                {project.youtubeVideoId ? (
+                  <span>
+                    Publicado {extra?.publishedAt ? when(extra.publishedAt) : "no YouTube"}
+                  </span>
+                ) : (
+                  <span>Não publicado pelo sistema</span>
+                )}
+                {length ? (
+                  <span>
+                    Duração {length}
+                    {project.durationMinutes ? ` · pedido ${project.durationMinutes} min` : ""}
+                  </span>
+                ) : null}
+                <span>{covers} {covers === 1 ? "portada" : "portadas"}</span>
+              </p>
               <div className="control-bar" role="progressbar" aria-valuenow={snap.percent} aria-valuemin={0} aria-valuemax={100}>
                 <span style={{ width: `${snap.percent}%` }} />
               </div>
@@ -137,7 +270,8 @@ export function ControlPanel({
                   </span>
                 ))}
               </div>
-              <small>{snap.stage}</small>
+              <small>{snap.stage.length > 140 ? `${snap.stage.slice(0, 140)}…` : snap.stage}</small>
+              <CostLine cost={costs[project.id]} fallback={project.costUsdTotal} />
             </li>
           );
         })}

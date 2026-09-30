@@ -103,7 +103,7 @@ export function PortadasPanel({
   const [title, setTitle] = useState("");
   const [thumbnailText, setThumbnailText] = useState("");
   const [thumbnailScene, setThumbnailScene] = useState("");
-  const [imageProvider, setImageProvider] = useState<ImageProviderName>("pollinations");
+  const [imageProvider, setImageProvider] = useState<ImageProviderName>("openai");
   const [providerOptions, setProviderOptions] = useState<ProviderOption[]>([]);
   const [concept, setConcept] = useState<VideoConcept | null>(null);
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);

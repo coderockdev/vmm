@@ -11,7 +11,8 @@ import { fetchWithRetry, describeProviderError } from "../../httpRetry";
 import { UsageSnapshot } from "../../usage/types";
 import { sampleSuccessfulTitles } from "./ideaSuggestions";
 
-const MODEL = process.env.OPENAI_SCRIPT_MODEL || "gpt-4o";
+const configuredModel = process.env.OPENAI_SCRIPT_MODEL?.trim() || "";
+const MODEL = /mini/i.test(configuredModel) ? configuredModel : "gpt-4o-mini";
 
 export interface GenerateCoverConceptArgs {
   channel: Channel;
@@ -231,42 +232,36 @@ function mockConcept(args: GenerateCoverConceptArgs): VideoConcept {
   };
 }
 
-async function completeClaudeJson(prompt: string): Promise<{ text: string; usage: UsageSnapshot }> {
-  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
-  const model = process.env.ANTHROPIC_SCRIPT_MODEL || "claude-sonnet-5";
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 2500,
-      messages: [{ role: "user", content: `${prompt}\n\nResponde SOLO el JSON pedido.` }],
-    }),
-  });
+async function completeGeminiJson(prompt: string): Promise<{ text: string; usage: UsageSnapshot }> {
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey) throw new Error("GEMINI_API_KEY is not set");
+  const model = process.env.GEMINI_SCRIPT_MODEL || "gemini-3.8-flash";
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `${prompt}\n\nResponde SOLO el JSON pedido.` }] }],
+        generationConfig: { responseMimeType: "application/json" },
+      }),
+    }
+  );
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    throw new Error(describeProviderError(`Claude cover (modelo "${model}")`, response.status, body));
+    throw new Error(describeProviderError(`Gemini cover (${model})`, response.status, body));
   }
   const json = await response.json();
-  const text = (json.content ?? [])
-    .filter((block: { type?: string }) => block.type === "text")
-    .map((block: { text?: string }) => block.text ?? "")
-    .join("\n")
-    .trim();
-  if (!text) throw new Error("Claude returned empty cover concept.");
-  const usageRaw = json.usage ?? null;
+  const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error("Gemini returned empty cover concept.");
+  const usageRaw = json.usageMetadata ?? null;
   return {
     text,
     usage: {
-      provider: "anthropic",
+      provider: "gemini",
       model,
-      inputTokens: usageRaw?.input_tokens ?? null,
-      outputTokens: usageRaw?.output_tokens ?? null,
+      inputTokens: usageRaw?.promptTokenCount ?? null,
+      outputTokens: usageRaw?.candidatesTokenCount ?? null,
       raw: usageRaw,
     },
   };
@@ -282,16 +277,16 @@ export async function generateCoverConcept(args: GenerateCoverConceptArgs): Prom
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const quota = /insufficient_quota|sem créditos|billing_not_active|exceeded your current quota/i.test(msg);
-    if (quota && process.env.ANTHROPIC_API_KEY?.trim()) {
+    if (quota && process.env.GEMINI_API_KEY?.trim()) {
       try {
-        const { text, usage } = await completeClaudeJson(prompt);
+        const { text, usage } = await completeGeminiJson(prompt);
         const concept = parseConcept(text, args.formatChoice);
         if (args.titleHint?.trim() && !concept.title) concept.title = args.titleHint.trim();
         return { concept, usage };
-      } catch (claudeErr) {
+      } catch (geminiErr) {
         console.warn(
-          "[cover-concept] Claude fallback failed:",
-          claudeErr instanceof Error ? claudeErr.message : claudeErr
+          "[cover-concept] Gemini fallback failed:",
+          geminiErr instanceof Error ? geminiErr.message : geminiErr
         );
       }
     }

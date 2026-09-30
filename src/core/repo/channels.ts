@@ -121,10 +121,12 @@ function rowToChannel(row: ChannelRow): Channel {
 export async function listChannels(): Promise<Channel[]> {
   if (isSupabaseEnabled()) {
     const res = await getSupabase().from("channels").select("*").order("created_at", { ascending: true });
-    return assertNoError(res).map(rowToChannel);
+    return assertNoError(res)
+      .map(rowToChannel)
+      .filter((c) => c.id !== "julio-verne-em-audiolivro");
   }
   const rows = getDb().prepare(`SELECT * FROM channels ORDER BY created_at ASC`).all() as ChannelRow[];
-  return rows.map(rowToChannel);
+  return rows.map(rowToChannel).filter((c) => c.id !== "julio-verne-em-audiolivro");
 }
 
 export async function getChannel(id: string): Promise<Channel | null> {

@@ -293,9 +293,7 @@ export function ScriptReviewModal({
           <div className="script-review-action-group">
             <span className="script-review-action-label">Regenerar roteiro</span>
             <select value={regenAiOverride} onChange={(event) => setRegenAiOverride(event.target.value as AiOverride)} disabled={busy}>
-              <option value="">Padrão do sistema</option>
-              <option value="mock">Mock</option>
-              <option value="anthropic">Claude</option>
+              <option value="">ChatGPT, senão Gemini</option>
               <option value="openai">ChatGPT</option>
               <option value="gemini">Gemini</option>
             </select>

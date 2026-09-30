@@ -46,15 +46,13 @@ Devuelve SOLO JSON:
   "youtubeDescription": "descripción YouTube 800–1500 caracteres: gancho, de qué trata, para quién, CTA suave (suscribirse), hashtags al final (3–6). Sin mentiras. Sin emojis excesivos."
 }`;
 
-  const provider = (args.aiProviderOverride || process.env.AI_PROVIDER || "mock").toLowerCase();
-  const tryOrder = [provider, "anthropic", "openai", "gemini"].filter(
-    (p, i, arr) => arr.indexOf(p) === i
-  );
+  const preferred = (args.aiProviderOverride || process.env.AI_PROVIDER || "openai").toLowerCase();
+  const tryOrder = preferred === "gemini" ? ["gemini", "openai"] : ["openai", "gemini"];
 
   for (const name of tryOrder) {
     try {
       if (name === "openai" && process.env.OPENAI_API_KEY) return await completeOpenAI(prompt);
-      if (name === "anthropic" && process.env.ANTHROPIC_API_KEY) return await completeAnthropic(prompt);
+      if (name === "gemini" && process.env.GEMINI_API_KEY) return await completeGemini(prompt);
     } catch (err) {
       console.warn(`[youtube-copy] ${name} failed:`, err instanceof Error ? err.message : err);
     }
@@ -96,16 +94,19 @@ Devuelve SOLO JSON:
   ]
 }`;
 
-  const provider = (args.aiProviderOverride || process.env.AI_PROVIDER || "mock").toLowerCase();
-  try {
-    if (provider === "openai" && process.env.OPENAI_API_KEY) {
-      return await completeMancheteListOpenAI(prompt, quantity);
+  const provider = (args.aiProviderOverride || process.env.AI_PROVIDER || "openai").toLowerCase();
+  const tryOrder = provider === "gemini" ? ["gemini", "openai"] : ["openai", "gemini"];
+  for (const name of tryOrder) {
+    try {
+      if (name === "openai" && process.env.OPENAI_API_KEY) {
+        return await completeMancheteListOpenAI(prompt, quantity);
+      }
+      if (name === "gemini" && process.env.GEMINI_API_KEY) {
+        return await completeMancheteListGemini(prompt, quantity);
+      }
+    } catch (err) {
+      console.warn(`[manchetes] ${name} failed:`, err instanceof Error ? err.message : err);
     }
-    if (provider === "anthropic" && process.env.ANTHROPIC_API_KEY) {
-      return await completeMancheteListAnthropic(prompt, quantity);
-    }
-  } catch (err) {
-    console.warn("[manchetes] LLM failed, using template:", err instanceof Error ? err.message : err);
   }
 
   const items: YoutubeCopy[] = [];
@@ -156,7 +157,8 @@ Subscreve-te a ${args.channel.name}.
 }
 
 async function completeOpenAI(prompt: string): Promise<YoutubeCopy> {
-  const model = process.env.OPENAI_SCRIPT_MODEL || "gpt-4o-mini";
+  const configured = process.env.OPENAI_SCRIPT_MODEL?.trim() || "";
+  const model = /mini/i.test(configured) ? configured : "gpt-4o-mini";
   const response = await fetchWithRetry("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -185,32 +187,32 @@ async function completeOpenAI(prompt: string): Promise<YoutubeCopy> {
   });
 }
 
-async function completeAnthropic(prompt: string): Promise<YoutubeCopy> {
-  const model = process.env.ANTHROPIC_SCRIPT_MODEL || "claude-sonnet-4-20250514";
-  const response = await fetchWithRetry("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": process.env.ANTHROPIC_API_KEY!,
-      "anthropic-version": "2023-06-01",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 2000,
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
+async function completeGemini(prompt: string): Promise<YoutubeCopy> {
+  const model = process.env.GEMINI_SCRIPT_MODEL || "gemini-3.8-flash";
+  const response = await fetchWithRetry(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: "application/json" },
+      }),
+    }
+  );
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    throw new Error(describeProviderError(`Claude`, response.status, body));
+    throw new Error(describeProviderError(`Gemini`, response.status, body));
   }
   const json = await response.json();
-  const text = json.content?.map((c: { text?: string }) => c.text || "").join("") || "";
+  const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error("Gemini empty");
+  const usageRaw = json.usageMetadata ?? null;
   return parseCopy(text, {
-    provider: "anthropic",
+    provider: "gemini",
     model,
-    inputTokens: json.usage?.input_tokens ?? null,
-    outputTokens: json.usage?.output_tokens ?? null,
+    inputTokens: usageRaw?.promptTokenCount ?? null,
+    outputTokens: usageRaw?.candidatesTokenCount ?? null,
   });
 }
 
@@ -248,7 +250,8 @@ async function completeMancheteListOpenAI(
   prompt: string,
   quantity: number
 ): Promise<{ items: YoutubeCopy[]; usage: UsageSnapshot }> {
-  const model = process.env.OPENAI_SCRIPT_MODEL || "gpt-4o-mini";
+  const configured = process.env.OPENAI_SCRIPT_MODEL?.trim() || "";
+  const model = /mini/i.test(configured) ? configured : "gpt-4o-mini";
   const response = await fetchWithRetry("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -277,34 +280,35 @@ async function completeMancheteListOpenAI(
   });
 }
 
-async function completeMancheteListAnthropic(
+async function completeMancheteListGemini(
   prompt: string,
   quantity: number
 ): Promise<{ items: YoutubeCopy[]; usage: UsageSnapshot }> {
-  const model = process.env.ANTHROPIC_SCRIPT_MODEL || "claude-sonnet-4-20250514";
-  const response = await fetchWithRetry("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": process.env.ANTHROPIC_API_KEY!,
-      "anthropic-version": "2023-06-01",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 3500,
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
+  const model = process.env.GEMINI_SCRIPT_MODEL || "gemini-3.8-flash";
+  const response = await fetchWithRetry(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: "application/json" },
+      }),
+    }
+  );
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    throw new Error(describeProviderError(`Claude`, response.status, body));
+    throw new Error(describeProviderError(`Gemini`, response.status, body));
   }
   const json = await response.json();
-  const text = json.content?.map((c: { text?: string }) => c.text || "").join("") || "";
+  const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error("Gemini empty");
+  const usageRaw = json.usageMetadata ?? null;
   return parseMancheteList(text, quantity, {
-    provider: "anthropic",
+    provider: "gemini",
     model,
-    inputTokens: json.usage?.input_tokens ?? null,
-    outputTokens: json.usage?.output_tokens ?? null,
+    inputTokens: usageRaw?.promptTokenCount ?? null,
+    outputTokens: usageRaw?.candidatesTokenCount ?? null,
   });
 }
+

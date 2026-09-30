@@ -1,5 +1,5 @@
 import React from "react";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getChannel } from "../../../core/repo/channels";
 import { listProjectsForChannel, listAudioAssetsForChannel } from "../../../core/repo/projects";
 import { listPlansForChannel } from "../../../core/repo/plans";
@@ -9,6 +9,9 @@ import { ChannelWorkspace } from "./ChannelWorkspace";
 export const dynamic = "force-dynamic";
 
 export default async function ChannelPage({ params }: { params: { channelId: string } }) {
+  if (params.channelId === "julio-verne-em-audiolivro") {
+    redirect("/channels/julio-verne-audiolivro");
+  }
   await ensureSeeded();
   const channel = await getChannel(params.channelId);
   if (!channel) notFound();

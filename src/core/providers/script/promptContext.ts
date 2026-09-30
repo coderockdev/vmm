@@ -137,7 +137,7 @@ export function buildScriptGenerationContext(args: {
     ``,
     `ASSUNTO DESTA PRODUÇÃO (isto é o tema da oração — nunca leia instruções de bastidor):`,
     `"${topic}"`,
-    `- Se o assunto parecer uma lista de títulos ou disser «referencias», ignore essa lista. Fale só da dor, do silêncio e do regresso. Nunca diga «nuevos títulos», «referencias» nem leia títulos de outros vídeos.`}
+    `- Se o assunto parecer uma lista de títulos ou disser «referencias», ignore essa lista. Fale só da dor, do silêncio e do regresso. Nunca diga «nuevos títulos», «referencias» nem leia títulos de outros vídeos.`,
     ``,
     `Gere um roteiro compatível com esse canal — começando no tom certo deste DNA, nunca no template genérico de meditação.`,
   ].join("\n");

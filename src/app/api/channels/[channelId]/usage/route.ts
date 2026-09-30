@@ -71,7 +71,6 @@ export async function GET(req: NextRequest, { params }: { params: { channelId: s
         byStage.transcription += b.transcription || 0;
         byStage.render += b.render || 0;
         byStage.thumbnail += b.thumbnail || 0;
-        byStage.youtube += b.youtube || 0;
       } else if (p.costUsdTotal != null && p.costUsdTotal > 0) {
         byStage.script += p.costUsdTotal;
       }
@@ -111,13 +110,33 @@ export async function GET(req: NextRequest, { params }: { params: { channelId: s
         breakdown = normalizeBreakdown(p.costBreakdown);
       }
       const total = sumBreakdown(breakdown) || (p.costUsdTotal ?? 0);
+      const published = fromEvents.find(
+        (e) => e.stage === "youtube" && typeof (e.rawUsage as { videoId?: unknown } | null)?.videoId === "string"
+      );
+      const youtubeVideoId =
+        (typeof (published?.rawUsage as { videoId?: unknown } | null)?.videoId === "string"
+          ? ((published?.rawUsage as { videoId: string }).videoId as string)
+          : null) || p.youtubeVideoId;
+      const byProvider: { provider: string; usd: number }[] = [];
+      if (fromEvents.length > 0) {
+        const map = new Map<string, number>();
+        for (const e of fromEvents) {
+          if (e.estimatedUsd <= 0) continue;
+          map.set(e.provider, (map.get(e.provider) ?? 0) + e.estimatedUsd);
+        }
+        for (const [provider, usd] of map) byProvider.push({ provider, usd });
+        byProvider.sort((a, b) => b.usd - a.usd);
+      }
       return {
         id: p.id,
         title: p.title,
         status: p.status,
         createdAt: p.createdAt,
+        youtubeVideoId,
+        publishedAt: published?.createdAt ?? null,
         totalUsd: total,
         breakdown,
+        byProvider,
       };
     })
     .filter((p) => p.totalUsd > 0 || projectsInPeriod.length <= 40)

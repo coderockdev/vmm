@@ -8,6 +8,7 @@ import { ProjectCostLabel } from "./ProjectCostLabel";
 import { CostsPanel } from "./CostsPanel";
 import { PortadasPanel } from "./PortadasPanel";
 import { BooksPanel } from "./BooksPanel";
+import { AudiobookBoard } from "./AudiobookBoard";
 import { AudiobookVoicePanel } from "./AudiobookVoicePanel";
 import { YoutubeConnectPanel } from "./YoutubeConnectPanel";
 import { CommentsPanel } from "./CommentsPanel";
@@ -1035,7 +1036,15 @@ export function ChannelWorkspace({
       <header className="channel-profile-header">
         <div className="channel-profile-main">
           <div className="channel-profile-cover">
-            <ReferenceCrop crop={{ x: 254, y: 56, width: 167, height: 133 }} alt={`Capa de ${display.name}`} />
+            {mediaUrl(channel.id, channel.channelImageRef ?? channel.coverRef) ? (
+              <img
+                className="channel-profile-photo"
+                src={mediaUrl(channel.id, channel.channelImageRef ?? channel.coverRef) ?? undefined}
+                alt={`Capa de ${display.name}`}
+              />
+            ) : (
+              <ReferenceCrop crop={{ x: 254, y: 56, width: 167, height: 133 }} alt={`Capa de ${display.name}`} />
+            )}
             <Link href={`/channels/${channel.id}/edit`} className="cover-edit-button" aria-label="Editar capa">
               <PencilIcon size={16} />
             </Link>
@@ -1069,6 +1078,9 @@ export function ChannelWorkspace({
       <nav className="workspace-tabs" aria-label="Seções do canal">
         {isAudiobook ? (
           <>
+            <button type="button" className={activeTab === "painel" ? "active" : ""} onClick={() => setActiveTab("painel")}>
+              Painel
+            </button>
             <button type="button" className={activeTab === "livros" ? "active" : ""} onClick={() => setActiveTab("livros")}>
               Livros
             </button>
@@ -1167,7 +1179,7 @@ export function ChannelWorkspace({
       )}
 
       {activeTab === "painel" && !isAudiobook && (
-        <ControlPanel projects={projects} jobByProject={jobByProject} />
+        <ControlPanel channelId={channel.id} projects={projects} jobByProject={jobByProject} />
       )}
 
       {activeTab === "criar" && !isAudiobook && (
@@ -1484,7 +1496,7 @@ export function ChannelWorkspace({
               <MiniIcon name="sparkles" size={24} />
               <span className="voice-label">IA para gerar ideias e roteiros</span>
               <select
-                value={ideaAiOverride || "openai"}
+                value={ideaAiOverride === "gemini" ? "gemini" : "openai"}
                 onChange={(event) => {
                   const next = event.target.value as typeof ideaAiOverride;
                   setIdeaAiOverride(next);
@@ -1492,11 +1504,9 @@ export function ChannelWorkspace({
                 }}
               >
                 <option value="openai">ChatGPT (padrão)</option>
-                <option value="anthropic">Claude (Anthropic)</option>
-                <option value="gemini">Gemini (Google)</option>
-                <option value="mock">Mock (sem IA, offline)</option>
+                <option value="gemini">Gemini, se o ChatGPT não responder</option>
               </select>
-              <span className="books-muted voice-row-hint">Padrão = ChatGPT</span>
+              <span className="books-muted voice-row-hint">ChatGPT → Gemini. Claude não entra.</span>
             </div>
           </section>
 
@@ -1543,13 +1553,11 @@ export function ChannelWorkspace({
               </label>
               <select
                 className="ideas-ai-select"
-                value={scriptAiOverride}
+                value={scriptAiOverride === "openai" || scriptAiOverride === "gemini" ? scriptAiOverride : ""}
                 onChange={(event) => setScriptAiOverride(event.target.value as typeof scriptAiOverride)}
                 aria-label="IA para gerar o roteiro"
               >
-                <option value="">IA do roteiro: padrão do sistema</option>
-                <option value="mock">IA do roteiro: Mock</option>
-                <option value="anthropic">IA do roteiro: Claude</option>
+                <option value="">IA do roteiro: ChatGPT, senão Gemini</option>
                 <option value="openai">IA do roteiro: ChatGPT</option>
                 <option value="gemini">IA do roteiro: Gemini</option>
               </select>
@@ -2063,6 +2071,10 @@ export function ChannelWorkspace({
         <section className="review-queue-section">
           <CommentsPanel channel={channel} />
         </section>
+      )}
+
+      {activeTab === "painel" && isAudiobook && (
+        <AudiobookBoard channelId={channel.id} />
       )}
 
       {activeTab === "livros" && (

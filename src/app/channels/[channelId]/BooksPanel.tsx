@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { BookListItem, Chapter } from "../../../core/types";
+import { CHAPTER_STEPS, chapterSnap } from "./chapterProgress";
 
 type BookDetail = {
   book: BookListItem | (BookListItem & Record<string, unknown>);
@@ -44,6 +45,7 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
   const [autoImported, setAutoImported] = useState(false);
   const [query, setQuery] = useState("");
   const [voiceLabel, setVoiceLabel] = useState<string | null>(null);
+  const [busyChapter, setBusyChapter] = useState<string | null>(null);
 
   const loadBooks = useCallback(async () => {
     setLoading(true);
@@ -73,7 +75,8 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
         const json = await res.json().catch(() => ({}));
         if (!res.ok) return;
         const voice = String(json.settings?.ttsVoice ?? "");
-        setVoiceLabel(voice.replace("pt-BR-Chirp3-HD-", "") || null);
+        const match = (json.voices ?? []).find((v: { id: string; name?: string }) => v.id === voice);
+        setVoiceLabel(match?.name || voice.replace("pt-BR-Chirp3-HD-", "") || null);
       })
       .catch(() => undefined);
   }, [channelId]);
@@ -122,6 +125,36 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
       cancelled = true;
     };
   }, [channelId, selectedId]);
+
+  async function produceChapter(chapterId: string, mode: "audio" | "full") {
+    if (!selectedId) return;
+    setBusyChapter(chapterId);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/channels/${channelId}/books/${selectedId}/chapters/${chapterId}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode }),
+        }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      const saved = json.chapter as Chapter | undefined;
+      if (saved) {
+        setDetail((prev) =>
+          prev
+            ? { ...prev, chapters: prev.chapters.map((c) => (c.id === saved.id ? saved : c)) }
+            : prev
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyChapter(null);
+    }
+  }
 
   async function onImport() {
     setImporting(true);
@@ -179,6 +212,41 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
                 {voiceLabel ? ` Voz do canal: ${voiceLabel}.` : ""}
               </p>
             </header>
+            <section className="books-progress">
+              <h3>Painel deste livro</h3>
+              <ul className="control-list">
+                {detail.chapters.map((c) => {
+                  const snap = chapterSnap(c);
+                  return (
+                    <li key={c.id} className={`control-row is-${snap.kind}`}>
+                      <div className="control-row-head">
+                        <strong>
+                          {c.index}. {c.label}
+                        </strong>
+                        <span>{snap.percent}%</span>
+                      </div>
+                      <div
+                        className="control-bar"
+                        role="progressbar"
+                        aria-valuenow={snap.percent}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                      >
+                        <span style={{ width: `${snap.percent}%` }} />
+                      </div>
+                      <div className="control-steps">
+                        {CHAPTER_STEPS.map((label, index) => (
+                          <span key={label} className={index <= snap.step ? "on" : ""}>
+                            {label}
+                          </span>
+                        ))}
+                      </div>
+                      <small>{snap.stage}</small>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
             <div className="books-table-wrap">
               <table className="books-table">
                 <thead>
@@ -200,9 +268,27 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
                       <td>{c.chars.toLocaleString("pt-BR")}</td>
                       <td>{Math.round((c.words / 150) * 10) / 10}</td>
                       <td>
-                        <span className={`books-status books-status-${c.status}`}>
-                          {STATUS_LABEL[c.status] ?? c.status}
-                        </span>
+                        <div className="books-status-cell">
+                          <span className={`books-status books-status-${c.status}`}>
+                            {STATUS_LABEL[c.status] ?? c.status}
+                          </span>
+                          <div className="books-row-actions">
+                            <button
+                              type="button"
+                              disabled={busyChapter === c.id}
+                              onClick={() => void produceChapter(c.id, "audio")}
+                            >
+                              Gerar áudio
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busyChapter === c.id}
+                              onClick={() => void produceChapter(c.id, "full")}
+                            >
+                              Gerar sequência completa
+                            </button>
+                          </div>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -240,7 +326,7 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
 
       <div className="books-voice-banner">
         <div>
-          <strong>Antes de gerar:</strong> define a voz Chirp (Charon / Orus / Fenrir)
+          <strong>Antes de gerar:</strong> na aba Áudio ouve as vozes e marca uma como padrão
           {voiceLabel ? (
             <>
               {" "}

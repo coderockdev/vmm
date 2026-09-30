@@ -12,7 +12,8 @@ import { generateScriptWithGuard } from "./generateScriptWithGuard";
 import { fetchWithRetry, describeProviderError } from "../../httpRetry";
 import { UsageSnapshot } from "../../usage/types";
 
-const MODEL = process.env.OPENAI_SCRIPT_MODEL || "gpt-4o";
+const configured = process.env.OPENAI_SCRIPT_MODEL?.trim() || "";
+const MODEL = /mini/i.test(configured) ? configured : "gpt-4o-mini";
 
 async function complete(prompt: string): Promise<{ text: string; usage: UsageSnapshot }> {
   const apiKey = process.env.OPENAI_API_KEY;

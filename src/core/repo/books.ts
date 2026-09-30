@@ -225,6 +225,89 @@ export async function getBookByFolder(
   return row ? rowToBook(row) : null;
 }
 
+export async function getChapter(chapterId: string): Promise<Chapter | null> {
+  if (isSupabaseEnabled()) {
+    const res = await getSupabase().from("chapters").select("*").eq("id", chapterId).maybeSingle();
+    const row = assertNoError(res);
+    return row ? rowToChapter(row as ChapterRow) : null;
+  }
+  const row = getDb().prepare(`SELECT * FROM chapters WHERE id = ?`).get(chapterId) as
+    | ChapterRow
+    | undefined;
+  return row ? rowToChapter(row) : null;
+}
+
+export type ChapterBoardItem = Chapter & { bookTitle: string };
+
+export async function listChapterBoard(channelId: string): Promise<ChapterBoardItem[]> {
+  const attach = (chapters: Chapter[], titles: Map<string, string>): ChapterBoardItem[] =>
+    chapters
+      .filter((c) => c.status !== "pending")
+      .map((c) => ({ ...c, bookTitle: titles.get(c.bookId) ?? "" }))
+      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+
+  if (isSupabaseEnabled()) {
+    const booksRes = await getSupabase().from("books").select("id,title").eq("channel_id", channelId);
+    const books = assertNoError(booksRes) as Array<{ id: string; title: string }>;
+    if (books.length === 0) return [];
+    const titles = new Map(books.map((b) => [b.id, b.title]));
+    const res = await getSupabase()
+      .from("chapters")
+      .select("*")
+      .in(
+        "book_id",
+        books.map((b) => b.id)
+      )
+      .neq("status", "pending");
+    return attach(assertNoError(res).map((row) => rowToChapter(row as ChapterRow)), titles);
+  }
+
+  const bookRows = getDb()
+    .prepare(`SELECT id, title FROM books WHERE channel_id = ?`)
+    .all(channelId) as Array<{ id: string; title: string }>;
+  if (bookRows.length === 0) return [];
+  const titles = new Map(bookRows.map((b) => [b.id, b.title]));
+  const placeholders = bookRows.map(() => "?").join(",");
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM chapters WHERE book_id IN (${placeholders}) AND status != 'pending'`
+    )
+    .all(...bookRows.map((b) => b.id)) as ChapterRow[];
+  return attach(rows.map(rowToChapter), titles);
+}
+
+export async function requestChapterProduction(
+  chapterId: string,
+  mode: "audio" | "full"
+): Promise<Chapter | null> {
+  const current = await getChapter(chapterId);
+  if (!current) return null;
+  const now = new Date().toISOString();
+  const note =
+    mode === "full"
+      ? "Pedido: sequência completa (áudio, vídeo, portada, descrição, YouTube)."
+      : "Pedido: só áudio.";
+  const nextStatus: ChapterStatus =
+    current.audioPath && mode === "audio" ? "audio_ready" : "tts_running";
+  const patch = {
+    status: nextStatus,
+    error_message: note,
+    attempts: current.attempts + 1,
+    updated_at: now,
+  };
+  if (isSupabaseEnabled()) {
+    const res = await getSupabase().from("chapters").update(patch).eq("id", chapterId).select("*").maybeSingle();
+    const row = assertNoError(res);
+    return row ? rowToChapter(row as ChapterRow) : null;
+  }
+  getDb()
+    .prepare(
+      `UPDATE chapters SET status = ?, error_message = ?, attempts = ?, updated_at = ? WHERE id = ?`
+    )
+    .run(patch.status, patch.error_message, patch.attempts, patch.updated_at, chapterId);
+  return getChapter(chapterId);
+}
+
 export async function listChaptersForBook(bookId: string): Promise<Chapter[]> {
   if (isSupabaseEnabled()) {
     const res = await getSupabase()

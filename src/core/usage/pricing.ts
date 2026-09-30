@@ -55,6 +55,9 @@ export function estimateUsd(snapshot: UsageSnapshot): number {
       return tokensUsd(input, output, PRICES.anthropicInputPerMTok(), PRICES.anthropicOutputPerMTok());
     case "openai":
       if (images > 0) return images * PRICES.openaiImagePerImage();
+      if (/mini/i.test(snapshot.model || "")) {
+        return tokensUsd(input, output, 0.15, 0.6);
+      }
       return tokensUsd(input, output, PRICES.openaiInputPerMTok(), PRICES.openaiOutputPerMTok());
     case "gemini":
       if (images > 0) return images * PRICES.geminiImagePerImage();

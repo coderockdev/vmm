@@ -1,6 +1,7 @@
 import { getScriptProvider, type ScriptProvider, type ScriptProviderName } from "./index";
 
-const FALLBACK_CHAIN: ScriptProviderName[] = ["openai", "anthropic", "gemini", "mock"];
+/** Cheap text models only. Claude is too expensive for an 11-minute prayer. */
+const FALLBACK_CHAIN: ScriptProviderName[] = ["openai", "gemini"];
 
 function isBillingQuotaMessage(msg: string): boolean {
   return (
@@ -39,7 +40,8 @@ function providerAvailable(name: ScriptProviderName): boolean {
 }
 
 function buildChain(preferred?: string | null): ScriptProviderName[] {
-  const start = (preferred || process.env.AI_PROVIDER || "openai").toLowerCase() as ScriptProviderName;
+  const requested = (preferred || process.env.AI_PROVIDER || "openai").toLowerCase();
+  const start: ScriptProviderName = requested === "gemini" ? "gemini" : "openai";
   const ordered: ScriptProviderName[] = [
     start,
     ...FALLBACK_CHAIN.filter((p) => p !== start),
@@ -52,7 +54,7 @@ function buildChain(preferred?: string | null): ScriptProviderName[] {
   });
 }
 
-/** Quota, a dead key, or a transient outage moves to the next IA (Claude, Gemini, then mock). */
+/** Quota, a dead key, or a transient outage moves ChatGPT → Gemini. Claude is not in this chain. */
 function shouldFailover(err: unknown): boolean {
   const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
   if (isBillingQuotaMessage(msg)) return true;
@@ -79,7 +81,7 @@ export async function withScriptProviderFallback<T>(args: {
 }): Promise<T> {
   const chain = buildChain(args.preferred);
   if (chain.length === 0) {
-    throw new Error("Nenhuma IA configurada (OPENAI / ANTHROPIC / GEMINI).");
+    throw new Error("Nenhuma IA barata configurada (OPENAI / GEMINI). Claude não entra neste fluxo.");
   }
 
   let lastErr: unknown;

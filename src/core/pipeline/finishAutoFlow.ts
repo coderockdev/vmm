@@ -109,7 +109,7 @@ export async function finishProjectToYoutube(args: {
         script?.rawText ??
         (script?.lines ?? []).map((l) => l.text).join("\n") ??
         project.title,
-      aiProviderOverride: "anthropic",
+      aiProviderOverride: null,
     });
     writeProjectPublish(project.id, {
       headline: copy.headline,
@@ -254,16 +254,9 @@ async function generateAutoThumbnail(args: {
     }).catch(() => undefined);
   }
 
-  const primary = getImageProvider(null);
-  // OpenAI first when the key exists. If it has no credits, Gemini still follows
-  // the cover brief. Pollinations is last: it ignores the text and stamps a watermark.
-  const engineChain = [
-    primary,
-    getImageProvider("gemini"),
-    getImageProvider("pollinations-gptimage"),
-    getImageProvider("pollinations"),
-    getImageProvider("pollinations-turbo"),
-  ].filter((eng, idx, arr) => arr.findIndex((e) => e.name === eng.name) === idx);
+  // Covers are GPT only. Pollinations ignores the brief, stamps a watermark,
+  // and was publishing a single unrelated 9:16 image when OpenAI had no quota.
+  const gpt = getImageProvider("openai");
 
   const candidates: ThumbnailCandidate[] = [];
   let history = mergeThumbnailHistory(
@@ -288,47 +281,42 @@ async function generateAutoThumbnail(args: {
     const fileName = `thumb-${project.id}-${format.id}-${Date.now()}-${i}.png`;
     const outPath = workingFilePath(channel.id, "thumbnails", fileName);
 
-    let generated = false;
-    for (let attempt = 0; attempt < engineChain.length && !generated; attempt++) {
-      const eng = engineChain[attempt];
-      try {
-        await eng.generate({ prompt, outPath });
-        const ref = await persistFile(outPath, channel.id, "thumbnails", fileName, "image/png");
-        const candidate: ThumbnailCandidate = {
-          id: randomUUID(),
-          styleId: format.id,
-          styleLabel: format.name,
-          ref,
-          createdAt: new Date().toISOString(),
-        };
-        candidates.push(candidate);
-        history = mergeThumbnailHistory(history, [candidate]);
-        // Persist after each success so a crash mid-loop still leaves what we have.
-        await updateProjectThumbnail(
-          project.id,
-          {
-            ...conceptForImage,
-            imageProvider: eng.name,
-            candidates: [...candidates],
-            selectedCandidateIndex: 0,
-            history,
-            status: "generated",
-            updatedAt: new Date().toISOString(),
-          },
-          candidates[0].ref
-        );
-        generated = true;
-      } catch (err) {
-        console.warn(
-          `[auto-flow] portada ${format.id} via ${eng.name} falhou:`,
-          err instanceof Error ? err.message : err
-        );
-      }
+    try {
+      await gpt.generate({ prompt, outPath });
+      const ref = await persistFile(outPath, channel.id, "thumbnails", fileName, "image/png");
+      const candidate: ThumbnailCandidate = {
+        id: randomUUID(),
+        styleId: format.id,
+        styleLabel: format.name,
+        ref,
+        createdAt: new Date().toISOString(),
+      };
+      candidates.push(candidate);
+      history = mergeThumbnailHistory(history, [candidate]);
+      await updateProjectThumbnail(
+        project.id,
+        {
+          ...conceptForImage,
+          imageProvider: "openai",
+          candidates: [...candidates],
+          selectedCandidateIndex: 0,
+          history,
+          status: "generated",
+          updatedAt: new Date().toISOString(),
+        },
+        candidates[0].ref
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[auto-flow] portada ${format.id} via GPT falhou:`, message);
+      if (/insufficient_quota|sem créditos|billing/i.test(message)) break;
     }
   }
 
   if (candidates.length === 0) {
-    throw new Error("Nenhuma portada gerada (3 tentativas falharam).");
+    throw new Error(
+      "Nenhuma portada GPT. Sem crédito no OpenAI não se publica substituto (Pollinations saía sem o texto e com marca d'água)."
+    );
   }
   if (candidates.length < 3) {
     console.warn(

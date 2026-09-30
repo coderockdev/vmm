@@ -382,8 +382,16 @@ export interface Chapter {
   updatedAt: string;
 }
 
+export type AudiobookTtsProvider =
+  | "google-chirp3-hd"
+  | "edge-neural"
+  | "cartesia"
+  | "elevenlabs"
+  | "openai"
+  | "gemini";
+
 export interface ChannelAudiobookSettings {
-  ttsProvider: "google-chirp3-hd";
+  ttsProvider: AudiobookTtsProvider;
   ttsVoice: string;
   ttsLanguageCode: string;
   ttsSpeakingRate: number;

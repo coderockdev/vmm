@@ -2,20 +2,21 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import type { ChannelAudiobookSettings } from "../../../core/types";
+import type { AuditionProvider, AuditionVoice } from "../../../core/audiobook/auditionVoices";
 
-type VoiceOption = { id: string; label: string };
-type Sample = { voiceId: string; label: string; url: string };
+type ProviderGroup = { id: AuditionProvider; label: string };
 
 export function AudiobookVoicePanel({ channelId }: { channelId: string }) {
   const [settings, setSettings] = useState<ChannelAudiobookSettings | null>(null);
-  const [voices, setVoices] = useState<VoiceOption[]>([]);
+  const [providers, setProviders] = useState<ProviderGroup[]>([]);
+  const [voices, setVoices] = useState<AuditionVoice[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const [clips, setClips] = useState<Record<string, string>>({});
+  const [rowError, setRowError] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [sampleText, setSampleText] = useState<string | null>(null);
-  const [samples, setSamples] = useState<Sample[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -25,6 +26,7 @@ export function AudiobookVoicePanel({ channelId }: { channelId: string }) {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
       setSettings(json.settings);
+      setProviders(json.providers ?? []);
       setVoices(json.voices ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -37,182 +39,145 @@ export function AudiobookVoicePanel({ channelId }: { channelId: string }) {
     void load();
   }, [load]);
 
-  async function saveVoice(voiceId: string) {
-    if (!settings) return;
-    setSaving(true);
+  async function saveVoice(voice: AuditionVoice) {
+    setSavingId(voice.id);
     setError(null);
     setMessage(null);
     try {
       const res = await fetch(`/api/channels/${channelId}/audiobook/settings`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ttsVoice: voiceId }),
+        body: JSON.stringify({ ttsProvider: voice.provider, ttsVoice: voice.id }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
       setSettings(json.settings);
-      setMessage(`Voz guardada: ${voiceId.replace("pt-BR-Chirp3-HD-", "")}`);
+      setMessage(`${voice.name} ficou como voz padrão do canal.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setSaving(false);
+      setSavingId(null);
     }
   }
 
-  async function saveRate(rate: number) {
-    if (!settings) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/channels/${channelId}/audiobook/settings`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ttsSpeakingRate: rate }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-      setSettings(json.settings);
-      setMessage(`Velocidade: ${rate}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
+  async function playVoice(voice: AuditionVoice) {
+    setRowError((prev) => {
+      const next = { ...prev };
+      delete next[voice.id];
+      return next;
+    });
+    if (clips[voice.id]) {
+      setPlayingId(voice.id);
+      return;
     }
-  }
-
-  async function testVoices() {
-    setTesting(true);
-    setError(null);
-    setMessage(null);
-    setSamples([]);
+    setPlayingId(voice.id);
     try {
-      const res = await fetch(`/api/channels/${channelId}/audiobook/test-voices`, {
+      const res = await fetch(`/api/channels/${channelId}/audiobook/sample`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: voice.provider, voiceId: voice.id }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-      setSampleText(json.sampleText ?? null);
-      setSamples(json.samples ?? []);
-      setMessage(json.message ?? null);
-      if (json.errors?.length && !(json.samples ?? []).length) {
-        setError(json.errors.join(" · "));
-      }
+      setClips((prev) => ({ ...prev, [voice.id]: json.audio as string }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setTesting(false);
+      setPlayingId(null);
+      setRowError((prev) => ({
+        ...prev,
+        [voice.id]: err instanceof Error ? err.message : String(err),
+      }));
     }
   }
 
   if (loading) {
-    return <p className="books-muted">A carregar definições de voz…</p>;
+    return <p className="books-muted">A carregar vozes…</p>;
   }
 
   if (!settings) {
     return <p className="generation-error">{error || "Sem definições de audiolivro."}</p>;
   }
 
-  const selectedShort = settings.ttsVoice.replace("pt-BR-Chirp3-HD-", "");
+  const current = voices.find((v) => v.id === settings.ttsVoice);
 
   return (
     <div className="audiobook-voice-panel">
       <div className="workspace-section-title">
         <h2>Voz do audiolivro</h2>
         <p>
-          Define a voz Chirp 3 HD <strong>antes</strong> de gerar capítulos. A escolha fica fixa no
-          canal. Teste com ~800 caracteres do capítulo 1 da primeira obra.
+          Seis casas, vozes masculinas em português. Ouve <strong>uma de cada vez</strong> e clica em{" "}
+          <strong>Usar como padrão</strong>. Essa fica gravada no canal. Google Cloud Chirp não se
+          chama daqui: era o pedido que ficava em 504.
         </p>
       </div>
 
-      <div className="audiobook-voice-card">
-        <label className="portadas-label">
-          Voz ativa
-          <select
-            value={settings.ttsVoice}
-            disabled={saving}
-            onChange={(e) => void saveVoice(e.target.value)}
-          >
-            {(voices.length
-              ? voices
-              : [
-                  { id: "pt-BR-Chirp3-HD-Charon", label: "Charon" },
-                  { id: "pt-BR-Chirp3-HD-Orus", label: "Orus" },
-                  { id: "pt-BR-Chirp3-HD-Fenrir", label: "Fenrir" },
-                ]
-            ).map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.label}
-              </option>
-            ))}
-          </select>
-        </label>
+      <p className="books-muted">
+        Padrão atual:{" "}
+        <strong>
+          {current ? `${current.name} · ${providers.find((p) => p.id === current.provider)?.label ?? current.provider}` : settings.ttsVoice}
+        </strong>
+      </p>
+      {message && <p className="books-ok">{message}</p>}
+      {error && <p className="generation-error">{error}</p>}
 
-        <label className="portadas-label">
-          Velocidade ({settings.ttsSpeakingRate})
-          <input
-            type="range"
-            min={0.8}
-            max={1.1}
-            step={0.05}
-            value={settings.ttsSpeakingRate}
-            disabled={saving}
-            onChange={(e) => void saveRate(Number(e.target.value))}
-          />
-        </label>
-
-        <p className="books-muted">
-          Atual: <strong>{selectedShort}</strong> · idioma {settings.ttsLanguageCode} · limite mensal{" "}
-          {settings.ttsMonthlyCharLimit.toLocaleString("pt-BR")} caracteres
-        </p>
-
-        <div className="portadas-actions">
-          <button type="button" disabled={testing || saving} onClick={() => void testVoices()}>
-            {testing ? "A gerar testes…" : "Testar vozes (Charon · Orus · Fenrir)"}
-          </button>
-        </div>
-
-        {message && <p className="books-ok">{message}</p>}
-        {error && <p className="generation-error">{error}</p>}
-
-        {sampleText && (
-          <details className="audiobook-sample-text">
-            <summary>Texto de amostra (~{sampleText.length} chars)</summary>
-            <pre>{sampleText}</pre>
-          </details>
-        )}
-
-        {samples.length > 0 && (
-          <div className="audiobook-voice-samples">
-            {samples.map((s) => (
-              <div key={s.voiceId} className="audiobook-voice-sample">
-                <div className="audiobook-voice-sample-head">
-                  <strong>{s.label}</strong>
-                  {s.voiceId === settings.ttsVoice && (
-                    <span className="books-status books-status-in_progress">selecionada</span>
+      {providers.map((group) => {
+        const rows = voices.filter((v) => v.provider === group.id);
+        if (rows.length === 0) return null;
+        return (
+          <section key={group.id} className="audiobook-voice-card">
+            <h3>{group.label}</h3>
+            {rows.map((voice) => {
+              const isDefault = voice.id === settings.ttsVoice;
+              const clip = clips[voice.id];
+              const busy = playingId === voice.id && !clip;
+              return (
+                <div
+                  key={voice.id}
+                  className={`audiobook-voice-row${isDefault ? " is-default" : ""}`}
+                >
+                  <div className="audiobook-voice-row-main">
+                    <strong>{voice.name}</strong>
+                    <span className="books-muted">
+                      {voice.note} · {voice.cost}
+                    </span>
+                    {isDefault && (
+                      <span className="books-status books-status-in_progress">padrão</span>
+                    )}
+                  </div>
+                  <div className="audiobook-voice-row-actions">
+                    <button
+                      type="button"
+                      disabled={busy || Boolean(savingId)}
+                      onClick={() => void playVoice(voice)}
+                    >
+                      {busy ? "A gerar…" : clip ? "Ouvir de novo" : "Ouvir"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={Boolean(savingId) || isDefault}
+                      onClick={() => void saveVoice(voice)}
+                    >
+                      {savingId === voice.id ? "A gravar…" : isDefault ? "Padrão" : "Usar como padrão"}
+                    </button>
+                  </div>
+                  {clip && (
+                    // eslint-disable-next-line jsx-a11y/media-has-caption
+                    <audio
+                      key={clip.slice(0, 48)}
+                      controls
+                      autoPlay
+                      src={clip}
+                      preload="auto"
+                    />
                   )}
-                  <button type="button" disabled={saving} onClick={() => void saveVoice(s.voiceId)}>
-                    Usar esta
-                  </button>
+                  {rowError[voice.id] && (
+                    <p className="generation-error">{rowError[voice.id]}</p>
+                  )}
                 </div>
-                {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                <audio controls src={s.url} preload="none" />
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="audiobook-voice-card audiobook-youtube-stub">
-        <h3>YouTube</h3>
-        <p className="books-muted">
-          Liga a conta Google deste canal na aba <strong>YouTube</strong> (OAuth). Upload automático
-          de capítulos vem a seguir.
-        </p>
-        <p className="books-muted" style={{ marginTop: 8 }}>
-          Publicação prevista: {settings.publishTimeLocal} · a cada {settings.publishEveryDays}{" "}
-          dia(s) · máx. {settings.maxUploadsPerDay}/dia
-        </p>
-      </div>
+              );
+            })}
+          </section>
+        );
+      })}
     </div>
   );
 }

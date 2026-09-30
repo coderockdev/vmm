@@ -57,6 +57,7 @@ export async function ensureAudioBedColumns(): Promise<boolean> {
       await client.query(`
         alter table video_projects add column if not exists video_style_json jsonb;
         alter table video_projects add column if not exists audio_bed_json jsonb;
+        alter table video_projects add column if not exists publish_json jsonb;
       `);
       columnsReady = true;
       console.info("[audio-bed] Supabase columns video_style_json / audio_bed_json ready");
@@ -77,6 +78,7 @@ export async function ensureAudioBedColumns(): Promise<boolean> {
           await direct.query(`
             alter table video_projects add column if not exists video_style_json jsonb;
             alter table video_projects add column if not exists audio_bed_json jsonb;
+            alter table video_projects add column if not exists publish_json jsonb;
           `);
           columnsReady = true;
           console.info("[audio-bed] Supabase columns ready (direct)");

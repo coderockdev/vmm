@@ -4,7 +4,7 @@ import path from "path";
 import { getChannel } from "../../../../../../core/repo/channels";
 import { listBooksForChannel, listChaptersForBook } from "../../../../../../core/repo/books";
 import { bookSourceDir } from "../../../../../../core/audiobook/paths";
-import { CHIRP_TEST_VOICES, isChirpConfigured } from "../../../../../../core/audiobook/chirpVoices";
+import { EDGE_AUDIOBOOK_VOICES, synthesizeEdgeMp3 } from "../../../../../../core/audiobook/edgeVoices";
 import { workingFilePath, persistFileWithLocalFallback } from "../../../../../../core/storage";
 import { mediaUrl } from "../../../../../../core/media";
 
@@ -50,71 +50,20 @@ export async function POST(
     return NextResponse.json({ error: "Obra sem capítulos." }, { status: 400 });
   }
 
-  const sourcePath = path.join(bookSourceDir(book.folder), chapter.sourceFile);
-  if (!fs.existsSync(sourcePath)) {
-    return NextResponse.json(
-      { error: `Texto não encontrado: ${book.folder}/${chapter.sourceFile}` },
-      { status: 404 }
-    );
-  }
+  const sourcePath = chapter
+    ? path.join(bookSourceDir(book.folder), chapter.sourceFile)
+    : "";
+  const sampleText =
+    chapter && sourcePath && fs.existsSync(sourcePath)
+      ? sampleFromChapterText(fs.readFileSync(sourcePath, "utf8"), book.title, chapter.label)
+      : `Júlio Verne em audiolivro. ${book.title}. Esta amostra é da voz gratuita. O capítulo completo usa o mesmo narrador.`;
 
-  const raw = fs.readFileSync(sourcePath, "utf8");
-  const sampleText = sampleFromChapterText(raw, book.title, chapter.label);
-
-  if (!isChirpConfigured()) {
-    return NextResponse.json({
-      ready: false,
-      sampleText,
-      bookTitle: book.title,
-      chapterLabel: chapter.label,
-      voices: CHIRP_TEST_VOICES,
-      message:
-        "Vozes Chirp ainda sem credenciais Google Cloud. Escolhe e guarda a voz na UI; " +
-        "para ouvir o teste, configura GOOGLE_APPLICATION_CREDENTIALS (Text-to-Speech API).",
-      samples: [],
-    });
-  }
-
-  // Lazy require — package is optional until TTS stage is fully wired.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let TextToSpeechClient: any = null;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mod = require("@google-cloud/text-to-speech") as {
-      TextToSpeechClient: new () => {
-        synthesizeSpeech: (req: unknown) => Promise<[ { audioContent?: Uint8Array | string | null } ]>;
-      };
-    };
-    TextToSpeechClient = mod.TextToSpeechClient;
-  } catch {
-    return NextResponse.json({
-      ready: false,
-      sampleText,
-      bookTitle: book.title,
-      chapterLabel: chapter.label,
-      voices: CHIRP_TEST_VOICES,
-      message:
-        "Pacote @google-cloud/text-to-speech não instalado. Guarda a voz preferida; o TTS completo vem na próxima etapa.",
-      samples: [],
-    });
-  }
-
-  const client = new TextToSpeechClient();
   const samples: Array<{ voiceId: string; label: string; url: string }> = [];
   const errors: string[] = [];
 
-  for (const voice of CHIRP_TEST_VOICES) {
+  for (const voice of EDGE_AUDIOBOOK_VOICES) {
     try {
-      const [response] = await client.synthesizeSpeech({
-        input: { text: sampleText },
-        voice: { languageCode: "pt-BR", name: voice.id },
-        audioConfig: {
-          audioEncoding: "MP3",
-          speakingRate: 0.95,
-        },
-      });
-      if (!response.audioContent) throw new Error("Resposta sem áudio");
-      const buf = Buffer.from(response.audioContent as Uint8Array);
+      const buf = await synthesizeEdgeMp3(voice.id, sampleText);
       const fileName = `voice-test-${voice.label.toLowerCase()}.mp3`;
       const outPath = workingFilePath(channel.id, "audio", fileName);
       fs.mkdirSync(path.dirname(outPath), { recursive: true });
@@ -138,7 +87,7 @@ export async function POST(
     sampleText,
     bookTitle: book.title,
     chapterLabel: chapter.label,
-    voices: CHIRP_TEST_VOICES,
+    voices: EDGE_AUDIOBOOK_VOICES,
     samples,
     message:
       samples.length > 0
