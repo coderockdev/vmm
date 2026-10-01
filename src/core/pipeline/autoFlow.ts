@@ -280,6 +280,20 @@ export async function resumeAutoFlow(args: {
     const project = candidates[i];
     writeProjectPublish(project.id, { autoFlow: true });
 
+    if (project.youtubeVideoId) {
+      if (project.status !== "completed") {
+        const { updateProjectStatus } = await import("../repo/projects");
+        await updateProjectStatus(project.id, "completed", null);
+      }
+      skipped.push(project.id);
+      report("audio", {
+        done: i + 1,
+        projectId: project.id,
+        detail: `Já no YouTube · ${project.title.slice(0, 40)}…`,
+      });
+      continue;
+    }
+
     const job = await getJobForProject(project.id);
     const jobBusy =
       job &&

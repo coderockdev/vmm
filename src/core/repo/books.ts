@@ -244,7 +244,14 @@ export async function listChapterBoard(channelId: string): Promise<ChapterBoardI
     chapters
       .filter((c) => c.status !== "pending")
       .map((c) => ({ ...c, bookTitle: titles.get(c.bookId) ?? "" }))
-      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+      .sort((a, b) => {
+        const rank = (c: Chapter) => (c.status === "tts_running" || c.status === "uploading" ? 0 : 1);
+        const byQueue = rank(a) - rank(b);
+        if (byQueue !== 0) return byQueue;
+        // The fila is first-in: chapter 1 (queued earlier) stays above chapter N.
+        if (rank(a) === 0) return a.updatedAt < b.updatedAt ? -1 : 1;
+        return a.updatedAt < b.updatedAt ? 1 : -1;
+      });
 
   if (isSupabaseEnabled()) {
     const booksRes = await getSupabase().from("books").select("id,title").eq("channel_id", channelId);
@@ -278,15 +285,16 @@ export async function listChapterBoard(channelId: string): Promise<ChapterBoardI
 
 export async function requestChapterProduction(
   chapterId: string,
-  mode: "audio" | "full"
+  mode: "audio" | "full",
+  at?: string
 ): Promise<Chapter | null> {
   const current = await getChapter(chapterId);
   if (!current) return null;
-  const now = new Date().toISOString();
+  const now = at ?? new Date().toISOString();
   const note =
     mode === "full"
-      ? "Pedido: sequência completa (áudio, vídeo, portada, descrição, YouTube)."
-      : "Pedido: só áudio.";
+      ? "Na fila: sequência completa (áudio, vídeo, portada, descrição, YouTube)."
+      : "Na fila: só áudio.";
   const nextStatus: ChapterStatus =
     current.audioPath && mode === "audio" ? "audio_ready" : "tts_running";
   const patch = {
@@ -306,6 +314,50 @@ export async function requestChapterProduction(
     )
     .run(patch.status, patch.error_message, patch.attempts, patch.updated_at, chapterId);
   return getChapter(chapterId);
+}
+
+const QUEUEABLE: ChapterStatus[] = ["pending", "text_ready", "failed"];
+
+/** Chapters 1..toIndex, in order, using the same fila mark as one chapter. */
+export async function requestChapterRange(
+  bookId: string,
+  toIndex: number,
+  mode: "audio" | "full"
+): Promise<{ queued: Chapter[]; skipped: number }> {
+  const chapters = await listChaptersForBook(bookId);
+  const slice = chapters.filter((c) => c.index >= 1 && c.index <= toIndex);
+  const queued: Chapter[] = [];
+  let skipped = 0;
+  const base = Date.now();
+  for (const chapter of slice) {
+    if (!QUEUEABLE.includes(chapter.status)) {
+      skipped += 1;
+      continue;
+    }
+    const saved = await requestChapterProduction(
+      chapter.id,
+      mode,
+      new Date(base + chapter.index).toISOString()
+    );
+    if (saved) queued.push(saved);
+  }
+  if (queued.length > 0) await markBookInProgress(bookId);
+  return { queued, skipped };
+}
+
+async function markBookInProgress(bookId: string): Promise<void> {
+  const book = await getBook(bookId);
+  if (!book || book.status === "in_progress" || book.status === "completed") return;
+  const now = new Date().toISOString();
+  if (isSupabaseEnabled()) {
+    const res = await getSupabase()
+      .from("books")
+      .update({ status: "in_progress", updated_at: now })
+      .eq("id", bookId);
+    assertNoError(res);
+    return;
+  }
+  getDb().prepare(`UPDATE books SET status = ?, updated_at = ? WHERE id = ?`).run("in_progress", now, bookId);
 }
 
 export async function listChaptersForBook(bookId: string): Promise<Chapter[]> {

@@ -41,7 +41,7 @@ export function AudiobookBoard({ channelId }: { channelId: string }) {
       {error && <p className="generation-error">{error}</p>}
       {!loading && rows.length === 0 && (
         <p className="books-muted">
-          Nada em produção. Em Livros, abre a obra e usa Gerar áudio ou Gerar sequência completa.
+          Nada em produção. Em Livros, abre a obra e gera um capítulo ou um intervalo, do 1 ao número que quiseres.
         </p>
       )}
       {rows.length > 0 && (

@@ -201,7 +201,6 @@ export function ChannelWorkspace({
   const [ideaAiOverride, setIdeaAiOverride] = useState<"" | "mock" | "anthropic" | "openai" | "gemini">("openai");
   const [scriptAiOverride, setScriptAiOverride] = useState<"" | "mock" | "anthropic" | "openai" | "gemini">("openai");
   const [loadingAuto, setLoadingAuto] = useState(false);
-  const [loadingResume, setLoadingResume] = useState(false);
   const [autoError, setAutoError] = useState<string | null>(null);
   const [autoStatus, setAutoStatus] = useState<string | null>(null);
   const [autoLog, setAutoLog] = useState<Array<{ id: string; stage: string; detail: string }>>([]);
@@ -573,112 +572,6 @@ export function ChannelWorkspace({
       }
     } finally {
       setLoadingAuto(false);
-    }
-  }
-
-  /** Continue stuck auto projects without regenerating scripts (saves credits). */
-  async function handleResumeAutoFlow() {
-    setLoadingResume(true);
-    setAutoError(null);
-    setAutoStage("audio");
-    setAutoStatus("A retomar onde parou (sem gastar créditos de roteiro)…");
-    setAutoLog((prev) =>
-      [
-        ...prev,
-        {
-          id: `${Date.now()}-resume`,
-          stage: "retry",
-          detail: "Continuar onde parou — só fila de voz/vídeo/YT",
-        },
-      ].slice(-40)
-    );
-
-    const resumableIds = projects
-      .filter(
-        (p) =>
-          p.scriptId &&
-          !p.youtubeVideoId &&
-          p.status !== "completed" &&
-          (p.autoFlow ||
-            p.status === "script" ||
-            p.status === "failed" ||
-            p.status === "audio" ||
-            p.status === "rendering" ||
-            p.status === "composing" ||
-            p.status === "timing")
-      )
-      .map((p) => p.id)
-      .slice(0, 10);
-
-    try {
-      const response = await fetch(`/api/channels/${channel.id}/auto-flow/resume`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectIds: resumableIds.length ? resumableIds : undefined }),
-      });
-      if (!response.ok || !response.body) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error ?? `Falha ao retomar (HTTP ${response.status})`);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let finished = false;
-
-      while (!finished) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          let event: {
-            type?: string;
-            stage?: string;
-            detail?: string;
-            done?: number;
-            total?: number;
-            projectIds?: string[];
-            message?: string;
-            error?: string;
-          };
-          try {
-            event = JSON.parse(trimmed);
-          } catch {
-            continue;
-          }
-          if (event.type === "progress") {
-            const detail = event.detail || event.stage || "…";
-            setAutoStatus(detail);
-            if (event.stage) setAutoStage(event.stage);
-            if (typeof event.done === "number") setAutoDone(event.done);
-            if (typeof event.total === "number" && event.total > 0) setAutoTotal(event.total);
-            setAutoLog((prev) =>
-              [
-                ...prev,
-                { id: `${Date.now()}-${prev.length}`, stage: event.stage || "step", detail },
-              ].slice(-40)
-            );
-          } else if (event.type === "done") {
-            finished = true;
-            setAutoProjectIds(event.projectIds ?? resumableIds);
-            setAutoStage("queued");
-            setAutoStatus(event.message ?? "Retomado — na fila");
-            await refreshProjects();
-            await refreshJobs();
-          } else if (event.type === "error") {
-            throw new Error(event.error ?? "Erro ao retomar");
-          }
-        }
-      }
-      if (!finished) throw new Error("Ligação interrompida ao retomar.");
-    } catch (err) {
-      setAutoError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoadingResume(false);
     }
   }
 
@@ -1346,7 +1239,7 @@ export function ChannelWorkspace({
                   <button
                     type="button"
                     className="generate-ideas-button generate-auto-button"
-                    disabled={loadingAuto || loadingResume}
+                    disabled={loadingAuto}
                     onClick={() => { void handleAutoFlow(); }}
                   >
                     <MiniIcon name="sparkles" size={22} />
@@ -1356,26 +1249,6 @@ export function ChannelWorkspace({
                         ? `Gerar ${autoQuantity} vídeo${autoQuantity > 1 ? "s" : ""} → YouTube`
                         : `Gerar ${autoQuantity} do DNA → YouTube`}
                   </button>
-                  {projects.some(
-                    (p) =>
-                      p.scriptId &&
-                      !p.youtubeVideoId &&
-                      p.status !== "completed" &&
-                      (p.autoFlow ||
-                        p.status === "script" ||
-                        p.status === "failed" ||
-                        ["audio", "rendering", "composing", "timing"].includes(p.status))
-                  ) && (
-                    <button
-                      type="button"
-                      className="generate-ideas-button"
-                      disabled={loadingAuto || loadingResume}
-                      onClick={() => { void handleResumeAutoFlow(); }}
-                      title="Retoma projetos com roteiro pronto sem gastar créditos de IA de novo"
-                    >
-                      {loadingResume ? "A retomar…" : "Continuar onde parou"}
-                    </button>
-                  )}
                 </>
               )}
             </div>
@@ -1386,21 +1259,13 @@ export function ChannelWorkspace({
                 {youtubeConnected
                   ? ` em «${youtubeChannelTitle || "conta ligada"}».`
                   : " (liga a conta na aba YouTube)."}{" "}
-                Tema opcional — vazio usa o DNA. Se travar a meio, usa{" "}
-                <strong>Continuar onde parou</strong> (não regenera roteiro).
+                Tema opcional — vazio usa o DNA. Se um vídeo travar, para esse cartão em Áudio.
+                O sistema retoma sozinho; Continuar só aparece nesse vídeo se ele falhar.
               </p>
             )}
             {autoError && createMode === "auto" && (
               <div className="generation-error" role="alert">
                 <p>{autoError}</p>
-                <button
-                  type="button"
-                  className="generate-ideas-button"
-                  disabled={loadingAuto || loadingResume}
-                  onClick={() => { void handleResumeAutoFlow(); }}
-                >
-                  {loadingResume ? "A retomar…" : "Continuar onde parou (sem gastar créditos)"}
-                </button>
               </div>
             )}
             {createMode === "manual" && (
@@ -1830,6 +1695,14 @@ export function ChannelWorkspace({
                     <div className="review-queue-copy">
                       <h3>{project.title}</h3>
                       <p>
+                        {new Date(project.createdAt).toLocaleString("pt-BR", {
+                          timeZone: "America/Argentina/Buenos_Aires",
+                          day: "2-digit",
+                          month: "short",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                        {" · "}
                         {asset?.provider ?? project.ttsProviderOverride ?? channel.dna.voice.provider}
                         {asset ? ` · ${formatDuration(asset.durationSeconds)}` : ""}
                         {audioCost > 0 ? ` · áudio ${formatUsd(audioCost)}` : ""}
@@ -1974,9 +1847,9 @@ export function ChannelWorkspace({
                         className="review-queue-action"
                         disabled={retryingAudioId === project.id}
                         onClick={() => { void handleRetryAudio(project); }}
-                        title="Volta a gerar o áudio com a voz Juan Carlos (ElevenLabs)"
+                        title="Só este vídeo. O automático parou antes de terminar — continua a partir daqui."
                       >
-                        {retryingAudioId === project.id ? "A regenerar…" : "Tentar de novo"}
+                        {retryingAudioId === project.id ? "A continuar…" : "Continuar"}
                       </button>
                     ) : (
                       <button

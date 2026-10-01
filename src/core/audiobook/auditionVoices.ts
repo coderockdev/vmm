@@ -137,5 +137,11 @@ export function findAuditionVoice(provider: string, id: string): AuditionVoice |
   return AUDITION_VOICES.find((v) => v.provider === provider && v.id === id);
 }
 
+const CARTESIA_VOICE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isCartesiaVoiceId(id: string): boolean {
+  return CARTESIA_VOICE_ID.test(id.trim());
+}
+
 export const AUDITION_SAMPLE_TEXT =
   "Júlio Verne em audiolivro. Viagem ao Centro da Terra. Capítulo um. No domingo, vinte e quatro de maio de mil oitocentos e sessenta e três, meu tio, o professor Lidenbrock, voltou apressado à sua casinha.";

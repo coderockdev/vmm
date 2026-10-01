@@ -223,14 +223,75 @@ export async function createVideoProject(input: {
   return (await getVideoProject(id))!;
 }
 
+/**
+ * YouTube ids live in usage_events. publish_json is not a column, and the
+ * disk overlay does not exist on Vercel, so a published video otherwise
+ * looks unfinished and "Continuar" pays for a new narration.
+ */
+async function attachYoutubeFromUsage(projects: VideoProject[]): Promise<VideoProject[]> {
+  const missing = projects.filter((p) => !p.youtubeVideoId);
+  if (missing.length === 0) return projects;
+
+  const ids = missing.map((p) => p.id);
+  const found = new Map<string, string>();
+
+  if (isSupabaseEnabled()) {
+    const res = await getSupabase()
+      .from("usage_events")
+      .select("video_project_id, raw_usage")
+      .eq("stage", "youtube")
+      .in("video_project_id", ids);
+    if (!res.error) {
+      for (const row of res.data ?? []) {
+        const videoId = (row.raw_usage as { videoId?: string } | null)?.videoId;
+        if (videoId && row.video_project_id && !found.has(row.video_project_id)) {
+          found.set(row.video_project_id, videoId);
+        }
+      }
+    }
+  } else {
+    const rows = getDb()
+      .prepare(
+        `SELECT video_project_id, raw_usage FROM usage_events
+         WHERE stage = 'youtube' AND video_project_id IN (${ids.map(() => "?").join(",")})`
+      )
+      .all(...ids) as Array<{ video_project_id: string; raw_usage: string | null }>;
+    for (const row of rows) {
+      if (found.has(row.video_project_id)) continue;
+      try {
+        const videoId = JSON.parse(row.raw_usage || "{}")?.videoId;
+        if (typeof videoId === "string" && videoId) found.set(row.video_project_id, videoId);
+      } catch {
+        // ignore malformed usage
+      }
+    }
+  }
+
+  if (found.size === 0) return projects;
+  return projects.map((p) => {
+    const videoId = p.youtubeVideoId || found.get(p.id);
+    if (!videoId || p.youtubeVideoId) return p;
+    return {
+      ...p,
+      youtubeVideoId: videoId,
+      youtubeUrl: p.youtubeUrl ?? `https://studio.youtube.com/video/${videoId}/edit`,
+    };
+  });
+}
+
 export async function getVideoProject(id: string): Promise<VideoProject | null> {
   if (isSupabaseEnabled()) {
     const res = await getSupabase().from("video_projects").select("*").eq("id", id).maybeSingle();
     const row = assertNoError(res);
-    return row ? rowToProject(row as ProjectRow) : null;
+    const project = row ? rowToProject(row as ProjectRow) : null;
+    if (!project) return null;
+    const [hydrated] = await attachYoutubeFromUsage([project]);
+    return hydrated ?? project;
   }
   const row = getDb().prepare(`SELECT * FROM video_projects WHERE id = ?`).get(id) as ProjectRow | undefined;
-  return row ? rowToProject(row) : null;
+  if (!row) return null;
+  const [hydrated] = await attachYoutubeFromUsage([rowToProject(row)]);
+  return hydrated ?? rowToProject(row);
 }
 
 export async function listProjectsForChannel(channelId: string): Promise<VideoProject[]> {
@@ -241,12 +302,14 @@ export async function listProjectsForChannel(channelId: string): Promise<VideoPr
       .eq("channel_id", channelId)
       .order("created_at", { ascending: false });
     const projects = assertNoError(res).map(rowToProject);
-    return hydrateProjectThumbnails(await hydrateMissingProjectCosts(projects));
+    return hydrateProjectThumbnails(
+      await hydrateMissingProjectCosts(await attachYoutubeFromUsage(projects))
+    );
   }
   const rows = getDb()
     .prepare(`SELECT * FROM video_projects WHERE channel_id = ? ORDER BY created_at DESC`)
     .all(channelId) as ProjectRow[];
-  return hydrateMissingProjectCosts(rows.map(rowToProject));
+  return hydrateMissingProjectCosts(await attachYoutubeFromUsage(rows.map(rowToProject)));
 }
 
 /** Recompute cost for projects that have usage events but a null/zero stamp. */

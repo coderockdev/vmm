@@ -37,6 +37,16 @@ export async function runProject(jobId: string): Promise<void> {
   if (!channel) throw new Error(`Channel not found: ${project.channelId}`);
 
   try {
+    if (project.youtubeVideoId) {
+      await updateJob(job.id, {
+        status: "completed",
+        progress: 100,
+        statusMessage: "Já está no YouTube — sem nova narração nem novo vídeo",
+      });
+      await updateProjectStatus(project.id, "completed", null);
+      return;
+    }
+
     let lines = project.scriptId ? (await getScript(project.scriptId))?.lines ?? [] : [];
     let audioAbsolutePath: string | null = null;
     let durationInSeconds = project.durationMinutes * 60;

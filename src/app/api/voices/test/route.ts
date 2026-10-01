@@ -73,6 +73,7 @@ export async function POST(req: NextRequest) {
       speed,
       outDir: tmpDir,
       fileBaseName: "sample",
+      measureDuration: false,
     });
 
     const audioBuffer = fs.readFileSync(result.filePath);

@@ -1,26 +1,41 @@
 import { synthesizeEdgeMp3 } from "./edgeVoices";
-import { findAuditionVoice, type AuditionProvider } from "./auditionVoices";
+import { findAuditionVoice, isCartesiaVoiceId, type AuditionProvider } from "./auditionVoices";
 
-const SAMPLE =
+const SAMPLE_PT =
   "Júlio Verne em audiolivro. Capítulo um. O professor Lidenbrock voltou apressado para casa.";
+const SAMPLE_ES =
+  "Julio Verne en audiolibro. Capítulo uno. El profesor Lidenbrock volvió apurado a casa.";
+const SAMPLE_EN = "Jules Verne, audiobook. Chapter one. Professor Lidenbrock hurried back home.";
 
-export async function synthesizeAudition(provider: AuditionProvider, voiceId: string): Promise<Buffer> {
-  const voice = findAuditionVoice(provider, voiceId);
-  if (!voice) throw new Error("Voz desconhecida.");
-  if (!voice.canSample) {
+function sampleFor(language: string): { text: string; cartesia: "pt" | "es" | "en" } {
+  if (language === "es") return { text: SAMPLE_ES, cartesia: "es" };
+  if (language === "en") return { text: SAMPLE_EN, cartesia: "en" };
+  return { text: SAMPLE_PT, cartesia: "pt" };
+}
+
+export async function synthesizeAudition(
+  provider: AuditionProvider,
+  voiceId: string,
+  language = "pt"
+): Promise<Buffer> {
+  const sample = sampleFor(language);
+  const known = findAuditionVoice(provider, voiceId);
+  const dynamicCartesia = provider === "cartesia" && isCartesiaVoiceId(voiceId);
+  if (!known && !dynamicCartesia) throw new Error("Voz desconhecida.");
+  if (known && !known.canSample) {
     throw new Error(
       "Google Cloud não está ligado nesta conta. Charon por esse caminho estourava em 504. Ouve o Charon do Gemini, que responde."
     );
   }
-  if (provider === "edge") return synthesizeEdgeMp3(voiceId, SAMPLE);
-  if (provider === "cartesia") return cartesia(voiceId);
+  if (provider === "edge") return synthesizeEdgeMp3(voiceId, sample.text);
+  if (provider === "cartesia") return cartesia(voiceId, sample.text, sample.cartesia);
   if (provider === "elevenlabs") return eleven(voiceId);
   if (provider === "openai") return openai(voiceId);
   if (provider === "gemini") return gemini(voiceId);
   throw new Error("Provedor sem amostra.");
 }
 
-async function cartesia(voiceId: string): Promise<Buffer> {
+async function cartesia(voiceId: string, transcript: string, language: "pt" | "es" | "en"): Promise<Buffer> {
   const apiKey = process.env.CARTESIA_API_KEY;
   if (!apiKey) throw new Error("Falta CARTESIA_API_KEY.");
   const response = await fetch("https://api.cartesia.ai/tts/bytes", {
@@ -32,9 +47,9 @@ async function cartesia(voiceId: string): Promise<Buffer> {
     },
     body: JSON.stringify({
       model_id: "sonic-3.6",
-      transcript: SAMPLE,
+      transcript,
       voice: { id: voiceId },
-      language: "pt",
+      language,
       output_format: { container: "mp3", sample_rate: 44100, bit_rate: 128000 },
     }),
   });
@@ -56,7 +71,7 @@ async function eleven(voiceId: string): Promise<Buffer> {
       Accept: "audio/mpeg",
     },
     body: JSON.stringify({
-      text: SAMPLE,
+      text: SAMPLE_PT,
       model_id: "eleven_multilingual_v2",
     }),
   });
@@ -79,7 +94,7 @@ async function openai(voiceId: string): Promise<Buffer> {
     body: JSON.stringify({
       model: "gpt-4o-mini-tts",
       voice: voiceId,
-      input: SAMPLE,
+      input: SAMPLE_PT,
       response_format: "mp3",
     }),
   });
@@ -99,7 +114,7 @@ async function gemini(voiceName: string): Promise<Buffer> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: `Fale em português do Brasil, tom de narrador: ${SAMPLE}` }] }],
+        contents: [{ parts: [{ text: `Fale em português do Brasil, tom de narrador: ${SAMPLE_PT}` }] }],
         generationConfig: {
           responseModalities: ["AUDIO"],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },

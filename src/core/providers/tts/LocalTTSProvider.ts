@@ -45,7 +45,7 @@ export class LocalTTSProvider implements TTSProvider {
     await run("say", ["-v", voice, "-r", String(rate), "-o", aiffPath, args.text]);
     await run("ffmpeg", ["-y", "-i", aiffPath, finalPath]);
 
-    const durationSeconds = await ffprobeDuration(finalPath);
+    const durationSeconds = args.measureDuration === false ? 0 : await ffprobeDuration(finalPath);
     return { filePath: finalPath, durationSeconds, provider: this.name };
   }
 }

@@ -84,7 +84,10 @@ export async function persistFile(
     .upload(objectKey, buffer, { contentType, upsert: true });
   if (error) throw new Error(`Supabase Storage upload failed for ${objectKey}: ${error.message}`);
 
-  fs.rmSync(path.dirname(localFilePath), { recursive: true, force: true });
+  const scratch = path.dirname(localFilePath);
+  if (scratch.startsWith(os.tmpdir())) {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
 
   const { data } = getSupabase().storage.from(BUCKET).getPublicUrl(objectKey);
   return data.publicUrl;

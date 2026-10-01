@@ -43,6 +43,7 @@ export function ScriptReviewModal({
   const [ttsOverride, setTtsOverride] = useState<TtsOverride>(defaults.provider);
   const [ttsVoiceId, setTtsVoiceId] = useState(defaults.voiceId);
   const [elevenVoices, setElevenVoices] = useState<Array<{ id: string; name: string; accent: string; gender: string }>>([]);
+  const [cartesiaVoices, setCartesiaVoices] = useState<Array<{ id: string; name: string; accent: string; gender: string }>>([]);
   const [voicesLoading, setVoicesLoading] = useState(false);
   const [voicesError, setVoicesError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
@@ -89,6 +90,38 @@ export function ScriptReviewModal({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ttsOverride]);
+
+  useEffect(() => {
+    if (ttsOverride !== "cartesia") {
+      setCartesiaVoices([]);
+      return;
+    }
+    let cancelled = false;
+    setVoicesLoading(true);
+    setVoicesError(null);
+    const params = new URLSearchParams({
+      language: channel.dna.language,
+      gender: "all",
+      limit: "30",
+    });
+    void fetch(`/api/voices/cartesia?${params}`)
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error ?? `Falha ao listar vozes (${res.status})`);
+        if (cancelled) return;
+        const voices = (data.voices ?? []) as Array<{ id: string; name: string; accent: string; gender: string }>;
+        setCartesiaVoices(voices.filter((v) => v.id));
+      })
+      .catch((err) => {
+        if (!cancelled) setVoicesError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        if (!cancelled) setVoicesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ttsOverride, channel.dna.language]);
 
   async function loadScript() {
     setLoading(true);
@@ -327,6 +360,10 @@ export function ScriptReviewModal({
                       channel.dna.voice.voiceId ||
                       (channelIsHeygen ? JUAN_CARLOS_ELEVENLABS_VOICE_ID : "")
                   );
+                } else if (next === "cartesia") {
+                  setTtsVoiceId(
+                    channel.dna.voice.provider === "cartesia" ? channel.dna.voice.voiceId || "" : ""
+                  );
                 } else {
                   setTtsVoiceId("");
                 }
@@ -338,6 +375,27 @@ export function ScriptReviewModal({
               <option value="cartesia">Cartesia</option>
               <option value="elevenlabs">ElevenLabs (outra voz)</option>
             </select>
+            {ttsOverride === "cartesia" && (
+              <select
+                className="script-review-voice-select"
+                value={ttsVoiceId}
+                onChange={(event) => setTtsVoiceId(event.target.value)}
+                disabled={busy || voicesLoading}
+                aria-label={`Voz Cartesia em ${channel.dna.language === "pt" ? "português" : channel.dna.language === "en" ? "inglês" : "espanhol"}`}
+              >
+                <option value="">
+                  {voicesLoading
+                    ? "Carregando vozes…"
+                    : `Escolhe uma voz em ${channel.dna.language === "pt" ? "português" : channel.dna.language === "en" ? "inglês" : "espanhol"}`}
+                </option>
+                {cartesiaVoices.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                    {v.accent ? ` · ${v.accent}` : ""}
+                  </option>
+                ))}
+              </select>
+            )}
             {ttsOverride === "elevenlabs" && (
               <select
                 className="script-review-voice-select"

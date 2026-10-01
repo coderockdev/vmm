@@ -65,6 +65,18 @@ export async function reconcileStuckJobs(): Promise<void> {
     const shouldRequeue = (localQueueEnabled() && isBoot) || age >= limit;
     if (!shouldRequeue) continue;
 
+    const { getVideoProject } = await import("../repo/projects");
+    const published = await getVideoProject(job.videoProjectId);
+    if (published?.youtubeVideoId) {
+      await updateJob(job.id, {
+        status: "completed",
+        progress: 100,
+        statusMessage: "Já está no YouTube — sem retomar",
+      });
+      await updateProjectStatus(job.videoProjectId, "completed", null).catch(() => undefined);
+      continue;
+    }
+
     const reason = isBoot
       ? "Retomado após reinício do servidor — a continuar."
       : `${REQUEUE_MSG} (${job.status} sem update há ${Math.round(age / 60000)} min)`;
@@ -93,6 +105,17 @@ export async function reconcileStuckJobs(): Promise<void> {
     if (age > 2 * 60 * 60 * 1000) continue; // older than 2h — leave it
     const publish = readProjectPublish(job.videoProjectId);
     if (!publish?.autoFlow) continue;
+    const { getVideoProject: loadProject } = await import("../repo/projects");
+    const alreadyUp = await loadProject(job.videoProjectId);
+    if (alreadyUp?.youtubeVideoId) {
+      await updateJob(job.id, {
+        status: "completed",
+        progress: 100,
+        statusMessage: "Já está no YouTube — sem retomar",
+      });
+      await updateProjectStatus(job.videoProjectId, "completed", null).catch(() => undefined);
+      continue;
+    }
 
     await updateJob(job.id, {
       status: "planned",
@@ -121,7 +144,7 @@ export async function requeueProjectJob(projectId: string, reason = REQUEUE_MSG)
   const { enqueueJob } = await import("./queue");
 
   const project = await getVideoProject(projectId);
-  if (!project) return false;
+  if (!project || project.youtubeVideoId) return false;
 
   const jobs = (await list()).filter((j) => j.videoProjectId === projectId);
   const latest = jobs.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0];
