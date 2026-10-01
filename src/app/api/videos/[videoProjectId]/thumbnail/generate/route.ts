@@ -6,6 +6,7 @@ import { getImageProvider } from "../../../../../../core/providers/image";
 import { ImageProviderName } from "../../../../../../core/providers/image/ImageProvider";
 import { stylesForCount, mergeThumbnailHistory, ThumbnailCandidate } from "../../../../../../core/providers/image/thumbnailStyles";
 import { buildThumbnailImagePrompt } from "../../../../../../core/providers/script/coverConcept";
+import { burnThumbnailText } from "../../../../../../core/providers/image/burnThumbnailText";
 import { normalizeCoverDna, VideoConcept } from "../../../../../../core/providers/image/coverFormats";
 import { workingFilePath, persistFile } from "../../../../../../core/storage";
 import { mediaUrl } from "../../../../../../core/media";
@@ -78,6 +79,7 @@ export async function POST(req: NextRequest, { params }: { params: { videoProjec
       const outPath = workingFilePath(channel.id, "thumbnails", fileName);
       try {
         await provider.generate({ prompt, outPath });
+        await burnThumbnailText(outPath, concept.thumbnailText);
         const ref = await persistFile(outPath, channel.id, "thumbnails", fileName, "image/png");
         const candidate: ThumbnailCandidate = {
           id: randomUUID(),

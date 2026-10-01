@@ -7,6 +7,11 @@ export interface SynthesizeArgs {
   speed: number;
   outDir: string;
   fileBaseName: string;
+  /**
+   * Voice preview only needs the audio bytes. Skip ffprobe so the sample
+   * still plays on hosts that do not ship ffmpeg (Vercel, a bare PATH).
+   */
+  measureDuration?: boolean;
 }
 
 export interface SynthesizeResult {

@@ -3,6 +3,7 @@ import { getChannel } from "../../../../../../core/repo/channels";
 import { synthesizeAudition } from "../../../../../../core/audiobook/auditionSample";
 import {
   findAuditionVoice,
+  isCartesiaVoiceId,
   type AuditionProvider,
 } from "../../../../../../core/audiobook/auditionVoices";
 
@@ -36,15 +37,18 @@ export async function POST(
     return NextResponse.json({ error: "Diz o provedor e a voz." }, { status: 400 });
   }
   const voice = findAuditionVoice(provider, voiceId);
-  if (!voice) return NextResponse.json({ error: "Voz desconhecida." }, { status: 400 });
+  const dynamicCartesia = provider === "cartesia" && isCartesiaVoiceId(voiceId);
+  if (!voice && !dynamicCartesia) {
+    return NextResponse.json({ error: "Voz desconhecida." }, { status: 400 });
+  }
 
   try {
-    const buf = await synthesizeAudition(provider, voiceId);
+    const buf = await synthesizeAudition(provider, voiceId, channel.dna.language);
     const mime = provider === "gemini" ? "audio/wav" : "audio/mpeg";
     return NextResponse.json({
       provider,
       voiceId,
-      name: voice.name,
+      name: voice?.name ?? String(body.name ?? voiceId),
       mime,
       audio: `data:${mime};base64,${buf.toString("base64")}`,
     });

@@ -12,6 +12,7 @@ import {
 import { ensureLocalFile, persistFile, persistRenderLocalFirst, workingFilePath } from "../storage";
 import { renderVideo, mergePresetSettings } from "../videoRenderers";
 import { generateCoverConcept, buildThumbnailImagePrompt } from "../providers/script/coverConcept";
+import { burnThumbnailText } from "../providers/image/burnThumbnailText";
 import { getImageProvider } from "../providers/image";
 import { mergeThumbnailHistory, type ThumbnailCandidate } from "../providers/image/thumbnailStyles";
 import { normalizeCoverDna, pickRotatingCoverFormats } from "../providers/image/coverFormats";
@@ -121,7 +122,7 @@ export async function finishProjectToYoutube(args: {
 
   if (!project.thumbnailRef) {
     try {
-      await report("Gerando 3 portadas…", 88);
+      await report("Gerando 1 portada…", 88);
       await generateAutoThumbnail({ channel, project, onProgress: report });
     } catch (err) {
       console.warn(
@@ -224,18 +225,16 @@ async function generateAutoThumbnail(args: {
   const script = project.scriptId ? await getScript(project.scriptId) : null;
   const titleHint = project.headline || project.title;
   const cover = normalizeCoverDna(channel.dna.visual?.cover);
-  const formats = pickRotatingCoverFormats(cover, 3);
+  // YouTube's API keeps a single custom thumbnail. A/B variants are manual in Portadas.
+  const formats = pickRotatingCoverFormats(cover, 1);
 
   if (formats.length === 0) {
     throw new Error("Nenhum formato de portada habilitado no DNA do canal.");
   }
 
-  await onProgress?.(
-    `3 portadas: ${formats.map((f) => f.name).join(" · ")}`,
-    88
-  );
+  await onProgress?.(`1 portada: ${formats[0].name}`, 88);
 
-  // One concept (LLM) — then 3 images with distinct cover formats (cheaper + more reliable).
+  // One concept, then one GPT image — that file is what gets uploaded.
   const { concept: baseConcept, usage } = await generateCoverConcept({
     channel,
     project,
@@ -266,7 +265,7 @@ async function generateAutoThumbnail(args: {
 
   for (let i = 0; i < formats.length; i++) {
     const format = formats[i];
-    await onProgress?.(`Portada ${i + 1}/3 · ${format.name}…`, 88 + Math.min(5, i + 1));
+    await onProgress?.(`Portada · ${format.name}…`, 90);
 
     const conceptForImage = {
       ...baseConcept,
@@ -276,13 +275,14 @@ async function generateAutoThumbnail(args: {
     const prompt = buildThumbnailImagePrompt({
       channel,
       concept: conceptForImage,
-      styleExtra: `COVER FORMAT LOCK — ${format.name} (${format.previewHint}). Structure: ${format.structure}. Text: ${format.textStrategy}. Visually DISTINCT from the other two variants of this same video.`,
+      styleExtra: `COVER FORMAT — ${format.name} (${format.previewHint}). ${format.structure} Photograph only, no words.`,
     });
     const fileName = `thumb-${project.id}-${format.id}-${Date.now()}-${i}.png`;
     const outPath = workingFilePath(channel.id, "thumbnails", fileName);
 
     try {
       await gpt.generate({ prompt, outPath });
+      await burnThumbnailText(outPath, conceptForImage.thumbnailText);
       const ref = await persistFile(outPath, channel.id, "thumbnails", fileName, "image/png");
       const candidate: ThumbnailCandidate = {
         id: randomUUID(),
@@ -318,17 +318,7 @@ async function generateAutoThumbnail(args: {
       "Nenhuma portada GPT. Sem crédito no OpenAI não se publica substituto (Pollinations saía sem o texto e com marca d'água)."
     );
   }
-  if (candidates.length < 3) {
-    console.warn(
-      `[auto-flow] só ${candidates.length}/3 portadas geradas para ${project.id.slice(0, 8)}`
-    );
-    await onProgress?.(
-      `Portadas: ${candidates.length}/3 OK (algumas falharam — podes regenerar na aba Portadas)`,
-      92
-    );
-  } else {
-    await onProgress?.("3 portadas prontas", 92);
-  }
+  await onProgress?.("Portada pronta", 92);
 
   const usedIds = formats.slice(0, candidates.length).map((f) => f.id);
   cover.recentFormatIds = [...cover.recentFormatIds, ...usedIds].slice(-20);

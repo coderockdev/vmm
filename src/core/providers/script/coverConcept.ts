@@ -123,7 +123,7 @@ ${scriptExcerpt || "(no script yet — use title/topic + successful-title patter
 """
 
 Fill thumbnailText + thumbnailScene yourself from the script/DNA — the user may leave those fields empty.
-thumbnailText rules: 2–5 short punchy words; prefer COMPLETE words that fit large type with margin (never rely on letters at the extreme left/right edge — image models often clip Q, J, g, y).
+thumbnailText rules: 2–4 short complete words that fit large type with a wide margin. Never a long word that fills the width. Message copy belongs in a chat bubble, not on a phone screen.
 
 Return ONLY a JSON object:
 {
@@ -298,7 +298,16 @@ export async function generateCoverConcept(args: GenerateCoverConceptArgs): Prom
   }
 }
 
-/** Build image model prompt from VIDEO_CONCEPT + DNA (never paste full title as on-image text). */
+/** Drop caption-painting lines from stored DNA so the photo model is not told to draw words. */
+function photographicStyle(styleRules: string): string {
+  return styleRules
+    .replace(/VERY LARGE text[^.]*(?:\.|$)/gi, "")
+    .replace(/ALL letters fully inside[^.]*(?:\.|$)/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Build image model prompt from VIDEO_CONCEPT + DNA. The caption is composited later, never drawn by the model. */
 export function buildThumbnailImagePrompt(args: {
   channel: Channel;
   concept: VideoConcept;
@@ -314,20 +323,27 @@ export function buildThumbnailImagePrompt(args: {
       textStrategy: args.concept.inventedFormat?.textStrategy ?? "short text",
     } as const);
 
+  const scene = (args.concept.thumbnailScene ?? "")
+    .replace(/"[^"]*"/g, "")
+    .replace(/«[^»]*»/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
   return [
-    "YouTube thumbnail, 16:9 landscape, hyperrealistic photography, cinematic.",
-    `Channel: ${args.channel.name}.`,
+    "YouTube thumbnail photograph, 16:9 landscape, hyperrealistic, cinematic.",
+    "ABSOLUTE: the photograph contains zero letters, zero numbers, zero logos, zero captions, zero subtitles, zero UI. A caption is composited afterwards. If any glyph appears, the image is wrong.",
+    "PHONE: if a phone is in frame it is a matte dark object, out of focus, screen OFF and solid black. No lock screen, no incoming call, no clock, no caller name, no icons, no mirrored or backwards writing on the glass or on the back.",
+    "LIGHT: the face is the brightest area — soft frontal key light, eyes and skin clearly visible on a small screen. The background may stay darker. Do not bury the face in shadow.",
+    "COMPOSITION: person on the right half, fully inside the frame. Top-left stays simpler and a bit darker; nothing important there.",
+    `Channel mood: ${args.channel.name}.`,
     `Format: ${format.name}. Structure: ${"structure" in format ? format.structure : ""}.`,
-    `Scene: ${args.concept.thumbnailScene}.`,
-    `Emotion: ${args.concept.thumbnailEmotion}.`,
-    `ON-IMAGE TEXT (large, readable on mobile, max ~6 words): "${args.concept.thumbnailText}".`,
-    "TEXT LAYOUT (critical): keep ALL letters fully inside a safe margin — at least 8% inset from every edge (left, right, top, bottom). Never crop, clip, or cut off any letter (especially first/last letters like Q, J, g, y). Full glyphs must be visible. Prefer centered or slightly upper text block with padding around it.",
-    `Do NOT write this title on the image: "${args.concept.title}".`,
-    cover.styleRules,
-    `Accent colors: ${cover.accentColors.primary} and ${cover.accentColors.emphasis}.`,
-    `Avoid: ${cover.avoid.join(", ")}, cropped text, cut-off letters, text touching frame edges.`,
+    scene ? `Scene (photograph only, no writing): ${scene}.` : "",
+    args.concept.thumbnailEmotion ? `Emotion: ${args.concept.thumbnailEmotion}.` : "",
+    photographicStyle(cover.styleRules),
+    `Accent colors in the scene: ${cover.accentColors.primary} and ${cover.accentColors.emphasis}.`,
+    `Avoid: ${cover.avoid.join(", ")}.`,
     args.styleExtra?.trim() || "",
-    "No watermarks, no logos, no tiny paragraphs, no deformed hands or phones.",
+    "FINAL: no words anywhere in the image. No phone interface. Face well lit.",
   ]
     .filter(Boolean)
     .join(" ");

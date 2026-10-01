@@ -40,17 +40,35 @@ function accentLabel(accents: unknown, fallback: string): string {
   return fallback;
 }
 
-function accentRank(accents: unknown): number {
-  const label = accentLabel(accents, "").toLowerCase();
-  if (label.includes("es-co") || label.includes("colomb")) return 0;
-  if (label.includes("es-419") || label.includes("latin")) return 1;
-  if (label.includes("es-mx") || label.includes("mexic")) return 2;
-  return 3;
+type VoiceLanguage = "pt" | "es" | "en";
+
+function voiceLanguage(raw: string | null): VoiceLanguage {
+  if (raw === "pt" || raw === "es" || raw === "en") return raw;
+  return "es";
+}
+
+function accentRank(accents: unknown, language: VoiceLanguage, country: string): number {
+  const label = `${accentLabel(accents, "")} ${country}`.toLowerCase();
+  if (language === "pt") {
+    if (label.includes("pt-br") || label.includes("brazil") || country.toUpperCase() === "BR") return 0;
+    if (label.includes("pt-pt") || label.includes("portugal") || country.toUpperCase() === "PT") return 1;
+    return 2;
+  }
+  if (language === "es") {
+    if (label.includes("es-co") || label.includes("colomb")) return 0;
+    if (label.includes("es-419") || label.includes("latin")) return 1;
+    if (label.includes("es-mx") || label.includes("mexic")) return 2;
+    return 3;
+  }
+  if (label.includes("en-us") || country.toUpperCase() === "US") return 0;
+  return 1;
 }
 
 /**
  * Proxies Cartesia voice list. Keys stay on the server.
- * GET /api/voices/cartesia?q=&starting_after=&gender=masculine
+ * Only voices whose native language matches `language` are returned
+ * (Cartesia's filter also includes multilingual voices).
+ * GET /api/voices/cartesia?language=pt&q=&starting_after=&gender=all
  */
 export async function GET(req: NextRequest) {
   const apiKey = process.env.CARTESIA_API_KEY;
@@ -64,62 +82,83 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q") ?? "";
   const startingAfter = searchParams.get("starting_after") ?? "";
-  const gender = searchParams.get("gender") ?? "masculine";
-  const limit = 6;
+  const gender = searchParams.get("gender") ?? "all";
+  const language = voiceLanguage(searchParams.get("language"));
+  const limit = Math.min(40, Math.max(1, Number(searchParams.get("limit") ?? 24) || 24));
 
-  const cacheKey = `ca:v2:${q}:${startingAfter}:${gender}`;
+  const cacheKey = `ca:v3:${language}:${q}:${startingAfter}:${gender}:${limit}`;
   const cached = getCached(cacheKey);
   if (cached) return NextResponse.json(cached);
 
-  const url = new URL("https://api.cartesia.ai/voices");
-  url.searchParams.set("language", "es");
-  url.searchParams.set("limit", String(limit));
-  url.searchParams.append("expand[]", "preview_file_url");
-  if (gender && gender !== "all") url.searchParams.set("gender", gender);
-  if (q) url.searchParams.set("q", q);
-  if (startingAfter) url.searchParams.set("starting_after", startingAfter);
-
   try {
-    const res = await fetch(url.toString(), {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Cartesia-Version": CARTESIA_VERSION,
-      },
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      const status = res.status === 401 || res.status === 429 ? res.status : 502;
-      return NextResponse.json(
-        {
-          error:
-            res.status === 401
-              ? "Cartesia: chave inválida (401)."
-              : res.status === 429
-                ? "Cartesia: limite de taxa (429). Tente em instantes."
-                : `Cartesia falhou (${res.status}): ${body.slice(0, 200)}`,
+    const matched: any[] = [];
+    let cursor = startingAfter;
+    let apiHasMore = true;
+    for (let page = 0; page < 6 && matched.length <= limit && apiHasMore; page++) {
+      const url = new URL("https://api.cartesia.ai/voices");
+      url.searchParams.set("language", language);
+      url.searchParams.set("limit", "100");
+      url.searchParams.append("expand[]", "preview_file_url");
+      if (gender && gender !== "all") url.searchParams.set("gender", gender);
+      if (q) url.searchParams.set("q", q);
+      if (cursor) url.searchParams.set("starting_after", cursor);
+
+      const res = await fetch(url.toString(), {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Cartesia-Version": CARTESIA_VERSION,
         },
-        { status }
-      );
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        const status = res.status === 401 || res.status === 429 ? res.status : 502;
+        return NextResponse.json(
+          {
+            error:
+              res.status === 401
+                ? "Cartesia: chave inválida (401)."
+                : res.status === 429
+                  ? "Cartesia: limite de taxa (429). Tente em instantes."
+                  : `Cartesia falhou (${res.status}): ${body.slice(0, 200)}`,
+          },
+          { status }
+        );
+      }
+      const data = await res.json();
+      const raw = Array.isArray(data) ? data : data.data ?? data.voices ?? [];
+      for (const voice of raw) {
+        if (String(voice?.language ?? "") !== language) continue;
+        matched.push(voice);
+        if (matched.length > limit) break;
+      }
+      apiHasMore = Boolean(data.has_more && data.next_page);
+      cursor = String(data.next_page ?? "");
+      if (!cursor) apiHasMore = false;
     }
-    const data = await res.json();
-    const raw = Array.isArray(data) ? data : data.data ?? data.voices ?? [];
-    const sorted = [...raw].sort(
-      (a: any, b: any) => accentRank(a.accents) - accentRank(b.accents)
+
+    const pageVoices = matched.slice(0, limit);
+    const nextId = pageVoices.length ? String(pageVoices[pageVoices.length - 1].id ?? "") : "";
+    const sorted = [...pageVoices].sort(
+      (a, b) =>
+        accentRank(a.accents, language, String(a.country ?? "")) -
+        accentRank(b.accents, language, String(b.country ?? ""))
     );
-    const voices = sorted.map((v: any) => ({
+    const voices = sorted.map((v) => ({
       id: String(v.id ?? ""),
       name: String(v.name ?? "Sem nome"),
-      accent: accentLabel(v.accents, String(v.language ?? "es")),
+      accent: accentLabel(v.accents, language),
       gender: String(v.gender ?? ""),
       description: String(v.description ?? "").slice(0, 160),
       previewUrl: v.preview_file_url ?? v.preview_url ?? null,
+      language,
       provider: "cartesia" as const,
     }));
-    const lastId = voices.length ? voices[voices.length - 1].id : null;
+    const hasMore = matched.length > limit || apiHasMore;
     const payload = {
+      language,
       voices,
-      nextStartingAfter: voices.length >= limit ? lastId : null,
-      hasMore: voices.length >= limit,
+      nextStartingAfter: hasMore && nextId ? nextId : null,
+      hasMore,
     };
     setCache(cacheKey, payload);
     return NextResponse.json(payload);

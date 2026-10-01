@@ -6191,6 +6191,36 @@ body:has(.wizard-stage-three) .wizard-actions {
   gap: 8px;
 }
 
+.books-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 16px;
+  padding: 12px;
+  border: 1px solid var(--border, #e2e4e8);
+  border-radius: 12px;
+  background: #f8f9fb;
+}
+
+.books-bulk label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.books-bulk input[type="number"] {
+  width: 76px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid #d8dbe2;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 14px;
+}
+
 .books-progress {
   margin: 0 0 16px;
 }
@@ -6201,8 +6231,12 @@ body:has(.wizard-stage-three) .wizard-actions {
 }
 
 .books-progress .control-list {
-  max-height: 420px;
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
+}
+
+.books-progress .books-row-actions {
+  margin-top: 8px;
 }
 
 .books-row-actions {
@@ -6367,6 +6401,27 @@ body:has(.wizard-stage-three) .wizard-actions {
 .audiobook-voice-card h3 {
   margin: 0;
   font-size: 16px;
+}
+
+.audiobook-voice-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.audiobook-voice-filters input,
+.audiobook-voice-filters select {
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid #d8dbe2;
+  padding: 0 10px;
+  font-size: 13px;
+  background: #fff;
+}
+
+.audiobook-voice-filters input {
+  flex: 1;
+  min-width: 180px;
 }
 
 .audiobook-youtube-stub button:disabled {

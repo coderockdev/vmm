@@ -147,6 +147,7 @@ export function VoicePicker({
         const params = new URLSearchParams();
         if (debouncedQ) params.set("q", debouncedQ);
         params.set("gender", gender);
+        if (tab === "cartesia") params.set("language", language);
         if (tab === "elevenlabs") params.set("page", String(opts.page ?? 0));
         if (tab === "cartesia" && opts.startingAfter) params.set("starting_after", opts.startingAfter);
 
@@ -165,7 +166,7 @@ export function VoicePicker({
         setLoadingRemote(false);
       }
     },
-    [tab, debouncedQ, genderFilter]
+    [tab, debouncedQ, genderFilter, language]
   );
 
   useEffect(() => {
@@ -401,7 +402,8 @@ export function VoicePicker({
           </div>
           {tab === "cartesia" && (
             <p style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 0 }}>
-              Emoções em beta no Cartesia; oficialmente garantidas só em inglês. Teste antes.
+              Vozes em {language === "pt" ? "português" : language === "en" ? "inglês" : "espanhol"}, o idioma deste canal.
+              Emoções em beta; oficialmente garantidas só em inglês. Teste antes.
             </p>
           )}
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

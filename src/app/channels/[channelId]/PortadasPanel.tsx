@@ -111,7 +111,7 @@ export function PortadasPanel({
     Array<{ id: string; styleId: string; styleLabel: string; url: string }>
   >([]);
   const [historyUrls, setHistoryUrls] = useState<HistoryItem[]>([]);
-  const [imageCount, setImageCount] = useState<1 | 2 | 3>(3);
+  const [imageCount, setImageCount] = useState<1 | 2 | 3>(1);
   const [busy, setBusy] = useState<"concept" | "image" | "save" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -542,7 +542,7 @@ export function PortadasPanel({
           </label>
 
           <label className="portadas-label">
-            Quantas imagens (YouTube aceita até 3)
+            Quantas imagens (o automático sobe 1; 2 ou 3 são para comparar à mão)
             <div className="portadas-count-pills" role="group" aria-label="Quantidade de imagens">
               {([1, 2, 3] as const).map((n) => (
                 <button
@@ -558,10 +558,10 @@ export function PortadasPanel({
             </div>
             <span className="portadas-count-hint">
               {imageCount === 1
-                ? "1 estilo: cinemático"
+                ? "1 imagem — é esta que o YouTube recebe pela API"
                 : imageCount === 2
-                  ? "2 estilos: cinemático + alto contraste"
-                  : "3 estilos: cinemático · alto contraste · close emocional"}
+                  ? "2 imagens para comparar aqui. O YouTube fica com a que marcares como principal."
+                  : "3 imagens para comparar aqui. O YouTube fica com a que marcares como principal."}
             </span>
           </label>
 

@@ -10,6 +10,7 @@ import {
   AUDITION_PROVIDERS,
   AUDITION_VOICES,
   findAuditionVoice,
+  isCartesiaVoiceId,
 } from "../../../../../../core/audiobook/auditionVoices";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,7 @@ export async function GET(
   const settings = await getAudiobookSettings(channel.id);
   return NextResponse.json({
     settings,
+    language: channel.dna.language,
     providers: AUDITION_PROVIDERS,
     voices: AUDITION_VOICES,
   });
@@ -64,15 +66,22 @@ export async function PATCH(
     const voiceId = body.ttsVoice.trim();
     const known = findAuditionVoice(String(body.ttsProvider ?? ""), voiceId) ??
       AUDITION_VOICES.find((v) => v.id === voiceId);
-    if (!known) {
+    const dynamicCartesia = String(body.ttsProvider ?? "") === "cartesia" && isCartesiaVoiceId(voiceId);
+    if (!known && !dynamicCartesia) {
       return NextResponse.json({ error: "Voz desconhecida." }, { status: 400 });
     }
-    const provider = storedProvider(String(body.ttsProvider ?? known.provider), voiceId);
+    const provider = dynamicCartesia
+      ? "cartesia"
+      : storedProvider(String(body.ttsProvider ?? known?.provider ?? ""), voiceId);
     if (!provider) {
       return NextResponse.json({ error: "Provedor desconhecido." }, { status: 400 });
     }
     next.ttsVoice = voiceId;
     next.ttsProvider = provider;
+    if (provider === "cartesia") {
+      next.ttsLanguageCode =
+        channel.dna.language === "es" ? "es" : channel.dna.language === "en" ? "en" : "pt-BR";
+    }
   }
   if (typeof body.ttsSpeakingRate === "number" && body.ttsSpeakingRate > 0) {
     next.ttsSpeakingRate = body.ttsSpeakingRate;

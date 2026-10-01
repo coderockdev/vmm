@@ -46,6 +46,8 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
   const [query, setQuery] = useState("");
   const [voiceLabel, setVoiceLabel] = useState<string | null>(null);
   const [busyChapter, setBusyChapter] = useState<string | null>(null);
+  const [bulkTo, setBulkTo] = useState(1);
+  const [bulkMode, setBulkMode] = useState<"audio" | "full" | null>(null);
 
   const loadBooks = useCallback(async () => {
     setLoading(true);
@@ -103,6 +105,8 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
   }, [loading, autoImported, books.length, importing, channelId, loadBooks]);
 
   useEffect(() => {
+    setBulkTo(1);
+    setBulkMode(null);
     if (!selectedId) {
       setDetail(null);
       return;
@@ -153,6 +157,52 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusyChapter(null);
+    }
+  }
+
+  async function produceRange(mode: "audio" | "full") {
+    if (!selectedId || !detail) return;
+    const to = Math.min(Math.max(1, Math.floor(bulkTo) || 1), detail.chapters.length);
+    setBulkTo(to);
+    setBulkMode(mode);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/channels/${channelId}/books/${selectedId}/chapters`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode, to }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      const queued = (json.chapters ?? []) as Chapter[];
+      const skipped = Number(json.skipped ?? 0);
+      if (queued.length > 0) {
+        const byId = new Map(queued.map((c) => [c.id, c]));
+        setDetail((prev) =>
+          prev
+            ? {
+                ...prev,
+                book:
+                  prev.book.status === "queued" || prev.book.status === "paused"
+                    ? { ...prev.book, status: "in_progress" }
+                    : prev.book,
+                chapters: prev.chapters.map((c) => byId.get(c.id) ?? c),
+              }
+            : prev
+        );
+      }
+      if (queued.length === 0) {
+        setMessage("Esses capítulos já estão na fila ou já foram feitos.");
+      } else if (skipped > 0) {
+        setMessage(`${queued.length} capítulos na fila (1–${to}). ${skipped} já estavam na fila ou feitos.`);
+      } else {
+        setMessage(`${queued.length} capítulos na fila, do 1 ao ${to}.`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBulkMode(null);
     }
   }
 
@@ -212,6 +262,37 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
                 {voiceLabel ? ` Voz do canal: ${voiceLabel}.` : ""}
               </p>
             </header>
+            <div className="books-bulk">
+              <label>
+                Gerar do 1 ao
+                <input
+                  type="number"
+                  min={1}
+                  max={detail.chapters.length}
+                  value={bulkTo}
+                  disabled={bulkMode !== null}
+                  onChange={(e) => setBulkTo(Number(e.target.value))}
+                />
+              </label>
+              <div className="books-row-actions">
+                <button
+                  type="button"
+                  disabled={bulkMode !== null || busyChapter !== null}
+                  onClick={() => void produceRange("audio")}
+                >
+                  {bulkMode === "audio" ? "A pôr na fila…" : "Gerar áudio"}
+                </button>
+                <button
+                  type="button"
+                  disabled={bulkMode !== null || busyChapter !== null}
+                  onClick={() => void produceRange("full")}
+                >
+                  {bulkMode === "full" ? "A pôr na fila…" : "Gerar sequência completa"}
+                </button>
+              </div>
+              <span className="books-muted">Entram na fila do Painel, em ordem.</span>
+            </div>
+            {message && <p className="books-ok">{message}</p>}
             <section className="books-progress">
               <h3>Painel deste livro</h3>
               <ul className="control-list">
@@ -242,6 +323,22 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
                         ))}
                       </div>
                       <small>{snap.stage}</small>
+                      <div className="books-row-actions">
+                        <button
+                          type="button"
+                          disabled={busyChapter === c.id || bulkMode !== null}
+                          onClick={() => void produceChapter(c.id, "audio")}
+                        >
+                          {busyChapter === c.id ? "A gerar…" : "Gerar áudio"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busyChapter === c.id || bulkMode !== null}
+                          onClick={() => void produceChapter(c.id, "full")}
+                        >
+                          Gerar sequência completa
+                        </button>
+                      </div>
                     </li>
                   );
                 })}
@@ -275,14 +372,14 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
                           <div className="books-row-actions">
                             <button
                               type="button"
-                              disabled={busyChapter === c.id}
+                              disabled={busyChapter === c.id || bulkMode !== null}
                               onClick={() => void produceChapter(c.id, "audio")}
                             >
                               Gerar áudio
                             </button>
                             <button
                               type="button"
-                              disabled={busyChapter === c.id}
+                              disabled={busyChapter === c.id || bulkMode !== null}
                               onClick={() => void produceChapter(c.id, "full")}
                             >
                               Gerar sequência completa

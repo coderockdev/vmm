@@ -58,7 +58,7 @@ export class ElevenLabsTTSProvider implements TTSProvider {
     const arrayBuffer = await response.arrayBuffer();
     fs.writeFileSync(finalPath, Buffer.from(arrayBuffer));
 
-    const durationSeconds = await ffprobeDuration(finalPath);
+    const durationSeconds = args.measureDuration === false ? 0 : await ffprobeDuration(finalPath);
     return { filePath: finalPath, durationSeconds, provider: this.name };
   }
 }

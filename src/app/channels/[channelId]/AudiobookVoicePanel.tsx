@@ -5,6 +5,19 @@ import type { ChannelAudiobookSettings } from "../../../core/types";
 import type { AuditionProvider, AuditionVoice } from "../../../core/audiobook/auditionVoices";
 
 type ProviderGroup = { id: AuditionProvider; label: string };
+type CartesiaGender = "all" | "masculine" | "feminine";
+
+const LANGUAGE_LABEL: Record<string, string> = {
+  pt: "português",
+  es: "espanhol",
+  en: "inglês",
+};
+
+function genderNote(gender: string): string {
+  if (gender === "masculine") return "masculina";
+  if (gender === "feminine") return "feminina";
+  return gender;
+}
 
 export function AudiobookVoicePanel({ channelId }: { channelId: string }) {
   const [settings, setSettings] = useState<ChannelAudiobookSettings | null>(null);
@@ -15,8 +28,16 @@ export function AudiobookVoicePanel({ channelId }: { channelId: string }) {
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [clips, setClips] = useState<Record<string, string>>({});
   const [rowError, setRowError] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(null);
+  const [language, setLanguage] = useState("pt");
+  const [cartesiaVoices, setCartesiaVoices] = useState<AuditionVoice[]>([]);
+  const [cartesiaQuery, setCartesiaQuery] = useState("");
+  const [cartesiaGender, setCartesiaGender] = useState<CartesiaGender>("all");
+  const [cartesiaLoading, setCartesiaLoading] = useState(false);
+  const [cartesiaError, setCartesiaError] = useState<string | null>(null);
+  const [cartesiaCursor, setCartesiaCursor] = useState<string | null>(null);
+  const [cartesiaHasMore, setCartesiaHasMore] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -26,6 +47,7 @@ export function AudiobookVoicePanel({ channelId }: { channelId: string }) {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
       setSettings(json.settings);
+      setLanguage(typeof json.language === "string" ? json.language : "pt");
       setProviders(json.providers ?? []);
       setVoices(json.voices ?? []);
     } catch (err) {
@@ -38,6 +60,59 @@ export function AudiobookVoicePanel({ channelId }: { channelId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const handle = setTimeout(() => {
+      setCartesiaLoading(true);
+      setCartesiaError(null);
+      const params = new URLSearchParams({
+        language,
+        gender: cartesiaGender,
+        limit: "24",
+      });
+      if (cartesiaQuery.trim()) params.set("q", cartesiaQuery.trim());
+      void fetch(`/api/voices/cartesia?${params}`)
+        .then(async (res) => {
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+          if (cancelled) return;
+          const list = (json.voices ?? []) as Array<{
+            id: string;
+            name: string;
+            accent?: string;
+            gender?: string;
+            description?: string;
+          }>;
+          setCartesiaVoices(
+            list.map((voice) => ({
+              provider: "cartesia" as const,
+              id: voice.id,
+              name: voice.name,
+              note: [genderNote(voice.gender ?? ""), voice.accent, voice.description]
+                .filter(Boolean)
+                .join(" · "),
+              cost: "Barata",
+              canSample: true,
+            }))
+          );
+          setCartesiaCursor(json.nextStartingAfter ?? null);
+          setCartesiaHasMore(Boolean(json.hasMore));
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          setCartesiaVoices([]);
+          setCartesiaError(err instanceof Error ? err.message : String(err));
+        })
+        .finally(() => {
+          if (!cancelled) setCartesiaLoading(false);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [language, cartesiaGender, cartesiaQuery]);
 
   async function saveVoice(voice: AuditionVoice) {
     setSavingId(voice.id);
@@ -97,16 +172,65 @@ export function AudiobookVoicePanel({ channelId }: { channelId: string }) {
     return <p className="generation-error">{error || "Sem definições de audiolivro."}</p>;
   }
 
-  const current = voices.find((v) => v.id === settings.ttsVoice);
+  const current =
+    cartesiaVoices.find((v) => v.id === settings.ttsVoice) ??
+    voices.find((v) => v.id === settings.ttsVoice);
+  const languageName = LANGUAGE_LABEL[language] ?? language;
+
+  async function loadMoreCartesia() {
+    if (!cartesiaCursor || cartesiaLoading) return;
+    setCartesiaLoading(true);
+    setCartesiaError(null);
+    try {
+      const params = new URLSearchParams({
+        language,
+        gender: cartesiaGender,
+        limit: "24",
+        starting_after: cartesiaCursor,
+      });
+      if (cartesiaQuery.trim()) params.set("q", cartesiaQuery.trim());
+      const res = await fetch(`/api/voices/cartesia?${params}`);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      const list = (json.voices ?? []) as Array<{
+        id: string;
+        name: string;
+        accent?: string;
+        gender?: string;
+        description?: string;
+      }>;
+      setCartesiaVoices((prev) => {
+        const seen = new Set(prev.map((voice) => voice.id));
+        const extra = list
+          .filter((voice) => voice.id && !seen.has(voice.id))
+          .map((voice) => ({
+            provider: "cartesia" as const,
+            id: voice.id,
+            name: voice.name,
+            note: [genderNote(voice.gender ?? ""), voice.accent, voice.description]
+              .filter(Boolean)
+              .join(" · "),
+            cost: "Barata",
+            canSample: true,
+          }));
+        return [...prev, ...extra];
+      });
+      setCartesiaCursor(json.nextStartingAfter ?? null);
+      setCartesiaHasMore(Boolean(json.hasMore));
+    } catch (err) {
+      setCartesiaError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCartesiaLoading(false);
+    }
+  }
 
   return (
     <div className="audiobook-voice-panel">
       <div className="workspace-section-title">
         <h2>Voz do audiolivro</h2>
         <p>
-          Seis casas, vozes masculinas em português. Ouve <strong>uma de cada vez</strong> e clica em{" "}
-          <strong>Usar como padrão</strong>. Essa fica gravada no canal. Google Cloud Chirp não se
-          chama daqui: era o pedido que ficava em 504.
+          Cartesia lista as vozes em <strong>{languageName}</strong>, o idioma deste canal. Ouve uma e
+          clica em <strong>Usar como padrão</strong>. As outras casas continuam disponíveis abaixo.
         </p>
       </div>
 
@@ -120,11 +244,40 @@ export function AudiobookVoicePanel({ channelId }: { channelId: string }) {
       {error && <p className="generation-error">{error}</p>}
 
       {providers.map((group) => {
-        const rows = voices.filter((v) => v.provider === group.id);
-        if (rows.length === 0) return null;
+        const rows =
+          group.id === "cartesia"
+            ? cartesiaVoices.length > 0
+              ? cartesiaVoices
+              : cartesiaError
+                ? voices.filter((v) => v.provider === "cartesia")
+                : []
+            : voices.filter((v) => v.provider === group.id);
+        if (group.id !== "cartesia" && rows.length === 0) return null;
         return (
           <section key={group.id} className="audiobook-voice-card">
-            <h3>{group.label}</h3>
+            <h3>
+              {group.label}
+              {group.id === "cartesia" ? ` · ${languageName}` : ""}
+            </h3>
+            {group.id === "cartesia" && (
+              <div className="audiobook-voice-filters">
+                <input
+                  value={cartesiaQuery}
+                  onChange={(event) => setCartesiaQuery(event.target.value)}
+                  placeholder={`Buscar voz em ${languageName}…`}
+                  aria-label="Buscar voz Cartesia"
+                />
+                <select
+                  value={cartesiaGender}
+                  onChange={(event) => setCartesiaGender(event.target.value as CartesiaGender)}
+                  aria-label="Filtrar por gênero"
+                >
+                  <option value="all">Todas</option>
+                  <option value="masculine">Masculinas</option>
+                  <option value="feminine">Femininas</option>
+                </select>
+              </div>
+            )}
             {rows.map((voice) => {
               const isDefault = voice.id === settings.ttsVoice;
               const clip = clips[voice.id];
@@ -175,6 +328,20 @@ export function AudiobookVoicePanel({ channelId }: { channelId: string }) {
                 </div>
               );
             })}
+            {group.id === "cartesia" && cartesiaLoading && (
+              <p className="books-muted">A carregar vozes em {languageName}…</p>
+            )}
+            {group.id === "cartesia" && cartesiaError && (
+              <p className="generation-error">{cartesiaError}</p>
+            )}
+            {group.id === "cartesia" && !cartesiaLoading && rows.length === 0 && !cartesiaError && (
+              <p className="books-muted">Nenhuma voz Cartesia em {languageName} com esse filtro.</p>
+            )}
+            {group.id === "cartesia" && cartesiaHasMore && (
+              <button type="button" disabled={cartesiaLoading} onClick={() => void loadMoreCartesia()}>
+                Carregar mais
+              </button>
+            )}
           </section>
         );
       })}
