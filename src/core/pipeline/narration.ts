@@ -12,16 +12,50 @@ import { workingFilePath, persistFile } from "../storage";
 import { softCharLimitForProvider, splitTextForTts } from "../providers/tts/ttsLimits";
 
 const OPENING_TAG_RE = /^\s*\[/;
+const PRAYER_START_RE = /vamos a comenzar/i;
+/** Silence before «Ahora sí. Vamos a comenzar con la oración.» */
+const PRAYER_START_PAUSE_SECONDS = 1.5;
 
 /** Ensure first spoken beat of a scene carries performance direction (Amor Amor naturalness). */
 function ensureOpeningPerformance(text: string, isFirstScene: boolean): string {
   const trimmed = text.trim();
   if (!trimmed) return text;
+  if (PRAYER_START_RE.test(trimmed)) {
+    return OPENING_TAG_RE.test(trimmed) ? trimmed : `[warmly] ${trimmed}`;
+  }
   if (OPENING_TAG_RE.test(trimmed) || /<break\b/i.test(trimmed)) return text;
   if (isFirstScene) {
     return `[softly] [pause] ${trimmed}`;
   }
   return `[warmly] ${trimmed}`;
+}
+
+function stripEdgePauses(text: string, edge: "start" | "end"): string {
+  const chunk = String.raw`(?:\s*\[pause\]\s*|\s*<break\s+time=["']?[\d.]+s["']?\s*/>\s*|\s*\.{3}\s*)`;
+  const re = edge === "start" ? new RegExp(`^(?:${chunk})+`, "i") : new RegExp(`(?:${chunk})+$`, "i");
+  return text.replace(re, "").trim();
+}
+
+/**
+ * The step into the prayer is one and a half seconds of silence, not a model pause.
+ * Extra [pause] tags there stack and turn it into a hole of several seconds.
+ */
+function applyPrayerStartPause(lines: RawLine[]): RawLine[] {
+  const idx = lines.findIndex((line) => PRAYER_START_RE.test(line.text));
+  if (idx <= 0) return lines;
+  return lines.map((line, i) => {
+    if (i === idx - 1) {
+      return {
+        ...line,
+        pauseAfter: PRAYER_START_PAUSE_SECONDS,
+        text: stripEdgePauses(line.text, "end"),
+      };
+    }
+    if (i === idx) {
+      return { ...line, text: stripEdgePauses(line.text, "start") };
+    }
+    return line;
+  });
 }
 
 export interface NarrationResult {
@@ -108,6 +142,8 @@ export async function synthesizeNarration(args: {
   const maxChars = softCharLimitForProvider(provider.name);
   const speed = resolved.speed;
 
+  const spokenLines = channel.id === "amor-amor" ? applyPrayerStartPause(lines) : lines;
+
   const tmpDir = path.join(channelTmpDir(channel.id), videoProjectId);
   fs.mkdirSync(tmpDir, { recursive: true });
 
@@ -115,7 +151,7 @@ export async function synthesizeNarration(args: {
   const finalLines: ScriptLine[] = [];
   let cursor = 0;
   let characters = 0;
-  const scenes = groupLinesIntoScenes(lines);
+  const scenes = groupLinesIntoScenes(spokenLines);
 
   for (let s = 0; s < scenes.length; s++) {
     const sceneLines = scenes[s];
@@ -146,6 +182,76 @@ export async function synthesizeNarration(args: {
       .filter(Boolean)
       .join("\n\n");
     const sceneFits = sceneSpoken.length > 0 && sceneSpoken.length <= maxChars;
+
+    const prayerAt = compiled.findIndex((c) => PRAYER_START_RE.test(c.line.text));
+
+    if (sceneFits && prayerAt > 0) {
+      const slices = [
+        { items: compiled.slice(0, prayerAt), silenceAfter: PRAYER_START_PAUSE_SECONDS },
+        { items: compiled.slice(prayerAt), silenceAfter: 0 },
+      ];
+      for (let part = 0; part < slices.length; part++) {
+        const slice = slices[part];
+        const text = slice.items.map((c) => c.spoken.trim()).filter(Boolean).join("\n\n");
+        const start = cursor;
+        let dur = 0;
+        if (text) {
+          const result = await provider.synthesize({
+            text,
+            language: channel.dna.language,
+            voiceId,
+            speed,
+            outDir: tmpDir,
+            fileBaseName: `scene-${String(s + 1).padStart(2, "0")}-p${String(part).padStart(2, "0")}`,
+          });
+          clipPaths.push(result.filePath);
+          dur = result.durationSeconds;
+          cursor += dur;
+        }
+        const totalSpokenChars =
+          slice.items.reduce((sum, c) => sum + Math.max(1, c.spoken.trim().length), 0) || 1;
+        let t = start;
+        for (let j = 0; j < slice.items.length; j++) {
+          const { line, spoken } = slice.items[j];
+          const share = spoken.trim()
+            ? (Math.max(1, spoken.trim().length) / totalSpokenChars) * dur
+            : 0;
+          const isCut = part === 0 && j === slice.items.length - 1;
+          const gap = isCut ? slice.silenceAfter : 0;
+          finalLines.push({
+            text: line.text,
+            start: t,
+            end: t + share,
+            pauseAfter: gap || line.pauseAfter,
+            sectionBreak: line.sectionBreak,
+          });
+          t += share;
+          if (gap > 0) {
+            const silencePath = path.join(
+              tmpDir,
+              `pause-prayer-s${String(s + 1).padStart(2, "0")}.aiff`
+            );
+            await renderSilence(gap, silencePath);
+            clipPaths.push(silencePath);
+            cursor += gap;
+            t += gap;
+          }
+        }
+        const tail = slice.items[slice.items.length - 1];
+        if (part === slices.length - 1 && tail && tail.line.pauseAfter > 0) {
+          const silencePath = path.join(
+            tmpDir,
+            `pause-scene-s${String(s + 1).padStart(2, "0")}.aiff`
+          );
+          await renderSilence(tail.line.pauseAfter, silencePath);
+          clipPaths.push(silencePath);
+          cursor += tail.line.pauseAfter;
+          t += tail.line.pauseAfter;
+        }
+        cursor = Math.max(cursor, t);
+      }
+      continue;
+    }
 
     if (sceneFits) {
       const start = cursor;
