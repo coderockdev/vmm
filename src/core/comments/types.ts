@@ -51,6 +51,8 @@ export type CommentAutomationConfig = {
   varyResponses: boolean;
   skipAlreadyAnswered: boolean;
   responseSets?: Partial<Record<CommentCategory, string[]>>;
+  /** YouTube page token for walking older comments. "done" means the history is imported. */
+  historyPageToken?: string | null;
 };
 
 export type CommentRunLogEntry = {

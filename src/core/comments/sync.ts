@@ -56,7 +56,7 @@ export async function syncChannelComments(args: {
   if (!account) throw new Error("YouTube no conectado para este canal.");
 
   const { youtube } = await getYoutubeClientForChannel(args.channelId);
-  const maxPages = Math.min(2, Math.max(1, args.maxPages ?? 1));
+  const maxPages = Math.min(8, Math.max(1, args.maxPages ?? 1));
   let pageToken = args.pageToken || undefined;
   let imported = 0;
   let pages = 0;
