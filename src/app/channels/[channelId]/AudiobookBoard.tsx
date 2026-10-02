@@ -2,7 +2,8 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import type { Chapter } from "../../../core/types";
-import { CHAPTER_STEPS, chapterSnap } from "./chapterProgress";
+import { chapterSnap } from "./chapterProgress";
+import { ChapterParts } from "./ChapterParts";
 
 type BoardRow = Chapter & { bookTitle: string };
 
@@ -27,7 +28,7 @@ export function AudiobookBoard({ channelId }: { channelId: string }) {
 
   useEffect(() => {
     void load();
-    const timer = window.setInterval(() => void load(), 12000);
+    const timer = window.setInterval(() => void load(), 4000);
     return () => window.clearInterval(timer);
   }, [load]);
 
@@ -65,14 +66,8 @@ export function AudiobookBoard({ channelId }: { channelId: string }) {
                 >
                   <span style={{ width: `${snap.percent}%` }} />
                 </div>
-                <div className="control-steps">
-                  {CHAPTER_STEPS.map((label, index) => (
-                    <span key={label} className={index <= snap.step ? "on" : ""}>
-                      {label}
-                    </span>
-                  ))}
-                </div>
                 <small>{snap.stage}</small>
+                <ChapterParts parts={snap.parts} />
               </li>
             );
           })}

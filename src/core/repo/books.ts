@@ -10,6 +10,7 @@ import {
   ChannelAudiobookSettings,
 } from "../types";
 import { normalizeAudiobookSettings } from "../audiobook/visualBudget";
+import { freshLog, humanMessage, markPart, packMessage } from "../audiobook/chapterLog";
 
 interface BookRow {
   id: string;
@@ -277,9 +278,12 @@ export async function patchChapter(
 
 /** Take the oldest chapter that was only marked "Na fila", so a worker can run it. */
 export async function claimQueuedChapter(): Promise<{ chapter: Chapter; mode: "audio" | "full" } | null> {
-  const note = "Áudio: a ler o capítulo…";
+  const note = packMessage(
+    "Áudio: a ler o capítulo…",
+    markPart(freshLog(), "audio", { percent: 8, detail: "A ler o texto" })
+  );
   const modeOf = (message: string | null): "audio" | "full" =>
-    /sequência completa/i.test(message || "") ? "full" : "audio";
+    /sequência completa/i.test(humanMessage(message)) ? "full" : "audio";
   if (isSupabaseEnabled()) {
     const res = await getSupabase()
       .from("chapters")
@@ -370,10 +374,14 @@ export async function requestChapterProduction(
   const current = await getChapter(chapterId);
   if (!current) return null;
   const now = at ?? new Date().toISOString();
-  const note =
+  const queued = freshLog();
+  queued[0] = { ...queued[0], detail: "Na fila" };
+  const note = packMessage(
     mode === "full"
       ? "Na fila: sequência completa (áudio, vídeo, portada, descrição, YouTube)."
-      : "Na fila: só áudio.";
+      : "Na fila: só áudio.",
+    queued
+  );
   const nextStatus: ChapterStatus =
     current.audioPath && mode === "audio" ? "audio_ready" : "tts_running";
   const patch = {

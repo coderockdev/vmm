@@ -1,43 +1,93 @@
 import type { Chapter } from "../../../core/types";
+import {
+  CHAPTER_PARTS,
+  freshLog,
+  humanMessage,
+  overallPercent,
+  readLog,
+  type ChapterPart,
+} from "../../../core/audiobook/chapterLog";
 
-export const CHAPTER_STEPS = ["Áudio", "Imagens", "Vídeo", "Portada", "Descrição", "YouTube"] as const;
+export const CHAPTER_STEPS = CHAPTER_PARTS.map((part) => part.label);
 
 const ACTIVE = new Set(["tts_running", "images_ready", "video_ready", "thumb_ready", "uploading"]);
 
 export function chapterSnap(c: Chapter) {
-  const queued =
-    c.status === "tts_running" && !c.audioPath && /^Na fila:/i.test(c.errorMessage || "");
-  const message = c.errorMessage || "";
-  const joiningVideo = /^Vídeo: a juntar/i.test(message);
+  const human = humanMessage(c.errorMessage);
+  const queued = c.status === "tts_running" && /^Na fila:/i.test(human);
+  const stored = readLog(c.errorMessage);
   const version = Math.max(1, c.attempts || 1);
   const redoing = !queued && ACTIVE.has(c.status) && (version > 1 || Boolean(c.youtubeVideoId));
-
-  let step = -1;
-  if (!redoing && (c.youtubeVideoId || c.status === "published" || c.status === "uploaded" || c.status === "scheduled")) {
-    step = 5;
-  } else if (c.status === "uploading") step = 4;
-  else if (c.thumbPath || c.status === "thumb_ready") step = 3;
-  else if (c.videoPath || c.status === "video_ready" || joiningVideo) step = 2;
-  else if (c.status === "images_ready" || /^Imagens:|^Animação:/i.test(message)) step = 1;
-  else if (c.audioPath || c.status === "audio_ready" || (c.status === "tts_running" && !queued)) step = 0;
-
-  const done = !redoing && Boolean(c.youtubeVideoId || c.status === "published");
   const failed = c.status === "failed";
-  const working = redoing || (!queued && ACTIVE.has(c.status));
-  const percent = done ? 100 : step < 0 ? 0 : Math.round(((step + (working ? 0.45 : 1)) / CHAPTER_STEPS.length) * 100);
-  const live =
-    c.errorMessage || (step < 0 ? "Pendente" : working ? `${CHAPTER_STEPS[step]} em curso` : CHAPTER_STEPS[step]);
+  const done = !redoing && !queued && Boolean(c.youtubeVideoId || c.status === "published");
+
+  const parts = stored ?? partsFromStatus(c, human, queued, redoing, done, failed);
+  const percent = queued ? 0 : done ? 100 : overallPercent(parts);
+  const running = parts.find((part) => part.startedAt && !part.finishedAt);
+  const step = running ? CHAPTER_PARTS.findIndex((part) => part.id === running.id) : parts.filter((part) => part.percent >= 100).length - 1;
+  const live = running ? `${running.label}: ${running.detail}` : human || (step < 0 ? "Pendente" : "Em curso");
+  const working = Boolean(running) || (!queued && !done && !failed && ACTIVE.has(c.status));
   const stage = failed
-    ? c.errorMessage || "Parou"
+    ? human || "Parou"
     : done
       ? version > 1
         ? `Versão ${version} no YouTube`
         : "No YouTube"
       : queued
-        ? "Na fila. Áudio ainda não começou."
+        ? human
         : redoing
-          ? `Versão ${version} · a gerar de novo. ${live}`
+          ? `Versão ${version}. ${live}`
           : live;
-  const kind = done ? "done" : failed ? "failed" : working ? "working" : "idle";
-  return { percent, stage, kind, step, version, redoing };
+  const kind = done ? "done" : failed ? "failed" : working || queued ? "working" : "idle";
+  return { percent, stage, kind, step, version, redoing, parts, queued };
+}
+
+function partsFromStatus(
+  c: Chapter,
+  human: string,
+  queued: boolean,
+  redoing: boolean,
+  done: boolean,
+  failed: boolean
+): ChapterPart[] {
+  const parts = freshLog();
+  if (queued) {
+    parts[0] = { ...parts[0], detail: `Na fila desde ${clock(c.updatedAt)}` };
+    return parts;
+  }
+  let active = 0;
+  if (done || c.youtubeVideoId) active = 6;
+  else if (/^YouTube:/i.test(human) || c.status === "uploading") active = 5;
+  else if (/descrição/i.test(human)) active = 4;
+  else if (/^Portada:/i.test(human) || c.status === "thumb_ready") active = 3;
+  else if (/^Vídeo:/i.test(human) || c.status === "video_ready") active = 2;
+  else if (/^Imagens:|^Animação:/i.test(human) || c.status === "images_ready") active = 1;
+  else if (redoing || /^Áudio:/i.test(human) || c.status === "tts_running" || c.status === "audio_ready") active = 0;
+  else if (!redoing && (c.thumbPath || c.videoPath || c.audioPath)) {
+    active = c.thumbPath ? 4 : c.videoPath ? 3 : 1;
+  }
+  return parts.map((part, index) => {
+    if (done || index < active) {
+      return { ...part, percent: 100, detail: "Pronto", startedAt: c.updatedAt, finishedAt: c.updatedAt };
+    }
+    if (index === active && (failed || human)) {
+      return {
+        ...part,
+        percent: failed ? part.percent : 45,
+        detail: human || part.detail,
+        startedAt: c.updatedAt,
+        finishedAt: failed ? c.updatedAt : null,
+      };
+    }
+    return part;
+  });
+}
+
+export function partClock(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+
+function clock(iso: string): string {
+  return partClock(iso);
 }

@@ -4,7 +4,8 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { BookListItem, Chapter } from "../../../core/types";
 import { DEFAULT_AUDIOBOOK_SETTINGS } from "../../../core/types";
 import type { AudiobookVisualBudget } from "../../../core/types";
-import { CHAPTER_STEPS, chapterSnap } from "./chapterProgress";
+import { chapterSnap } from "./chapterProgress";
+import { ChapterParts } from "./ChapterParts";
 import { estimateChapterCost, formatUsd, normalizeVisualBudget } from "../../../core/audiobook/visualBudget";
 import { planChapterVisuals } from "../../../core/audiobook/visualPlan";
 
@@ -182,7 +183,7 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
           setDetail(detailFrom(json));
         })
         .catch(() => undefined);
-    }, 8000);
+    }, 4000);
     return () => window.clearInterval(timer);
   }, [channelId, selectedId, chapterLive]);
 
@@ -398,14 +399,8 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
                       >
                         <span style={{ width: `${snap.percent}%` }} />
                       </div>
-                      <div className="control-steps">
-                        {CHAPTER_STEPS.map((label, index) => (
-                          <span key={label} className={index <= snap.step ? "on" : ""}>
-                            {label}
-                          </span>
-                        ))}
-                      </div>
                       <small>{snap.stage}</small>
+                      <ChapterParts parts={snap.parts} />
                       {(c.attempts > 0 || detail.spend[c.id]) && (
                         <small className="books-muted">
                           Orçamento {formatUsd(estimateChapterCost(c.words, budget).totalUsd)}
