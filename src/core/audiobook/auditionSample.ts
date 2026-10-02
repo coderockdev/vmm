@@ -1,6 +1,7 @@
 import { synthesizeChirpMp3 } from "../providers/tts/chirpSpeech";
 import { synthesizeEdgeMp3 } from "./edgeVoices";
 import { findAuditionVoice, isCartesiaVoiceId, type AuditionProvider } from "./auditionVoices";
+import { isChirpVoiceId } from "./chirpVoices";
 
 const SAMPLE_PT =
   "Júlio Verne em audiolivro. Capítulo um. O professor Lidenbrock voltou apressado para casa.";
@@ -27,7 +28,8 @@ export async function synthesizeAudition(
   const sample = sampleFor(language);
   const known = findAuditionVoice(provider, voiceId);
   const dynamicCartesia = provider === "cartesia" && isCartesiaVoiceId(voiceId);
-  if (!known && !dynamicCartesia) throw new Error("Voz desconhecida.");
+  const dynamicChirp = provider === "google" && isChirpVoiceId(voiceId);
+  if (!known && !dynamicCartesia && !dynamicChirp) throw new Error("Voz desconhecida.");
   if (known && !known.canSample) {
     throw new Error("Esta voz ainda não tem amostra.");
   }
