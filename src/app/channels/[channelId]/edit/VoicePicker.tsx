@@ -40,10 +40,17 @@ const labelStyle: React.CSSProperties = {
 };
 
 function speedRange(provider: string): { min: number; max: number } {
+  if (provider === "google") return { min: 0.85, max: 1.05 };
   if (provider === "elevenlabs") return { min: 0.7, max: 1.2 };
   if (provider === "heygen") return { min: 0.5, max: 1.5 };
   return { min: 0.6, max: 1.5 };
 }
+
+const CHIRP_SAMPLE: Record<Language, string> = {
+  pt: "Há decisões que não chegam quando estamos preparados. Chegam em silêncio.",
+  es: "Hay decisiones que no llegan cuando estamos preparados. Llegan en silencio.",
+  en: "Some decisions do not arrive when we are ready. They arrive in silence.",
+};
 
 function emotionBadge(profile: VoiceProfile): string {
   if (!profile.capabilities.emotion_tags) return "Emoções ✗";
@@ -88,7 +95,6 @@ export function VoicePicker({
   language,
   profile,
   onChange,
-  channelId,
 }: {
   language: Language;
   profile: VoiceProfile;
@@ -228,29 +234,41 @@ export function VoicePicker({
     }
   }
 
-  async function handlePaidTest() {
-    if (profile.provider === "google" && channelId && profile.voice_id) {
-      setTesting(true);
-      setError(null);
-      try {
-        const res = await fetch(`/api/channels/${channelId}/audiobook/sample`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            provider: "google",
-            voiceId: profile.voice_id,
-            name: profile.voice_name,
-            speed: localSpeed,
-          }),
-        });
+  async function previewChirp(voiceId: string | null) {
+    if (!voiceId) {
+      setError("Essa voz do Google não tem identificador.");
+      return;
+    }
+    setTesting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/voices/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "google",
+          voiceId,
+          text: CHIRP_SAMPLE[language],
+          speed: localSpeed,
+          language,
+        }),
+      });
+      if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error ?? "Falha ao gerar amostra");
-        await playUrl(data.audio);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setTesting(false);
+        throw new Error(data.error ?? "Falha ao gerar a prévia");
       }
+      const blob = await res.blob();
+      await playUrl(URL.createObjectURL(blob));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function handlePaidTest() {
+    if (profile.provider === "google") {
+      await previewChirp(profile.voice_id);
       return;
     }
     if (!window.confirm(`Isto usa ~150 caracteres de crédito do provider ${profile.provider}. Continuar?`)) {
@@ -337,8 +355,13 @@ export function VoicePicker({
             type="button"
             onClick={(e) => {
               e.preventDefault();
-              handleFreePreview(opts.previewUrl ?? null, opts.freePreviewHeygen);
+              if (opts.profile.provider === "google") {
+                void previewChirp(opts.profile.voice_id);
+                return;
+              }
+              void handleFreePreview(opts.previewUrl ?? null, opts.freePreviewHeygen);
             }}
+            disabled={testing}
             style={previewBtnStyle}
           >
             ▶ Prévia

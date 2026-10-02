@@ -14,6 +14,7 @@ import { ImageToVideoLab } from "./ImageToVideoLab";
 import { YoutubeConnectPanel } from "./YoutubeConnectPanel";
 import { CommentsPanel } from "./CommentsPanel";
 import { ControlPanel } from "./ControlPanel";
+import type { StepClock } from "../../../core/pipeline/stepClock";
 import { AudioBedControls } from "./AudioBedControls";
 import { formatUsd } from "../../../core/usage/types";
 import { findVoice } from "../../../core/providers/tts/voiceCatalog";
@@ -233,7 +234,9 @@ export function ChannelWorkspace({
   const [scriptError, setScriptError] = useState<string | null>(null);
   const [projects, setProjects] = useState<VideoProject[]>(initialProjects);
   const [audioAssets, setAudioAssets] = useState<AudioAsset[]>(initialAudioAssets);
-  const [jobByProject, setJobByProject] = useState<Record<string, { progress: number; statusMessage: string; status: string }>>({});
+  const [jobByProject, setJobByProject] = useState<
+    Record<string, { progress: number; statusMessage: string; status: string; createdAt?: string; updatedAt?: string; steps?: StepClock }>
+  >({});
   const [reviewingProject, setReviewingProject] = useState<VideoProject | null>(null);
   const [pendingScriptTitles, setPendingScriptTitles] = useState<string[]>([]);
   const [retryingAudioId, setRetryingAudioId] = useState<string | null>(null);
@@ -381,10 +384,15 @@ export function ChannelWorkspace({
           progress?: number;
           statusMessage?: string;
           status?: string;
+          createdAt?: string;
           updatedAt?: string;
+          steps?: StepClock;
         }>;
       };
-      const map: Record<string, { progress: number; statusMessage: string; status: string }> = {};
+      const map: Record<
+        string,
+        { progress: number; statusMessage: string; status: string; createdAt?: string; updatedAt?: string; steps?: StepClock }
+      > = {};
       // Prefer the newest job per project (API may return several historical rows).
       const sorted = [...(data.jobs ?? [])].sort((a, b) =>
         String(a.updatedAt || "").localeCompare(String(b.updatedAt || ""))
@@ -395,6 +403,9 @@ export function ChannelWorkspace({
           progress: job.progress ?? 0,
           statusMessage: job.statusMessage ?? "",
           status: job.status ?? "",
+          createdAt: job.createdAt,
+          updatedAt: job.updatedAt,
+          steps: job.steps,
         };
       }
       setJobByProject(map);

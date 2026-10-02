@@ -18,6 +18,9 @@ export * from "./compileForVoice";
  */
 export function getTTSProvider(override?: TTSProviderName | null): TTSProvider {
   const name = override ?? ((process.env.TTS_PROVIDER as TTSProviderName) || "cartesia");
+  if ((name as string) === "google") {
+    throw new Error("Chirp se sintetiza con synthesizeChirpMp3, no con getTTSProvider.");
+  }
 
   switch (name) {
     case "local":

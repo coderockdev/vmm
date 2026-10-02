@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { listJobs } from "../../../core/repo/jobs";
+import { humanOf, readClock } from "../../../core/pipeline/stepClock";
 import { getSupabase, isSupabaseEnabled, assertNoError } from "../../../core/supabaseClient";
 import { getDb } from "../../../core/db";
 
@@ -41,6 +42,8 @@ export async function GET() {
   return NextResponse.json({
     jobs: jobs.map((job) => ({
       ...job,
+      statusMessage: humanOf(job.statusMessage),
+      steps: readClock(job.statusMessage),
       projectTitle: titles.get(job.videoProjectId) ?? "—",
       channelName: names.get(job.channelId) ?? "—",
       channelId: job.channelId,

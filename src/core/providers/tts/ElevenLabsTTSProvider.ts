@@ -43,8 +43,11 @@ export class ElevenLabsTTSProvider implements TTSProvider {
         text: args.text,
         model_id: "eleven_v3",
         voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.75,
+          // Robust. 0.5 pushes a cinematic voice into a saturated read that
+          // does not match the calm ElevenLabs preview of the same id.
+          stability: 1,
+          similarity_boost: 0.85,
+          use_speaker_boost: false,
           speed: clampSpeed(args.speed),
         },
       }),

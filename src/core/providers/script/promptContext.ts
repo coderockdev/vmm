@@ -43,13 +43,9 @@ export function buildScriptGenerationContext(args: {
 
   const perf = dna.scriptRules.performanceTags;
   const allowedFromVoice = voiceProfile.capabilities.allowed_tags;
-  // HeyGen / ElevenLabs: always inject valid emotion + pause tags by default so
-  // narration sounds natural — DNA can still narrow the selected list.
-  const voiceWantsTags =
-    voiceProfile.capabilities.emotion_tags &&
-    (voiceProfile.provider === "heygen" ||
-      voiceProfile.provider === "elevenlabs" ||
-      Boolean(perf?.enabled));
+  // Emotions stay available on the voice, but the channel DNA decides.
+  // Amor Amor default is off: a plain read, closer to the provider preview.
+  const voiceWantsTags = Boolean(perf?.enabled) && voiceProfile.capabilities.emotion_tags;
   const selected =
     perf?.enabled && Array.isArray(perf.selected) && perf.selected.length > 0
       ? perf.selected

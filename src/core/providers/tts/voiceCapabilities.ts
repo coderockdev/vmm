@@ -195,13 +195,13 @@ export function resolvePipelineAudioVoice(args: {
   profile?: VoiceProfile | null;
   /** DNA / UI speed — preferred over profile default when set. */
   channelSpeed?: number | null;
-  ttsOverride?: TTSProviderName | null;
+  ttsOverride?: TTSProviderName | "google" | null;
   ttsVoiceIdOverride?: string | null;
-}): { provider: TTSProviderName; voiceId: string | null; speed: number; stability: number | null } {
+}): { provider: TTSProviderName | "google"; voiceId: string | null; speed: number; stability: number | null } {
   const profile = args.profile ?? null;
   const override = args.ttsOverride && args.ttsOverride !== args.channelProvider ? args.ttsOverride : null;
 
-  let provider: TTSProviderName;
+  let provider: TTSProviderName | "google";
   let voiceId: string | null;
   const channelSpeed =
     typeof args.channelSpeed === "number" && Number.isFinite(args.channelSpeed) && args.channelSpeed > 0

@@ -40,7 +40,8 @@ export async function mixNarrationWithBed(args: MixNarrationBedArgs): Promise<{
   // Soft bed under oración: UI 6% → ~0.07, 10% → ~0.11, hard-capped so it never fights the voice.
   const musicVol = Math.min(0.14, Math.max(0.04, uiMusic * 1.15));
   // SFX one-shots must be clearly audible for a second or two.
-  const sfxVol = Math.min(0.95, Math.max(0.55, args.sfxVolume ?? 0.72));
+  const sfxVol =
+    args.sfxVolume == null ? 0.72 : Math.min(0.95, Math.max(0, args.sfxVolume));
   const musicVolStr = musicVol.toFixed(3);
   const sfxVolStr = sfxVol.toFixed(3);
 
@@ -83,8 +84,8 @@ export async function mixNarrationWithBed(args: MixNarrationBedArgs): Promise<{
     if (args.ducking) {
       parts.push(`[voice]asplit=2[v][sc]`);
       parts.push(
-        // Strong duck under voice — bed almost disappears while Juan Carlos speaks.
-        `[musraw][sc]sidechaincompress=threshold=0.05:ratio=4:attack=40:release=350:level_sc=1:makeup=1[mus]`
+        // Light duck: the bed stays audible under the prayer, and only eases on the loudest syllables.
+        `[musraw][sc]sidechaincompress=threshold=0.2:ratio=1.6:attack=120:release=500:level_sc=0.45:makeup=1[mus]`
       );
       musicLabel = "mus";
     } else {

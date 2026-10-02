@@ -6,7 +6,9 @@ import { getTTSProvider } from "../providers/tts";
 import { TTSProviderName } from "../providers/tts/TTSProvider";
 import { compileForVoice, VoiceCompileError } from "../providers/tts/compileForVoice";
 import { profileFromLegacyVoice, resolvePipelineAudioVoice, JUAN_CARLOS_ELEVENLABS_VOICE_ID } from "../providers/tts/voiceCapabilities";
-import { concatAudioFiles, renderSilence, ensureParentDir } from "../audio/ffmpegUtils";
+import { concatAudioFiles, renderSilence, ensureParentDir, ffprobeDuration } from "../audio/ffmpegUtils";
+import { isChirpVoiceId } from "../audiobook/chirpVoices";
+import { synthesizeChirpToFile } from "../providers/tts/chirpSpeech";
 import { channelTmpDir } from "../paths";
 import { workingFilePath, persistFile } from "../storage";
 import { softCharLimitForProvider, splitTextForTts } from "../providers/tts/ttsLimits";
@@ -28,6 +30,15 @@ function ensureOpeningPerformance(text: string, isFirstScene: boolean): string {
     return `[softly] [pause] ${trimmed}`;
   }
   return `[warmly] ${trimmed}`;
+}
+
+/** Channel DNA off: the voice reads the words, without [emotional] / [excited] / [pause]. */
+function stripPerformanceTags(text: string): string {
+  return text
+    .replace(/\[[^\]]{1,80}\]/g, " ")
+    .replace(/<break\s+time=["']?[\d.]+s["']?\s*\/>/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function stripEdgePauses(text: string, edge: "start" | "end"): string {
@@ -61,7 +72,7 @@ function applyPrayerStartPause(lines: RawLine[]): RawLine[] {
 export interface NarrationResult {
   filePath: string;
   durationSeconds: number;
-  provider: TTSProviderName;
+  provider: TTSProviderName | "google";
   lines: ScriptLine[];
   /** Characters sent to TTS after compileForVoice (for cost). */
   characters: number;
@@ -95,7 +106,7 @@ export async function synthesizeNarration(args: {
   channel: Channel;
   videoProjectId: string;
   lines: RawLine[];
-  ttsOverride?: TTSProviderName | null;
+  ttsOverride?: TTSProviderName | "google" | null;
   ttsVoiceIdOverride?: string | null;
 }): Promise<NarrationResult> {
   const { channel, videoProjectId, lines } = args;
@@ -128,7 +139,11 @@ export async function synthesizeNarration(args: {
     );
   }
 
-  const provider = getTTSProvider(providerName);
+  const chirp = providerName === "google" || isChirpVoiceId(voiceId ?? "");
+  if (providerName === "google" && !isChirpVoiceId(voiceId ?? "")) {
+    throw new Error("A voz do DNA não é uma voz Chirp do Google.");
+  }
+  const provider = chirp ? null : getTTSProvider(providerName as TTSProviderName);
   const isOverridden = Boolean(args.ttsOverride && args.ttsOverride !== channel.dna.voice.provider);
   const profile =
     !isOverridden && channel.dna.voice.profile
@@ -139,13 +154,29 @@ export async function synthesizeNarration(args: {
           speed: resolved.speed,
           language: channel.dna.language,
         });
-  const maxChars = softCharLimitForProvider(provider.name);
+  const maxChars = softCharLimitForProvider(chirp ? "google" : provider!.name);
   const speed = resolved.speed;
 
   const spokenLines = channel.id === "amor-amor" ? applyPrayerStartPause(lines) : lines;
 
   const tmpDir = path.join(channelTmpDir(channel.id), videoProjectId);
   fs.mkdirSync(tmpDir, { recursive: true });
+
+  async function speak(text: string, fileBaseName: string): Promise<{ filePath: string; durationSeconds: number }> {
+    if (chirp) {
+      const filePath = path.join(tmpDir, `${fileBaseName}.mp3`);
+      await synthesizeChirpToFile({ text, voiceName: voiceId!, speed, outPath: filePath });
+      return { filePath, durationSeconds: await ffprobeDuration(filePath) };
+    }
+    return provider!.synthesize({
+      text,
+      language: channel.dna.language,
+      voiceId,
+      speed,
+      outDir: tmpDir,
+      fileBaseName,
+    });
+  }
 
   const clipPaths: string[] = [];
   const finalLines: ScriptLine[] = [];
@@ -159,10 +190,12 @@ export async function synthesizeNarration(args: {
 
     for (let i = 0; i < sceneLines.length; i++) {
       const line = sceneLines[i];
+      const emotionsOn =
+        channel.dna.scriptRules.performanceTags?.enabled === true &&
+        profile.capabilities.emotion_tags;
+      const source = emotionsOn ? line.text : stripPerformanceTags(line.text);
       const withOpening =
-        i === 0 && profile.capabilities.emotion_tags
-          ? ensureOpeningPerformance(line.text, s === 0)
-          : line.text;
+        i === 0 && emotionsOn ? ensureOpeningPerformance(source, s === 0) : source;
       let spoken: string;
       try {
         spoken = compileForVoice(withOpening, profile);
@@ -196,14 +229,10 @@ export async function synthesizeNarration(args: {
         const start = cursor;
         let dur = 0;
         if (text) {
-          const result = await provider.synthesize({
+          const result = await speak(
             text,
-            language: channel.dna.language,
-            voiceId,
-            speed,
-            outDir: tmpDir,
-            fileBaseName: `scene-${String(s + 1).padStart(2, "0")}-p${String(part).padStart(2, "0")}`,
-          });
+            `scene-${String(s + 1).padStart(2, "0")}-p${String(part).padStart(2, "0")}`
+          );
           clipPaths.push(result.filePath);
           dur = result.durationSeconds;
           cursor += dur;
@@ -255,14 +284,7 @@ export async function synthesizeNarration(args: {
 
     if (sceneFits) {
       const start = cursor;
-      const result = await provider.synthesize({
-        text: sceneSpoken,
-        language: channel.dna.language,
-        voiceId,
-        speed,
-        outDir: tmpDir,
-        fileBaseName: `scene-${String(s + 1).padStart(2, "0")}`,
-      });
+      const result = await speak(sceneSpoken, `scene-${String(s + 1).padStart(2, "0")}`);
       clipPaths.push(result.filePath);
       cursor += result.durationSeconds;
 
@@ -322,14 +344,10 @@ export async function synthesizeNarration(args: {
       const chunks = splitTextForTts(spoken, maxChars);
       const start = cursor;
       for (let c = 0; c < chunks.length; c++) {
-        const result = await provider.synthesize({
-          text: chunks[c],
-          language: channel.dna.language,
-          voiceId,
-          speed,
-          outDir: tmpDir,
-          fileBaseName: `scene-${String(s + 1).padStart(2, "0")}-l${String(i).padStart(3, "0")}-p${String(c).padStart(2, "0")}`,
-        });
+        const result = await speak(
+          chunks[c],
+          `scene-${String(s + 1).padStart(2, "0")}-l${String(i).padStart(3, "0")}-p${String(c).padStart(2, "0")}`
+        );
         clipPaths.push(result.filePath);
         cursor += result.durationSeconds;
       }
@@ -362,7 +380,7 @@ export async function synthesizeNarration(args: {
   return {
     filePath: ref,
     durationSeconds: cursor,
-    provider: provider.name,
+    provider: chirp ? "google" : provider!.name,
     lines: finalLines,
     characters,
   };

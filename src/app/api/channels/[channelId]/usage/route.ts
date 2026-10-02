@@ -21,6 +21,18 @@ function periodSince(period: CostPeriod): string | null {
   return d.toISOString();
 }
 
+function stageMarks(events: UsageEvent[]): Record<string, { start: string; end: string } | null> {
+  const marks: Record<string, { start: string; end: string } | null> = {};
+  for (const stage of ["script", "audio", "music", "render", "thumbnail", "youtube"] as const) {
+    const times = events
+      .filter((event) => event.stage === stage)
+      .map((event) => event.createdAt)
+      .sort();
+    marks[stage] = times.length ? { start: times[0], end: times[times.length - 1] } : null;
+  }
+  return marks;
+}
+
 function inPeriod(iso: string, since: string | null): boolean {
   if (!since) return true;
   return iso >= since;
@@ -182,6 +194,7 @@ export async function GET(req: NextRequest, { params }: { params: { channelId: s
         voiceUsd,
         videoUsd,
         lines: [...lineMap.values()].sort((a, b) => b.usd - a.usd),
+        marks: stageMarks(fromEvents),
       };
     })
     .filter((p) => p.totalUsd > 0 || projectsInPeriod.length <= 40)

@@ -190,7 +190,10 @@ async function healAmorAmorMusicalStandards(): Promise<void> {
   const already =
     ids.length === AMOR_AMOR_STANDARD_MUSIC_IDS.length &&
     AMOR_AMOR_STANDARD_MUSIC_IDS.every((x, i) => ids[i] === x) &&
-    Number((musical as { volume?: number }).volume) === 0.08;
+    Number((musical as { volume?: number }).volume) === 0.08 &&
+    (musical as { useMusicByDefault?: boolean }).useMusicByDefault !== false &&
+    (musical as { useSfx?: boolean }).useSfx !== true &&
+    (musical as { sfxMode?: string }).sfxMode === "off";
   if (already) return;
 
   await updateChannelDna(id, {
@@ -198,7 +201,11 @@ async function healAmorAmorMusicalStandards(): Promise<void> {
     musical: {
       ...DEFAULT_AMOR_AMOR_MUSICAL,
       ...musical,
+      useMusicByDefault: true,
       volume: 0.08,
+      useSfx: false,
+      sfxMode: "off",
+      sfxVolume: 0,
       standardMusicIds: [...AMOR_AMOR_STANDARD_MUSIC_IDS],
     },
   });

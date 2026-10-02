@@ -5,6 +5,8 @@ import path from "path";
 import { getTTSProvider, TTSProviderName } from "../../../../core/providers/tts";
 import { compileForVoice, VoiceCompileError } from "../../../../core/providers/tts/compileForVoice";
 import { VoiceProfile, profileFromLegacyVoice } from "../../../../core/providers/tts/voiceCapabilities";
+import { synthesizeChirpMp3 } from "../../../../core/providers/tts/chirpSpeech";
+import { isChirpVoiceId } from "../../../../core/audiobook/chirpVoices";
 
 /**
  * Synthesizes a short sample with any provider/voice, for the voice-testing
@@ -13,7 +15,7 @@ import { VoiceProfile, profileFromLegacyVoice } from "../../../../core/providers
  */
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const provider: TTSProviderName = body.provider ?? "cartesia";
+  const provider = String(body.provider ?? "cartesia");
   const voiceId: string | null = body.voiceId ?? null;
   let text: string = body.text;
   const speed: number = body.speed ?? 1;
@@ -24,6 +26,28 @@ export async function POST(req: NextRequest) {
 
   if (!text) {
     return NextResponse.json({ error: "text is required" }, { status: 400 });
+  }
+
+  if (provider === "google" || isChirpVoiceId(voiceId ?? "")) {
+    const plain = String(text)
+      .replace(/\[[^\]]+\]/g, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 220);
+    if (!voiceId || !isChirpVoiceId(voiceId)) {
+      return NextResponse.json({ error: "Essa voz do Google não é Chirp." }, { status: 400 });
+    }
+    try {
+      const audio = await synthesizeChirpMp3({ text: plain, voiceName: voiceId, speed });
+      return new NextResponse(new Uint8Array(audio), {
+        status: 200,
+        headers: { "Content-Type": "audio/mpeg", "Content-Length": String(audio.length) },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return NextResponse.json({ error: message }, { status: 502 });
+    }
   }
 
   if (provider === "heygen") {
@@ -52,7 +76,12 @@ export async function POST(req: NextRequest) {
 
   const effectiveProfile =
     profile ??
-    profileFromLegacyVoice({ provider, voiceId, speed, language });
+    profileFromLegacyVoice({
+      provider: provider as VoiceProfile["provider"],
+      voiceId,
+      speed,
+      language,
+    });
 
   try {
     text = compileForVoice(text, effectiveProfile);
@@ -65,7 +94,7 @@ export async function POST(req: NextRequest) {
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vmm-voice-test-"));
   try {
-    const ttsProvider = getTTSProvider(provider);
+    const ttsProvider = getTTSProvider(provider as TTSProviderName);
     const result = await ttsProvider.synthesize({
       text,
       language,
