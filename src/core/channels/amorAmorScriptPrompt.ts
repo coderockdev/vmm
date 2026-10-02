@@ -78,6 +78,7 @@ Temprano, dentro de la tensión. Debe aparecer explícitamente: «Suscríbete a 
 Puede acompañarse de: dejar un comentario; dar like; compartir la oración.
 No lo conviertas en una interrupción comercial.
 Después: «Ahora sí.» «Vamos a comenzar con la oración.» Y comienza inmediatamente la oración. Di su nombre solo a partir de ahí.
+Antes de esa frase, un respiro corto, menos de un segundo. No pongas [pause] ni un silencio largo. La oración sigue en la frase siguiente.
 
 # CUERPO
 

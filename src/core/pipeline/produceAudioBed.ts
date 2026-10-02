@@ -232,6 +232,7 @@ export async function produceAudioBed(args: {
       musicVolume,
       sfxVolume,
       ducking,
+      voiceWarmth: channelId === "amor-amor",
       outputPath: mixOut,
     });
     return persistFile(mixOut, channelId, "audio", `${fileBase}-${projectId}.mp3`, "audio/mpeg");

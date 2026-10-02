@@ -68,8 +68,8 @@ function convertBreaksForEleven(script: string): string {
     return tag;
   }).replace(BREAK_TAG_RE, (_m, secs) => {
     const n = Number(secs);
-    if (n >= 2) return "\n\n... [pause] ... [pause] ...\n\n";
-    if (n >= 1) return " ... [pause] ... ";
+    // One breath. Two [pause] tags in a row become a hole of several seconds.
+    if (n >= 0.8) return " ... [pause] ... ";
     return " ... ";
   });
 }
