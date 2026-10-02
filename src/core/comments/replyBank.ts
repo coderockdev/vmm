@@ -1,6 +1,9 @@
 import type { CommentCategory } from "./types";
 
-export const AMOR_AMOR_REPLY_BANK: Record<Exclude<CommentCategory, "REVIEW_REQUIRED">, string[]> = {
+export const AMOR_AMOR_REPLY_BANK: Record<
+  Exclude<CommentCategory, "REVIEW_REQUIRED" | "NO_REPLY">,
+  string[]
+> = {
   AMEN: [
     "Amén 🙏 Gracias por acompañarnos. Bendiciones ❤️",
     "Amén ❤️ Que llegue mucha paz a tu vida.",
@@ -56,7 +59,7 @@ export function pickReplyText(args: {
   customSets?: Partial<Record<CommentCategory, string[]>>;
   vary?: boolean;
 }): string | null {
-  if (args.category === "REVIEW_REQUIRED") return null;
+  if (args.category === "REVIEW_REQUIRED" || args.category === "NO_REPLY") return null;
   const bank =
     args.customSets?.[args.category]?.length
       ? args.customSets[args.category]!

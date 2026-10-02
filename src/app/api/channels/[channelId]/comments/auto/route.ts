@@ -37,6 +37,7 @@ export async function POST(req: NextRequest, { params }: { params: { channelId: 
   const skipDelicate = body.skipDelicate !== false;
   const varyResponses = body.varyResponses !== false;
   const skipAlreadyAnswered = body.skipAlreadyAnswered !== false;
+  const useAi = Boolean(body.useAi);
   const batchCap = dryRun ? 20 : 5;
   const batchSize = Math.min(batchCap, Math.max(1, Number(body.batchSize) || (dryRun ? 15 : 5)));
   const runId = typeof body.runId === "string" ? body.runId : undefined;
@@ -49,6 +50,7 @@ export async function POST(req: NextRequest, { params }: { params: { channelId: 
       skipDelicate,
       varyResponses,
       skipAlreadyAnswered,
+      useAi,
       runId,
       batchSize,
     });

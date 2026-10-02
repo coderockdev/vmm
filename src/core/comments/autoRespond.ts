@@ -1,6 +1,7 @@
 import type { Channel } from "../types";
 import { normalizeCommentAutomation } from "./defaults";
 import { classifyComment } from "./classify";
+import { draftPersonalReply, isSafetyReview, wantsPersonalReply } from "./personalReply";
 import { pickReplyText } from "./replyBank";
 import { replyToComment } from "./reply";
 import { isQuotaError } from "./sync";
@@ -21,6 +22,8 @@ export type AutoRespondOptions = {
   skipDelicate?: boolean;
   varyResponses?: boolean;
   skipAlreadyAnswered?: boolean;
+  /** Short Gemini reply for personal or long comments. Templates stay for amen / thanks. */
+  useAi?: boolean;
   /** If provided, continue an existing run (for stop polling). */
   runId?: string;
   /**
@@ -39,6 +42,7 @@ export async function runAutoRespond(args: AutoRespondOptions): Promise<YoutubeC
   const skipDelicate = args.skipDelicate ?? cfg.skipDelicate;
   const vary = args.varyResponses ?? cfg.varyResponses;
   const skipAnswered = args.skipAlreadyAnswered ?? cfg.skipAlreadyAnswered;
+  const useAi = args.useAi ?? cfg.aiEnabled;
 
   let run =
     (args.runId ? await getCommentRun(args.runId) : null) ??
@@ -72,7 +76,7 @@ export async function runAutoRespond(args: AutoRespondOptions): Promise<YoutubeC
     return (await getCommentRun(run.id))!;
   }
 
-  const deadline = Date.now() + (args.dryRun ? 12_000 : 8_000);
+  const deadline = Date.now() + (useAi ? 28_000 : args.dryRun ? 12_000 : 8_000);
   let hitDeadline = false;
   for (const comment of pending) {
     if (Date.now() > deadline) {
@@ -111,7 +115,71 @@ export async function runAutoRespond(args: AutoRespondOptions): Promise<YoutubeC
     const classified = classifyComment(comment.commentText);
     await updateCommentState(comment.id, { category: classified.category });
 
-    if (classified.needsReview || classified.category === "REVIEW_REQUIRED") {
+    if ((isSafetyReview(classified) || classified.needsReview) && skipDelicate && !wantsPersonalReply(classified)) {
+      await updateCommentState(comment.id, {
+        status: "needs_review",
+        category: "REVIEW_REQUIRED",
+        processedAt: new Date().toISOString(),
+        errorMessage: classified.reviewReason,
+      });
+      needsReview += 1;
+      processed += 1;
+      log.push({
+        at: new Date().toISOString(),
+        youtubeCommentId: comment.youtubeCommentId,
+        authorName: comment.authorName,
+        action: "needs_review",
+        category: "REVIEW_REQUIRED",
+        message: classified.reviewReason,
+      });
+      continue;
+    }
+
+    let replyText: string | null = null;
+    if (useAi && wantsPersonalReply(classified)) {
+      replyText = await draftPersonalReply({
+        channelId: args.channel.id,
+        channelName: args.channel.name,
+        commentText: comment.commentText,
+      });
+      if (!replyText) {
+        await updateCommentState(comment.id, {
+          status: "needs_review",
+          category: classified.category,
+          processedAt: new Date().toISOString(),
+          errorMessage: "ai_failed",
+        });
+        needsReview += 1;
+        processed += 1;
+        log.push({
+          at: new Date().toISOString(),
+          youtubeCommentId: comment.youtubeCommentId,
+          authorName: comment.authorName,
+          action: "needs_review",
+          category: classified.category,
+          message: "ai_failed",
+        });
+        continue;
+      }
+    } else if (classified.category === "NO_REPLY") {
+      await updateCommentState(comment.id, {
+        status: "skipped",
+        category: "NO_REPLY",
+        processedAt: new Date().toISOString(),
+        errorMessage: classified.reviewReason,
+      });
+      skipped += 1;
+      processed += 1;
+      log.push({
+        at: new Date().toISOString(),
+        youtubeCommentId: comment.youtubeCommentId,
+        authorName: comment.authorName,
+        action: "skipped",
+        category: "NO_REPLY",
+        message: classified.reviewReason ?? "personal",
+      });
+      continue;
+    } else if (classified.needsReview || classified.category === "REVIEW_REQUIRED") {
       if (skipDelicate) {
         await updateCommentState(comment.id, {
           status: "needs_review",
@@ -133,12 +201,14 @@ export async function runAutoRespond(args: AutoRespondOptions): Promise<YoutubeC
       }
     }
 
-    const replyText = pickReplyText({
-      channelId: args.channel.id,
-      category: classified.category === "REVIEW_REQUIRED" ? "GENERIC" : classified.category,
-      customSets: cfg.responseSets,
-      vary,
-    });
+    if (!replyText) {
+      replyText = pickReplyText({
+        channelId: args.channel.id,
+        category: classified.category === "REVIEW_REQUIRED" ? "GENERIC" : classified.category,
+        customSets: cfg.responseSets,
+        vary,
+      });
+    }
 
     if (!replyText) {
       await updateCommentState(comment.id, {

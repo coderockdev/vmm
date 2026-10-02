@@ -14,6 +14,7 @@ export type CommentCategory =
   | "SAD_WAITING"
   | "NAMES_ONLY"
   | "GENERIC"
+  | "NO_REPLY"
   | "REVIEW_REQUIRED";
 
 export type YoutubeCommentRow = {

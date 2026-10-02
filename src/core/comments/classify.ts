@@ -20,6 +20,24 @@ const SAFETY_PATTERNS: Array<{ re: RegExp; reason: string }> = [
   { re: /\b(niñ[oa]|menor de edad|mi hija tiene \d|mi hijo tiene \d)\b/i, reason: "minor_sensitive" },
 ];
 
+/** Life-drama dumps. Checked after amen / thanks / prayer, so those still get a template. */
+const NO_REPLY_PATTERNS: RegExp[] = [
+  /\bme dej[oó]\b/,
+  /\bme abandono\b/,
+  /\bbloquead/,
+  /\bme bloque/,
+  /\bsin celular\b/,
+  /\bsin telefono\b/,
+  /\bsin comunic/,
+  /\bdesesperad/,
+  /\bno me contesta\b/,
+  /\bno me responde\b/,
+  /\bme ghoste/,
+  /\bme deixou\b/,
+  /\bsem celular\b/,
+  /\bnao me (responde|fala)\b/,
+];
+
 const CATEGORY_RULES: Array<{ category: CommentCategory; patterns: RegExp[] }> = [
   {
     category: "AMEN",
@@ -147,6 +165,16 @@ export function classifyComment(text: string): ClassifyResult {
         };
       }
     }
+  }
+
+  // Personal story. Templates stay off; the auto-run may ask Gemini for a short reply.
+  if (NO_REPLY_PATTERNS.some((p) => p.test(normalized))) {
+    return {
+      category: "NO_REPLY",
+      needsReview: false,
+      reviewReason: "personal",
+      confidence: "high",
+    };
   }
 
   if (looksLikeNamesOnly(normalized, original)) {
