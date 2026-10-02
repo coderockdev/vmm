@@ -13,8 +13,10 @@ const SLOT_BUDGET_MS = 250_000;
 
 /**
  * Evening reply slot for one channel. Vercel calls this at 18:00, 19:00 and 20:00
- * Argentina (21:00, 22:00, 23:00 UTC). Fifty replies leave room in the shared
- * 200-reply project quota.
+ * Argentina (21:00, 22:00, 23:00 UTC), so it runs with the computer off.
+ * Each reply spends 50 of the shared 10,000-point pool. Video uploads do not:
+ * they have their own limit of 100 a day. Covers spend the same pool as replies
+ * and are sent later by /api/cron/covers, after the pool resets.
  */
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET?.trim();

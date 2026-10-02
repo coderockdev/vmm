@@ -3,6 +3,7 @@
   "crons": [
     { "path": "/api/cron/comments?channel=amor-amor&slot=18", "schedule": "0 21 * * *" },
     { "path": "/api/cron/comments?channel=amor-amor&slot=19", "schedule": "0 22 * * *" },
-    { "path": "/api/cron/comments?channel=amor-amor&slot=20", "schedule": "0 23 * * *" }
+    { "path": "/api/cron/comments?channel=amor-amor&slot=20", "schedule": "0 23 * * *" },
+    { "path": "/api/cron/covers", "schedule": "15 7 * * *" }
   ]
 }

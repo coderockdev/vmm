@@ -19,16 +19,22 @@ export function chapterSnap(c: Chapter) {
   const version = Math.max(1, c.attempts || 1);
   const redoing = !queued && ACTIVE.has(c.status) && (version > 1 || Boolean(c.youtubeVideoId));
   const failed = c.status === "failed";
-  const done = !redoing && !queued && Boolean(c.youtubeVideoId || c.status === "published");
+  const coverWaiting = c.status === "thumb_ready" && Boolean(c.youtubeVideoId);
+  const uploadWaiting = /cota de uploads/i.test(human);
+  const done = !coverWaiting && !uploadWaiting && !redoing && !queued && Boolean(c.youtubeVideoId || c.status === "published");
 
   const parts = placeAssembly(stored ?? partsFromStatus(c, human, queued, redoing, done, failed));
   const percent = queued ? 0 : done ? 100 : overallPercent(parts);
   const running = parts.find((part) => part.startedAt && !part.finishedAt);
   const step = running ? CHAPTER_PARTS.findIndex((part) => part.id === running.id) : parts.filter((part) => part.percent >= 100).length - 1;
   const live = running ? `${running.label}: ${running.detail}` : human || (step < 0 ? "Pendente" : "Em curso");
-  const working = Boolean(running) || (!queued && !done && !failed && ACTIVE.has(c.status));
+  const working = coverWaiting || Boolean(running) || (!queued && !done && !failed && ACTIVE.has(c.status));
   const stage = failed
     ? human || "Parou"
+    : coverWaiting
+      ? human || "Vídeo no YouTube. Portada pendente."
+      : uploadWaiting
+        ? human
     : done
       ? version > 1
         ? `Versão ${version} no YouTube`

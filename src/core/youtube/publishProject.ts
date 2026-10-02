@@ -164,14 +164,16 @@ export async function publishProjectToYoutube(args: {
       snapshot: {
         provider: "youtube",
         model: "data-api-v3",
-        // videos.insert ≈ 1600 units; thumbnails.set ≈ 50. No USD charge.
-        quotaUnits: thumbnailOk ? 1650 : 1600,
+        // videos.insert has its own bucket of 100/day and does not spend points.
+        // thumbnails.set spends 50 of the shared 10,000-point pool. No USD charge.
+        quotaUnits: thumbnailOk ? 50 : 0,
         durationSeconds: project.renderDurationSeconds ?? null,
         raw: {
           videoId,
           thumbnailOk,
           privacyStatus: "private",
-          quotaNote: "YouTube Data API: free daily quota (no $). Upload ≈1600 units.",
+          quotaNote:
+            "Upload: balde próprio de 100/dia. Portada: 50 pontos do balde de 10.000. Sem dólares.",
         },
       },
     });
