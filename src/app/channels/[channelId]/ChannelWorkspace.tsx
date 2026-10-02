@@ -10,6 +10,7 @@ import { PortadasPanel } from "./PortadasPanel";
 import { BooksPanel } from "./BooksPanel";
 import { AudiobookBoard } from "./AudiobookBoard";
 import { AudiobookVoicePanel } from "./AudiobookVoicePanel";
+import { ImageToVideoLab } from "./ImageToVideoLab";
 import { YoutubeConnectPanel } from "./YoutubeConnectPanel";
 import { CommentsPanel } from "./CommentsPanel";
 import { ControlPanel } from "./ControlPanel";
@@ -19,7 +20,7 @@ import { findVoice } from "../../../core/providers/tts/voiceCatalog";
 import { TTSProviderName } from "../../../core/providers/tts/TTSProvider";
 import { JUAN_CARLOS_ELEVENLABS_VOICE_ID } from "../../../core/providers/tts/voiceCapabilities";
 import { ScriptReviewModal } from "./ScriptReviewModal";
-import { mediaUrl } from "../../../core/media";
+import { lightCoverUrl, mediaUrl } from "../../../core/media";
 import { sampleIdeasFromDna, suggestTopicsFromDna } from "../../../core/providers/script/ideaSuggestions";
 import {
   CalendarIcon,
@@ -53,7 +54,8 @@ type WorkspaceTab =
   | "custos"
   | "youtube"
   | "comentarios"
-  | "livros";
+  | "livros"
+  | "laboratorio";
 type CreateMode = "manual" | "auto";
 
 function stageLabel(stage: string): string {
@@ -183,6 +185,7 @@ export function ChannelWorkspace({
       if (tab === "youtube") return "youtube";
       if (tab === "comentarios" || tab === "comments") return "comentarios";
       if (tab === "livros" && isAudiobook) return "livros";
+      if (tab === "laboratorio" && isAudiobook) return "laboratorio";
       if (tab === "audio") return "audio";
       if (tab === "painel") return "painel";
     }
@@ -202,6 +205,8 @@ export function ChannelWorkspace({
   const [scriptAiOverride, setScriptAiOverride] = useState<"" | "mock" | "anthropic" | "openai" | "gemini">("openai");
   const [loadingAuto, setLoadingAuto] = useState(false);
   const [autoError, setAutoError] = useState<string | null>(null);
+  const [autoStuckIdeaId, setAutoStuckIdeaId] = useState<string | null>(null);
+  const [autoStuckPlanId, setAutoStuckPlanId] = useState<string | null>(null);
   const [autoStatus, setAutoStatus] = useState<string | null>(null);
   const [autoLog, setAutoLog] = useState<Array<{ id: string; stage: string; detail: string }>>([]);
   const [autoProjectIds, setAutoProjectIds] = useState<string[]>([]);
@@ -212,6 +217,7 @@ export function ChannelWorkspace({
   const [includeManchete, setIncludeManchete] = useState(true);
   const [mancheteBankSize] = useState((channel.dna.successfulTitles ?? []).length);
   const [youtubeConnected, setYoutubeConnected] = useState<boolean | null>(null);
+  const [voiceSpeed, setVoiceSpeed] = useState(channel.dna.voice.speed || 0.85);
   const [youtubeChannelTitle, setYoutubeChannelTitle] = useState<string | null>(null);
   const [plan, setPlan] = useState<ContentPlan | null>(initialPlans[0] ?? null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(
@@ -425,6 +431,8 @@ export function ChannelWorkspace({
   async function handleAutoFlow() {
     setLoadingAuto(true);
     setAutoError(null);
+    setAutoStuckIdeaId(null);
+    setAutoStuckPlanId(null);
     setAutoLog([
       {
         id: `${Date.now()}-boot`,
@@ -494,6 +502,8 @@ export function ChannelWorkspace({
                 done?: number;
                 total?: number;
                 projectId?: string | null;
+                ideaId?: string | null;
+                planId?: string | null;
                 projectIds?: string[];
                 message?: string;
                 error?: string;
@@ -508,6 +518,8 @@ export function ChannelWorkspace({
                 const detail = event.detail || event.stage || "…";
                 setAutoStatus(detail);
                 if (event.stage) setAutoStage(event.stage);
+                if (event.ideaId) setAutoStuckIdeaId(event.ideaId);
+                if (event.planId) setAutoStuckPlanId(event.planId);
                 if (typeof event.done === "number") setAutoDone(event.done);
                 if (typeof event.total === "number" && event.total > 0) setAutoTotal(event.total);
                 setAutoLog((prev) => {
@@ -572,6 +584,111 @@ export function ChannelWorkspace({
       }
     } finally {
       setLoadingAuto(false);
+    }
+  }
+
+  function clearStuckFlow() {
+    setAutoError(null);
+    setAutoStatus(null);
+    setAutoLog([]);
+    setAutoStage(null);
+    setAutoDone(0);
+    setAutoTotal(0);
+    setAutoStuckIdeaId(null);
+    setAutoStuckPlanId(null);
+  }
+
+  async function unstickFlow() {
+    if (!autoStuckIdeaId || !autoStuckPlanId) {
+      clearStuckFlow();
+      return;
+    }
+    const ideaId = autoStuckIdeaId;
+    const planId = autoStuckPlanId;
+    setAutoError(null);
+    setLoadingAuto(true);
+    setAutoStatus("A destravar: roteiro de novo, depois voz…");
+    try {
+      const generated = await fetch(`/api/channels/${channel.id}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          planId,
+          ideaIds: [ideaId],
+          aiProviderOverride: ideaAiOverride || "openai",
+          sceneCount,
+        }),
+      });
+      const generatedJson = await generated.json().catch(() => ({}));
+      if (!generated.ok) {
+        throw new Error(generatedJson.error ?? "Não deu para gerar o roteiro");
+      }
+      const projectIds: string[] = generatedJson.projectIds ?? [];
+      const resumed = await fetch(`/api/channels/${channel.id}/auto-flow/resume`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectIds }),
+      });
+      if (!resumed.ok || !resumed.body) {
+        const data = await resumed.json().catch(() => ({}));
+        throw new Error(data.error ?? "Não deu para retomar a produção");
+      }
+      const reader = resumed.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          try {
+            const event = JSON.parse(trimmed) as { type?: string; detail?: string; error?: string };
+            if (event.type === "error") throw new Error(event.error ?? "Falha ao destravar");
+            if (event.detail) setAutoStatus(event.detail);
+          } catch (err) {
+            if (err instanceof SyntaxError) continue;
+            throw err;
+          }
+        }
+      }
+      setAutoProjectIds(projectIds);
+      setAutoStage("queued");
+      setAutoStatus("Destravado: na fila de voz → YouTube");
+      setAutoStuckIdeaId(null);
+      setAutoStuckPlanId(null);
+      await refreshProjects();
+      await refreshJobs();
+    } catch (err) {
+      setAutoError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoadingAuto(false);
+    }
+  }
+
+  async function discardStuckFlow() {
+    const ideaId = autoStuckIdeaId;
+    clearStuckFlow();
+    if (ideaId) {
+      await fetch(`/api/content-ideas/${ideaId}`, { method: "DELETE" });
+      setSelectedIds((previous) => {
+        const next = new Set(previous);
+        next.delete(ideaId);
+        return next;
+      });
+      setPlan((previous) =>
+        previous
+          ? {
+              ...previous,
+              items: previous.items.map((item) =>
+                item.id === ideaId ? { ...item, status: "removed" } : item
+              ),
+            }
+          : previous
+      );
     }
   }
 
@@ -710,22 +827,17 @@ export function ChannelWorkspace({
     }
   }
 
-  /** Failed audio card: re-approve with Juan Carlos voice_id and show clear feedback. */
+  /** Failed audio card: retry with the channel DNA voice (Cartesia if that's the default). */
   async function handleRetryAudio(project: VideoProject) {
     setRetryingAudioId(project.id);
     setAudioActionMsg(null);
     try {
-      const juanCarlosId =
-        channel.dna.voice.profile?.elevenlabs_voice_id || JUAN_CARLOS_ELEVENLABS_VOICE_ID;
-      const providerOverride =
-        project.ttsProviderOverride === "elevenlabs" ||
-        channel.dna.voice.provider === "heygen" ||
-        !project.ttsProviderOverride
-          ? "elevenlabs"
-          : project.ttsProviderOverride;
+      const dna = channel.dna.voice;
+      const providerOverride = dna.provider === "heygen" ? "elevenlabs" : dna.provider;
       const voiceOverride =
-        project.ttsVoiceIdOverride?.trim() ||
-        (providerOverride === "elevenlabs" ? juanCarlosId : null);
+        providerOverride === "elevenlabs"
+          ? dna.profile?.elevenlabs_voice_id || JUAN_CARLOS_ELEVENLABS_VOICE_ID
+          : dna.voiceId || dna.profile?.voice_id || null;
 
       const response = await fetch(`/api/videos/${project.id}/approve`, {
         method: "POST",
@@ -988,6 +1100,9 @@ export function ChannelWorkspace({
             </button>
             <button type="button" className={activeTab === "custos" ? "active" : ""} onClick={() => setActiveTab("custos")}>
               Custos
+            </button>
+            <button type="button" className={activeTab === "laboratorio" ? "active" : ""} onClick={() => setActiveTab("laboratorio")}>
+              Laboratório
             </button>
             <button type="button" className={activeTab === "youtube" ? "active" : ""} onClick={() => setActiveTab("youtube")}>
               YouTube
@@ -1266,6 +1381,16 @@ export function ChannelWorkspace({
             {autoError && createMode === "auto" && (
               <div className="generation-error" role="alert">
                 <p>{autoError}</p>
+                <div className="generation-error-actions">
+                  {autoStuckIdeaId && autoStuckPlanId && (
+                    <button type="button" onClick={() => { void unstickFlow(); }}>
+                      Destravar e seguir
+                    </button>
+                  )}
+                  <button type="button" onClick={() => { void discardStuckFlow(); }}>
+                    Apagar este fluxo
+                  </button>
+                </div>
               </div>
             )}
             {createMode === "manual" && (
@@ -1509,7 +1634,7 @@ export function ChannelWorkspace({
                   {project.thumbnailRef ? (
                     <div className="review-queue-thumb">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={mediaUrl(channel.id, project.thumbnailRef) ?? undefined} alt="" />
+                      <img src={lightCoverUrl({ channelId: channel.id, thumbnailRef: project.thumbnailRef, youtubeVideoId: project.youtubeVideoId }) ?? undefined} alt="" loading="lazy" decoding="async" />
                     </div>
                   ) : (
                     <div className="review-queue-icon"><MiniIcon name="doc" size={22} /></div>
@@ -1642,6 +1767,41 @@ export function ChannelWorkspace({
               áudio pesado some — fica só o registo leve em Vídeos.
             </p>
           </div>
+          <label className="channel-speed">
+            <span>
+              Velocidade da narração {voiceSpeed.toFixed(2)}
+              <small>
+                Vale para a próxima geração deste canal. 0,85 é o ritmo atual de Amor Amor: dá para
+                acompanhar sem correr.
+              </small>
+            </span>
+            <input
+              type="range"
+              min={0.75}
+              max={1.15}
+              step={0.01}
+              value={voiceSpeed}
+              onChange={(event) => setVoiceSpeed(Number(event.target.value))}
+              onPointerUp={(event) => {
+                const speed = Number((event.target as HTMLInputElement).value);
+                void fetch(`/api/channels/${channel.id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    dna: {
+                      voice: {
+                        ...channel.dna.voice,
+                        speed,
+                        ...(channel.dna.voice.profile
+                          ? { profile: { ...channel.dna.voice.profile, speed } }
+                          : {}),
+                      },
+                    },
+                  }),
+                });
+              }}
+            />
+          </label>
           {audioBusyCount > 0 && (
             <div className="production-banner" role="status">
               <span className="production-spinner" aria-hidden />
@@ -1687,7 +1847,7 @@ export function ChannelWorkspace({
                     {project.thumbnailRef ? (
                       <div className="review-queue-thumb">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={mediaUrl(channel.id, project.thumbnailRef) ?? undefined} alt="" />
+                        <img src={lightCoverUrl({ channelId: channel.id, thumbnailRef: project.thumbnailRef, youtubeVideoId: project.youtubeVideoId }) ?? undefined} alt="" loading="lazy" decoding="async" />
                       </div>
                     ) : (
                       <div className="review-queue-icon"><MiniIcon name="mic" size={22} /></div>
@@ -1877,8 +2037,8 @@ export function ChannelWorkspace({
             <Link href="/renders">Ver todos <span>→</span></Link>
           </div>
           <p className="auto-flow-hint" style={{ marginTop: 0 }}>
-            Em produção: acompanha o progresso. Depois do YouTube: registo leve (portada + título +
-            link Studio) — sem MP4 local. Mantém ~15.
+            Em produção: acompanha o progresso. Depois do YouTube: registo leve (portada pequena +
+            título + link Studio) — sem MP4 local. Últimos 10.
           </p>
           {videoProjects.length === 0 ? (
             <div className="review-empty-state">
@@ -1886,7 +2046,7 @@ export function ChannelWorkspace({
             </div>
           ) : (
             <div className="workspace-videos-grid">
-              {videoProjects.slice(0, 15).map((project) => (
+              {videoProjects.slice(0, 10).map((project) => (
                 <ProjectRow
                   key={project.id}
                   project={project}
@@ -1953,6 +2113,8 @@ export function ChannelWorkspace({
       {activeTab === "livros" && (
         <BooksPanel channelId={channel.id} onGoToVoice={() => setActiveTab("audio")} />
       )}
+
+      {activeTab === "laboratorio" && isAudiobook && <ImageToVideoLab channelId={channel.id} />}
 
       {reviewingProject && (
         <ScriptReviewModal
@@ -2060,23 +2222,6 @@ function ProjectRow({
                 ? "Falhou"
                 : "Em produção"}
         </span>
-        {(project.thumbnailConcept?.candidates?.length ?? 0) > 1 && (
-          <div className="workspace-thumb-variants" style={{ display: "flex", gap: 6, marginTop: 8 }}>
-            {project.thumbnailConcept!.candidates!.slice(0, 3).map((c) => {
-              const url = mediaUrl(channel.id, c.ref);
-              return url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  key={c.id}
-                  src={url}
-                  alt={c.styleLabel}
-                  title={c.styleLabel}
-                  style={{ width: 52, height: 29, objectFit: "cover", borderRadius: 4 }}
-                />
-              ) : null;
-            })}
-          </div>
-        )}
         {project.youtubeUrl && (
           <a className="workspace-yt-link" href={project.youtubeUrl} target="_blank" rel="noreferrer">
             Abrir no Studio →
@@ -2106,7 +2251,11 @@ function ProjectRow({
 }
 
 function projectThumbUrl(channelId: string, project: VideoProject): string | null {
-  return project.thumbnailRef ? mediaUrl(channelId, project.thumbnailRef) : null;
+  return lightCoverUrl({
+    channelId,
+    thumbnailRef: project.thumbnailRef,
+    youtubeVideoId: project.youtubeVideoId,
+  });
 }
 
 function ProjectThumbnail({
@@ -2123,7 +2272,7 @@ function ProjectThumbnail({
     return (
       <div className="workspace-video-thumb workspace-video-thumb-photo">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={url} alt="" />
+        <img src={url} alt="" loading="lazy" decoding="async" width={320} height={180} />
         {durationLabel ? <span>{durationLabel}</span> : null}
       </div>
     );

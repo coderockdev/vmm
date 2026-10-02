@@ -48,6 +48,12 @@ async function loop(): Promise<void> {
       const jobId = await claimNextPlannedJobId(process.env.VMM_WORKER_NAME || "local");
       if (!jobId) {
         if (await findNextPendingJobId()) continue;
+        const { runNextAudiobookChapter } = await import("../audiobook/runChapter");
+        const ranChapter = await runNextAudiobookChapter().catch((err) => {
+          console.error("[queue] capítulo:", err instanceof Error ? err.message : err);
+          return false;
+        });
+        if (ranChapter) continue;
         break;
       }
       global.__vmmQueueStartedAt = Date.now();

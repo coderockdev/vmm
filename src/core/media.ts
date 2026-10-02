@@ -27,3 +27,25 @@ export function mediaUrl(channelId: string, ref: string | null | undefined): str
 
   return `/api/media/${channelId}/${normalized.replace(/^\.\//, "")}`;
 }
+
+/**
+ * Grid-sized preview. YouTube's own CDN is a few dozen KB; a stored cover is
+ * the full 1536px file. Supabase image render is used only when the ref is a
+ * public storage URL and there is no YouTube id.
+ */
+export function lightCoverUrl(args: {
+  channelId: string;
+  thumbnailRef?: string | null;
+  youtubeVideoId?: string | null;
+}): string | null {
+  if (args.youtubeVideoId) {
+    return `https://i.ytimg.com/vi/${args.youtubeVideoId}/mqdefault.jpg`;
+  }
+  const raw = mediaUrl(args.channelId, args.thumbnailRef);
+  if (!raw) return null;
+  const marker = "/storage/v1/object/public/";
+  const at = raw.indexOf(marker);
+  if (at === -1) return raw;
+  const path = raw.slice(at + marker.length).split("?")[0];
+  return `${raw.slice(0, at)}/storage/v1/render/image/public/${path}?width=320&quality=60`;
+}

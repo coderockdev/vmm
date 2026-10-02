@@ -147,7 +147,9 @@ export async function runProject(jobId: string): Promise<void> {
           progress: Math.min(98, progress),
           statusMessage: message,
         }).catch(() => undefined);
-        if (progress >= 72) {
+        if (progress >= 100) {
+          await updateProjectStatus(project.id, "completed").catch(() => undefined);
+        } else if (progress >= 72) {
           await updateProjectStatus(project.id, "rendering").catch(() => undefined);
         }
       };

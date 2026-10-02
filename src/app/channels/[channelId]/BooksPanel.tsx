@@ -2,7 +2,11 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { BookListItem, Chapter } from "../../../core/types";
+import { DEFAULT_AUDIOBOOK_SETTINGS } from "../../../core/types";
+import type { AudiobookVisualBudget } from "../../../core/types";
 import { CHAPTER_STEPS, chapterSnap } from "./chapterProgress";
+import { estimateChapterCost, formatUsd, normalizeVisualBudget } from "../../../core/audiobook/visualBudget";
+import { planChapterVisuals } from "../../../core/audiobook/visualPlan";
 
 type BookDetail = {
   book: BookListItem | (BookListItem & Record<string, unknown>);
@@ -48,6 +52,8 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
   const [busyChapter, setBusyChapter] = useState<string | null>(null);
   const [bulkTo, setBulkTo] = useState(1);
   const [bulkMode, setBulkMode] = useState<"audio" | "full" | null>(null);
+  const [budget, setBudget] = useState<AudiobookVisualBudget>(DEFAULT_AUDIOBOOK_SETTINGS.visualBudget);
+  const [costGate, setCostGate] = useState<{ mode: "audio" | "full"; chapterId: string | null } | null>(null);
 
   const loadBooks = useCallback(async () => {
     setLoading(true);
@@ -79,6 +85,7 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
         const voice = String(json.settings?.ttsVoice ?? "");
         const match = (json.voices ?? []).find((v: { id: string; name?: string }) => v.id === voice);
         setVoiceLabel(match?.name || voice.replace("pt-BR-Chirp3-HD-", "") || null);
+        setBudget(normalizeVisualBudget(json.settings?.visualBudget));
       })
       .catch(() => undefined);
   }, [channelId]);
@@ -130,8 +137,32 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
     };
   }, [channelId, selectedId]);
 
-  async function produceChapter(chapterId: string, mode: "audio" | "full") {
+  const chapterLive = Boolean(
+    detail?.chapters.some((c) => c.status === "tts_running" || c.status === "uploading")
+  );
+
+  useEffect(() => {
+    if (!selectedId || !chapterLive) return;
+    const timer = window.setInterval(() => {
+      void fetch(`/api/channels/${channelId}/books/${selectedId}`)
+        .then(async (res) => {
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) return;
+          setDetail({ book: json.book, chapters: json.chapters ?? [] });
+        })
+        .catch(() => undefined);
+    }, 8000);
+    return () => window.clearInterval(timer);
+  }, [channelId, selectedId, chapterLive]);
+
+  async function produceChapter(chapterId: string, mode: "audio" | "full", confirmed = false) {
     if (!selectedId) return;
+    const chapter = detail?.chapters.find((item) => item.id === chapterId);
+    if (!confirmed && chapter && estimateChapterCost(chapter.words, budget).needsApproval) {
+      setCostGate({ mode, chapterId });
+      return;
+    }
+    setCostGate(null);
     setBusyChapter(chapterId);
     setError(null);
     try {
@@ -160,10 +191,20 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
     }
   }
 
-  async function produceRange(mode: "audio" | "full") {
+  async function produceRange(mode: "audio" | "full", confirmed = false) {
     if (!selectedId || !detail) return;
     const to = Math.min(Math.max(1, Math.floor(bulkTo) || 1), detail.chapters.length);
     setBulkTo(to);
+    const chosen = detail.chapters.filter((chapter) => chapter.index >= 1 && chapter.index <= to);
+    const estimates = chosen.map((chapter) => ({
+      chapter,
+      estimate: estimateChapterCost(chapter.words, budget),
+    }));
+    if (!confirmed && estimates.some((row) => row.estimate.needsApproval)) {
+      setCostGate({ mode, chapterId: null });
+      return;
+    }
+    setCostGate(null);
     setBulkMode(mode);
     setError(null);
     setMessage(null);
@@ -292,6 +333,17 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
               </div>
               <span className="books-muted">Entram na fila do Painel, em ordem.</span>
             </div>
+            <ChapterBudget
+              chapters={detail.chapters.filter((chapter) => chapter.index >= 1 && chapter.index <= Math.max(1, bulkTo))}
+              budget={budget}
+              gate={costGate}
+              onCancel={() => setCostGate(null)}
+              onContinue={() => {
+                if (!costGate) return;
+                if (costGate.chapterId) void produceChapter(costGate.chapterId, costGate.mode, true);
+                else void produceRange(costGate.mode, true);
+              }}
+            />
             {message && <p className="books-ok">{message}</p>}
             <section className="books-progress">
               <h3>Painel deste livro</h3>
@@ -323,6 +375,12 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
                         ))}
                       </div>
                       <small>{snap.stage}</small>
+                      {snap.version > 1 && (
+                        <small className="books-muted">
+                          Prova 1 mantida · {formatUsd(estimateChapterCost(c.words, budget).totalUsd)}
+                          {snap.redoing ? ` · agora a versão ${snap.version}` : ""}
+                        </small>
+                      )}
                       <div className="books-row-actions">
                         <button
                           type="button"
@@ -504,5 +562,62 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
         <p className="books-muted">Nenhuma obra corresponde a «{query}».</p>
       )}
     </div>
+  );
+}
+
+function ChapterBudget({
+  chapters,
+  budget,
+  gate,
+  onCancel,
+  onContinue,
+}: {
+  chapters: Chapter[];
+  budget: AudiobookVisualBudget;
+  gate: { mode: "audio" | "full"; chapterId: string | null } | null;
+  onCancel: () => void;
+  onContinue: () => void;
+}) {
+  if (chapters.length === 0) return null;
+  const rows = chapters.map((chapter) => ({
+    chapter,
+    estimate: estimateChapterCost(chapter.words, budget),
+    plan: planChapterVisuals(chapter.words, budget),
+  }));
+  const total = rows.reduce((sum, row) => sum + row.estimate.totalUsd, 0);
+  const first = rows[0];
+  const blocked = rows.filter((row) => row.estimate.exceedsMax);
+
+  return (
+    <section className="books-budget">
+      <h3>Orçamento do 1 ao {chapters[chapters.length - 1].index}</h3>
+      <p>
+        {first.estimate.durationLabel} no primeiro capítulo · {first.estimate.staticImages} imagens ·{" "}
+        {first.estimate.aiClips} clipes de IA · voz {formatUsd(first.estimate.voiceUsd)} · imagens{" "}
+        {formatUsd(first.estimate.staticUsd)} · animação {formatUsd(first.estimate.aiUsd)} · total{" "}
+        {formatUsd(first.estimate.totalUsd)}
+      </p>
+      {chapters.length > 1 && <p>Intervalo inteiro: {formatUsd(total)}</p>}
+      <p className="books-muted">
+        Os {first.estimate.aiClips} clipes de {budget.aiClipSourceSeconds}s abrem o vídeo, um atrás do outro: é o trecho em que as pessoas ficam. Depois, as ilustrações seguem com zoom e panorâmica, e podem repetir. Sem o áudio do modelo.
+      </p>
+      {gate && (
+        <div className="books-budget-gate">
+          <p>
+            {blocked.length > 0
+              ? "Estimated cost exceeds chapter budget."
+              : "Este intervalo passa do valor que arranca sozinho."}
+          </p>
+          <div className="books-row-actions">
+            <button type="button" onClick={onContinue}>
+              Continuar
+            </button>
+            <button type="button" onClick={onCancel}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

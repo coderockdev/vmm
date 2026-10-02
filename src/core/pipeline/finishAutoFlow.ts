@@ -275,7 +275,7 @@ async function generateAutoThumbnail(args: {
     const prompt = buildThumbnailImagePrompt({
       channel,
       concept: conceptForImage,
-      styleExtra: `COVER FORMAT — ${format.name} (${format.previewHint}). ${format.structure} Photograph only, no words.`,
+      styleExtra: `COVER FORMAT — ${format.name}. ${format.structure} Photograph only. No words, no labels, no letters inside a bubble.`,
     });
     const fileName = `thumb-${project.id}-${format.id}-${Date.now()}-${i}.png`;
     const outPath = workingFilePath(channel.id, "thumbnails", fileName);

@@ -57,6 +57,9 @@ function antiRepetitionBlock(cover: CoverVisualDna): string {
 
 function buildPrompt(args: GenerateCoverConceptArgs): string {
   const cover = coverDna(args.channel);
+  if (args.channel.dna.mode === "audiobook" || args.channel.id === "julio-verne-audiolivro") {
+    return buildAudiobookCoverPrompt(args, cover);
+  }
   const scriptExcerpt = (args.script?.rawText ?? "").slice(0, 3500);
   const choice = args.formatChoice;
   const titles = sampleSuccessfulTitles(args.channel, 25);
@@ -123,7 +126,7 @@ ${scriptExcerpt || "(no script yet — use title/topic + successful-title patter
 """
 
 Fill thumbnailText + thumbnailScene yourself from the script/DNA — the user may leave those fields empty.
-thumbnailText rules: 2–4 short complete words that fit large type with a wide margin. Never a long word that fills the width. Message copy belongs in a chat bubble, not on a phone screen.
+thumbnailText rules: ONE phrase, 2–4 short words, large type, wide margin. No arrow and no second phrase. Do not repeat those words inside thumbnailScene. The photograph never contains the caption.
 
 Return ONLY a JSON object:
 {
@@ -143,6 +146,59 @@ Return ONLY a JSON object:
     "textStrategy": string,
     "whyItFitsThisVideo": string
   }
+}`;
+}
+
+function buildAudiobookCoverPrompt(args: GenerateCoverConceptArgs, cover: CoverVisualDna): string {
+  const scriptExcerpt = (args.script?.rawText ?? "").slice(0, 3500);
+  const choice = args.formatChoice;
+  const mode =
+    choice === "auto"
+      ? "MODE: AUTOMATIC — escolhe UM formato da biblioteca, o elemento principal que o capítulo realmente contém."
+      : choice === "invent"
+        ? "MODE: INVENT — cria um elemento principal novo, ainda dentro do estilo da coleção."
+        : `MODE: FIXED FORMAT — usa o formato "${choice}".`;
+
+  return `És o diretor de capas do canal «${args.channel.name}».
+Cada vídeo é um capítulo integral de Júlio Verne. A capa ilustra esse capítulo. Não resumes a obra e não inventas um título viral.
+
+${mode}
+
+NORMA DA COLEÇÃO
+${cover.styleRules}
+
+Evitar: ${cover.avoid.join("; ")}
+Cores de acento: ${cover.accentColors.primary} e ${cover.accentColors.emphasis}
+
+BIBLIOTECA DE ELEMENTOS (escolhe um)
+${formatCatalogBlock(cover)}
+
+ANTI-REPETIÇÃO
+${antiRepetitionBlock(cover)}
+
+CAPÍTULO
+Título editorial (não o mudes): ${args.titleHint ?? args.project.headline ?? args.project.title}
+Excerto, fonte do que pode aparecer na imagem:
+"""
+${scriptExcerpt || "(sem texto — usa só o título editorial, sem inventar a cena)"}
+"""
+
+thumbnailText: 2–4 palavras, versão curta do título editorial, em diálogo com a imagem. Exemplos: «O Segredo de Ole Kamp» → «O SEGREDO»; «O Incêndio a Bordo» → «FOGO A BORDO».
+thumbnailScene: uma cena que está no excerto. Um elemento principal. Primeiro plano, meio, fundo. Século XIX. Sem o desenlace.
+title: repete o título editorial, sem o reescrever.
+
+Devolve só um JSON:
+{
+  "title": string,
+  "thumbnailFormatId": string,
+  "thumbnailFormatName": string,
+  "thumbnailText": string,
+  "thumbnailScene": string,
+  "thumbnailEmotion": string,
+  "thumbnailMessage": string,
+  "curiosityGap": string,
+  "titleThumbnailRelation": string,
+  "inventedFormat": null
 }`;
 }
 
@@ -315,6 +371,9 @@ export function buildThumbnailImagePrompt(args: {
   styleExtra?: string | null;
 }): string {
   const cover = coverDna(args.channel);
+  if (args.channel.dna.mode === "audiobook" || args.channel.id === "julio-verne-audiolivro") {
+    return buildAudiobookImagePrompt(args, cover);
+  }
   const format =
     findCoverFormat(cover, String(args.concept.thumbnailFormatId)) ??
     ({
@@ -331,10 +390,11 @@ export function buildThumbnailImagePrompt(args: {
 
   return [
     "YouTube thumbnail photograph, 16:9 landscape, hyperrealistic, cinematic.",
-    "ABSOLUTE: the photograph contains zero letters, zero numbers, zero logos, zero captions, zero subtitles, zero UI. A caption is composited afterwards. If any glyph appears, the image is wrong.",
+    "CAST: the only face is a woman. One look for the whole frame, including both sides of a split — the same woman. Either an older Andean woman (indigenous Andean features, silver hair, lined face, dignified, everyday clothes) or a young attractive Latin American woman (contemporary, clear face). Never a man. No male face.",
+    "ABSOLUTE: the photograph contains zero letters, zero numbers, zero logos, zero captions, zero subtitles, zero speech-bubble text, zero UI. A caption is composited afterwards. If any glyph appears, the image is wrong.",
     "PHONE: if a phone is in frame it is a matte dark object, out of focus, screen OFF and solid black. No lock screen, no incoming call, no clock, no caller name, no icons, no mirrored or backwards writing on the glass or on the back.",
-    "LIGHT: the face is the brightest area — soft frontal key light, eyes and skin clearly visible on a small screen. The background may stay darker. Do not bury the face in shadow.",
-    "COMPOSITION: person on the right half, fully inside the frame. Top-left stays simpler and a bit darker; nothing important there.",
+    "LIGHT: the face is brightly lit with a frontal key light. Eyes, skin and expression are the brightest, clearest part of the frame. Background may stay darker.",
+    "COMPOSITION: the person's face is entirely in the right third. Eyes, nose and mouth are fully visible. The left half is empty and darker — a large caption will be placed there and must not cover the face.",
     `Channel mood: ${args.channel.name}.`,
     `Format: ${format.name}. Structure: ${"structure" in format ? format.structure : ""}.`,
     scene ? `Scene (photograph only, no writing): ${scene}.` : "",
@@ -347,4 +407,34 @@ export function buildThumbnailImagePrompt(args: {
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+function buildAudiobookImagePrompt(
+  args: { channel: Channel; concept: VideoConcept; styleExtra?: string | null },
+  cover: CoverVisualDna
+): string {
+  const format =
+    findCoverFormat(cover, String(args.concept.thumbnailFormatId)) ??
+    ({
+      name: args.concept.thumbnailFormatName,
+      structure: args.concept.inventedFormat?.visualStructure ?? args.concept.thumbnailScene,
+    } as const);
+  const scene = (args.concept.thumbnailScene ?? "").replace(/\s+/g, " ").trim();
+  const words = (args.concept.thumbnailText ?? "").replace(/\s+/g, " ").trim();
+
+  return [
+    "Capa de YouTube 16:9 para um audiolivro de Júlio Verne. Ilustração, não fotografia.",
+    cover.styleRules,
+    `Elemento principal: ${format.name}. ${"structure" in format ? format.structure : ""}`,
+    scene ? `Cena deste capítulo, sem inventar factos e sem mostrar o final: ${scene}` : "",
+    words
+      ? `Texto grande, 2–4 palavras, letras corretas, dentro de uma margem de 12%: «${words}».`
+      : "",
+    "Por baixo, discreto e mais pequeno: «JÚLIO VERNE». Nenhum outro texto.",
+    `Cores de acento: ${cover.accentColors.primary} e ${cover.accentColors.emphasis}.`,
+    `Evitar: ${cover.avoid.join(", ")}.`,
+    args.styleExtra?.trim() || "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }

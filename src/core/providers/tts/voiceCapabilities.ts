@@ -57,6 +57,12 @@ export interface VoiceProfile {
 /** ElevenLabs shared voice: Juan Carlos — Warm, Calm and Deep (LATAM, masculine). */
 export const JUAN_CARLOS_ELEVENLABS_VOICE_ID = "RyfjEHnKbtma4Srae2za";
 
+/** ElevenLabs ids are short tokens. A UUID is Cartesia (or another provider). */
+export function isElevenLabsVoiceId(id: string | null | undefined): boolean {
+  const value = id?.trim() ?? "";
+  return /^[A-Za-z0-9]{16,32}$/.test(value);
+}
+
 export const JUAN_CARLOS_HEYGEN: VoiceProfile = {
   provider: "heygen",
   voice_id: null,
@@ -200,13 +206,11 @@ export function resolvePipelineAudioVoice(args: {
     stability = profile?.stability ?? null;
   }
 
-  // Hard guarantee: never call ElevenLabs without a voice id.
-  if (provider === "elevenlabs" && !voiceId?.trim()) {
-    voiceId =
-      profile?.elevenlabs_voice_id ||
-      profile?.voice_id ||
-      args.channelVoiceId ||
-      JUAN_CARLOS_ELEVENLABS_VOICE_ID;
+  // Hard guarantee: never call ElevenLabs without a real ElevenLabs id.
+  // A Cartesia UUID in voiceId or elevenlabs_voice_id makes the request 400.
+  if (provider === "elevenlabs" && !isElevenLabsVoiceId(voiceId)) {
+    const fromProfile = profile?.elevenlabs_voice_id;
+    voiceId = isElevenLabsVoiceId(fromProfile) ? fromProfile! : JUAN_CARLOS_ELEVENLABS_VOICE_ID;
   }
 
   return { provider, voiceId, speed, stability };

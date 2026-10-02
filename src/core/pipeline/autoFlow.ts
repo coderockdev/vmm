@@ -6,13 +6,15 @@ import { getIdea } from "../repo/plans";
 import { getVideoProject, getScript } from "../repo/projects";
 import { writeProjectPublish } from "../repo/projectPublish";
 import { insertUsageEvent } from "../repo/usage";
-import { JUAN_CARLOS_ELEVENLABS_VOICE_ID } from "../providers/tts/voiceCapabilities";
 import { suggestTopicsFromDna } from "../providers/script/ideaSuggestions";
 
 export type AutoFlowProgress = {
   stage: string;
   detail?: string;
   projectId?: string;
+  /** Idea being scripted, so a failed flow can be retried or discarded. */
+  ideaId?: string;
+  planId?: string;
   done: number;
   total: number;
 };
@@ -61,6 +63,8 @@ export async function runAutoFlow(args: {
       total: extra?.total ?? quantity,
       detail: extra?.detail,
       projectId: extra?.projectId,
+      ideaId: extra?.ideaId,
+      planId: extra?.planId,
     });
   };
 
@@ -105,6 +109,8 @@ export async function runAutoFlow(args: {
     report("scripts", {
       done: i,
       total: ideas.length,
+      ideaId: idea.id,
+      planId: plan.id,
       detail: `Roteiro ${i + 1}/${ideas.length}: ${idea.title.slice(0, 48)}…`,
     });
     const ids = await generateScriptsForIdeas({
@@ -125,11 +131,6 @@ export async function runAutoFlow(args: {
     total: projectIds.length,
     detail: `${projectIds.length} roteiro(s) gerado(s)`,
   });
-
-  const voiceId =
-    args.channel.dna.voice.profile?.elevenlabs_voice_id ||
-    args.channel.dna.voice.voiceId ||
-    JUAN_CARLOS_ELEVENLABS_VOICE_ID;
 
   for (let i = 0; i < projectIds.length; i++) {
     const projectId = projectIds[i];
@@ -178,10 +179,10 @@ export async function runAutoFlow(args: {
       done: i,
       total: projectIds.length,
       projectId,
-      detail: `A enfileirar voz (Juan Carlos) · ${project.title.slice(0, 40)}…`,
+      detail: `A enfileirar voz (${voiceLabel(args.channel)}) · ${project.title.slice(0, 40)}…`,
     });
 
-    await approveWithRetry(projectId, voiceId, report);
+    await approveWithRetry(projectId, report);
   }
 
   report("queued", {
@@ -193,16 +194,23 @@ export async function runAutoFlow(args: {
   return { planId: plan.id, projectIds, topic };
 }
 
+function voiceLabel(channel: Channel): string {
+  const provider = channel.dna.voice.provider;
+  if (provider === "cartesia") return "Cartesia";
+  if (provider === "heygen" || provider === "elevenlabs") return "ElevenLabs";
+  return provider;
+}
+
 async function approveWithRetry(
   projectId: string,
-  voiceId: string,
   report: (stage: string, extra?: Partial<AutoFlowProgress>) => void
 ): Promise<void> {
   const maxAttempts = 4;
   let lastErr: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      await approveScriptAndProduce(projectId, "elevenlabs", voiceId);
+      // null = the channel DNA voice. Do not force ElevenLabs over Cartesia.
+      await approveScriptAndProduce(projectId, null, null);
       return;
     } catch (err) {
       lastErr = err;
@@ -235,11 +243,6 @@ export async function resumeAutoFlow(args: {
   const { getJobForProject, createJob } = await import("../repo/jobs");
   const { enqueueJob } = await import("./queue");
   const { readProjectPublish } = await import("../repo/projectPublish");
-
-  const voiceId =
-    args.channel.dna.voice.profile?.elevenlabs_voice_id ||
-    args.channel.dna.voice.voiceId ||
-    JUAN_CARLOS_ELEVENLABS_VOICE_ID;
 
   const all = await listProjectsForChannel(args.channel.id);
   const candidates = (args.projectIds?.length
@@ -316,7 +319,7 @@ export async function resumeAutoFlow(args: {
         projectId: project.id,
         detail: `A enfileirar voz · ${project.title.slice(0, 40)}…`,
       });
-      await approveWithRetry(project.id, voiceId, report);
+      await approveWithRetry(project.id, report);
       resumed.push(project.id);
       continue;
     }

@@ -6,6 +6,7 @@ import {
   type AudiobookTtsProvider,
   type ChannelAudiobookSettings,
 } from "../../../../../../core/types";
+import { normalizeVisualBudget } from "../../../../../../core/audiobook/visualBudget";
 import {
   AUDITION_PROVIDERS,
   AUDITION_VOICES,
@@ -26,11 +27,12 @@ export async function GET(
   }
 
   const settings = await getAudiobookSettings(channel.id);
+  const chirpLocale = channel.dna.language === "es" ? "es-US-" : "pt-BR-";
   return NextResponse.json({
     settings,
     language: channel.dna.language,
     providers: AUDITION_PROVIDERS,
-    voices: AUDITION_VOICES,
+    voices: AUDITION_VOICES.filter((voice) => voice.provider !== "google" || voice.id.startsWith(chirpLocale)),
   });
 }
 
@@ -82,6 +84,10 @@ export async function PATCH(
       next.ttsLanguageCode =
         channel.dna.language === "es" ? "es" : channel.dna.language === "en" ? "en" : "pt-BR";
     }
+    if (provider === "google-chirp3-hd") {
+      const locale = voiceId.match(/^(pt-BR|es-US)/)?.[1];
+      if (locale) next.ttsLanguageCode = locale;
+    }
   }
   if (typeof body.ttsSpeakingRate === "number" && body.ttsSpeakingRate > 0) {
     next.ttsSpeakingRate = body.ttsSpeakingRate;
@@ -94,6 +100,9 @@ export async function PATCH(
   }
   if (typeof body.maxUploadsPerDay === "number" && body.maxUploadsPerDay >= 1) {
     next.maxUploadsPerDay = Math.floor(body.maxUploadsPerDay);
+  }
+  if (body.visualBudget && typeof body.visualBudget === "object") {
+    next.visualBudget = normalizeVisualBudget({ ...current.visualBudget, ...body.visualBudget });
   }
 
   const saved = await saveAudiobookSettings(channel.id, next);
