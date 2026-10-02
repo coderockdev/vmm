@@ -81,13 +81,13 @@ export const DEFAULT_AMOR_AMOR_MUSICAL: MusicalDna = {
   intensity: "soft",
   /** 8% under voice — audible but never competes with Juan Carlos. */
   volume: 0.08,
-  /** SFX must cut through voice briefly. */
-  sfxVolume: 0.72,
+  /** Sound effects stay off. The bed, if any, is only the soft instrumental. */
+  sfxVolume: 0,
   ducking: true,
   adaptToScript: true,
   bedMode: "continuous",
-  useSfx: true,
-  sfxMode: "auto",
+  useSfx: false,
+  sfxMode: "off",
   sfxIntensity: "medium",
   allowedSfx: ["phone_vibrate", "phone_ring", "message", "wind", "night", "heartbeat", "whoosh", "impact", "silence"],
   forbiddenSfx: ["thunder", "city", "footsteps", "birds", "fire"],

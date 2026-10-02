@@ -134,7 +134,7 @@ Columna: DESEO → DESESPERACIÓN → CLÍMAX → EGO → DIOS.`,
         defaultDurationMinutes: 11,
         defaultSceneCount: 4,
         generationPrompt: AMOR_AMOR_SCRIPT_PROMPT,
-        pauses: { betweenLines: 0.55, betweenSections: 1.6 },
+        pauses: { betweenLines: 0.45, betweenSections: 0.7 },
         wordsPerMinute: 145,
         charsPerWord: 6,
         performanceTags: {

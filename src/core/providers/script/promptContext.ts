@@ -76,7 +76,7 @@ export function buildScriptGenerationContext(args: {
       voiceProfile.capabilities.break_tags ||
         voiceProfile.provider === "elevenlabs" ||
         voiceProfile.provider === "heygen"
-        ? `- Pausas estruturais: use <break time="2.7s"/> antes de invocações fortes e <break time="1.4s"/> entre alguns parágrafos (3–4 por cena) — isso é aparte da densidade de tags [...].`
+        ? `- Pausas curtas: no máximo <break time="0.8s"/> entre parágrafos. Antes de «Ahora sí. Vamos a comenzar con la oración.» um só respiro, sem [pause] e sem silêncio longo. A oração começa na frase seguinte.`
         : `- NÃO use <break time="…"/> — este motor não aceita; use [pause] se estiver na lista permitida.`,
       `- As tags NÃO são faladas: são direção de performance. Não invente outras tags.`
     );

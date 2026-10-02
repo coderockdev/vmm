@@ -10,6 +10,11 @@ export interface MixNarrationBedArgs {
   sfxVolume?: number;
   /** When true, sidechain-compress music from narration. */
   ducking: boolean;
+  /**
+   * Light warmth on the voice only: a little body, less bite around 3 kHz.
+   * Does not change the speaker. Used for the cinematic ElevenLabs read.
+   */
+  voiceWarmth?: boolean;
   outputPath: string;
 }
 
@@ -39,13 +44,18 @@ export async function mixNarrationWithBed(args: MixNarrationBedArgs): Promise<{
   const musicVolStr = musicVol.toFixed(3);
   const sfxVolStr = sfxVol.toFixed(3);
 
+  const warmth = args.voiceWarmth
+    ? "equalizer=f=250:width_type=q:width=1:g=1.8,equalizer=f=3400:width_type=q:width=1.3:g=-2.8,treble=g=-1.2:f=7500,"
+    : "";
+  const voiceFilters = `${FMT},${warmth}`.replace(/,$/, "");
+
   if (!hasMusic && !hasSfx) {
     await runFfmpeg("ffmpeg", [
       "-y",
       "-i",
       args.narrationPath,
       "-af",
-      FMT,
+      voiceFilters,
       "-c:a",
       "libmp3lame",
       "-q:a",
@@ -62,7 +72,7 @@ export async function mixNarrationWithBed(args: MixNarrationBedArgs): Promise<{
 
   // Voice always label [voice]; music/sfx padded to narration length so amix
   // never truncates early and sidechain has a continuous timeline.
-  const parts: string[] = [`[0:a]${FMT},asetpts=PTS-STARTPTS[voice]`];
+  const parts: string[] = [`[0:a]${voiceFilters},asetpts=PTS-STARTPTS[voice]`];
 
   let musicLabel: string | null = null;
   if (hasMusic) {
