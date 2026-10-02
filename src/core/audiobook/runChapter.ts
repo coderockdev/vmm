@@ -106,7 +106,7 @@ async function produceClaimedChapter(
       });
     }
     const body = readChapterText(book.folder, chapter.sourceFile);
-    const spoken = spokenScript(book.title, chapter.index, body, next?.label ?? null);
+    const spoken = spokenScript(book.title, body, next?.label ?? null);
     const dirs = ensureChapterAssetDirs(channel.id, book.folder, chapter.index);
     const spokenPath = path.join(dirs.timeline, "spoken.txt");
     fs.writeFileSync(spokenPath, spoken, "utf8");
@@ -117,7 +117,8 @@ async function produceClaimedChapter(
     const dnaVoice = channel.dna.voice;
     const dnaChirp = dnaVoice.provider === "google" && isChirpVoiceId(dnaVoice.voiceId ?? "");
     const voiceId = dnaChirp ? dnaVoice.voiceId! : settings.ttsVoice;
-    const speed = narrationSpeed(dnaChirp ? dnaVoice.speed : settings.ttsSpeakingRate);
+    const storedSpeed = dnaChirp ? dnaVoice.speed : settings.ttsSpeakingRate;
+    const speed = narrationSpeed(storedSpeed * 1.05);
     const useChirp = dnaChirp || settings.ttsProvider === "google-chirp3-hd";
     const engine = useChirp ? "Chirp" : "Cartesia";
     if (!keepAudio) {
@@ -152,7 +153,7 @@ async function produceClaimedChapter(
     const images: string[] = [];
     for (const image of plan.images) {
       const file = path.join(dirs.images, `${String(image.index + 1).padStart(2, "0")}.png`);
-      if (fs.existsSync(file) && fs.statSync(file).size > 1000) {
+      if (from === "motion" && fs.existsSync(file) && fs.statSync(file).size > 1000) {
         images.push(file);
         continue;
       }
@@ -259,7 +260,12 @@ async function produceClaimedChapter(
       percent: 55,
       detail: "Fades",
     });
-    await assemble(clips, mixedAudio, finalPath);
+    await assemble(
+      clips,
+      plan.slots.map((slot) => slot.kind),
+      mixedAudio,
+      finalPath
+    );
     const videoBytes = fs.statSync(finalPath).size;
     const videoRef =
       videoBytes > 45 * 1024 * 1024
@@ -316,9 +322,15 @@ async function produceClaimedChapter(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const current = await listSafe(chapterId);
+    const quota = /quota/i.test(message);
     await patchChapter(chapterId, {
-      status: "failed",
-      errorMessage: packMessage(message.slice(0, 500), readLog(current?.errorMessage) ?? freshLog()),
+      status: quota ? "thumb_ready" : "failed",
+      errorMessage: packMessage(
+        quota
+          ? "Portada pronta. O YouTube ficou sem cota hoje. O vídeo está feito; a capa entra amanhã."
+          : message.slice(0, 500),
+        readLog(current?.errorMessage) ?? freshLog()
+      ),
     });
   }
 }
@@ -345,18 +357,17 @@ function narrationSpeed(stored: number): number {
   return Math.min(1.05, Math.max(0.85, value));
 }
 
-function spokenScript(bookTitle: string, chapterIndex: number, body: string, nextLabel: string | null): string {
+function spokenScript(bookTitle: string, body: string, nextLabel: string | null): string {
   const story = body
     .split(/\n\n+/)
     .map((paragraph) => paragraph.trim())
     .filter(Boolean)
     .filter((paragraph, index) => index > 0 || !isRepeatedHeading(paragraph, bookTitle))
     .join('\n\n<break time="0.7s"/>\n\n');
-  const opening = `Júlio Verne em Audiolivro. ${bookTitle}. Capítulo ${chapterIndex}.`;
   const closing = nextLabel
     ? `Fim do capítulo. O próximo é ${nextLabel}. Inscreva-se para acompanhar a obra.`
     : "Fim deste capítulo. Inscreva-se para acompanhar a obra.";
-  return `${opening}\n\n<break time="1s"/>\n\n${story}\n\n<break time="0.8s"/>\n\n${closing}`;
+  return `${story}\n\n<break time="0.8s"/>\n\n${closing}`;
 }
 
 function isRepeatedHeading(paragraph: string, bookTitle: string): boolean {
@@ -429,15 +440,9 @@ function imagePrompt(style: string, bookTitle: string, scene: string, look: stri
   ].join("\n\n");
 }
 
-/** Slow living illustration. The picture already shows the scene; the book text was rewriting it. */
+/** Subtle motion only. A richer prompt made Fal redraw the people. */
 function motionPrompt(): string {
-  return [
-    "Animate this illustration slowly, like a living painting, not an action scene.",
-    "The people already in the frame move a little: a pull, a step, a turn of the head, hands, cloth and hair.",
-    "Smoke, water, leaves and dust drift.",
-    "A slow camera drift or a gentle pan is welcome.",
-    "Keep the same faces, the same clothes and the same place. Do not add people, objects or text. No running, no fighting, no sudden moves.",
-  ].join(" ");
+  return "Slow cinematic camera move across this illustration. Gentle motion only: cloth, leaves, curtains, hair, and dust in the light. Keep the same drawing, the same faces, and the same clothes. Do not add objects or change the place. No text.";
 }
 
 async function narrateChirp(
@@ -653,35 +658,47 @@ async function underVoice(narrationPath: string, outDir: string, channelId: stri
   return mixed;
 }
 
-async function assemble(clips: string[], audioPath: string, outPath: string): Promise<void> {
+async function assemble(
+  clips: string[],
+  kinds: Array<"ai-clip" | "still-motion">,
+  audioPath: string,
+  outPath: string
+): Promise<void> {
   const durs: number[] = [];
   for (const clip of clips) durs.push(await ffprobeDuration(clip));
-  const minDur = Math.min(...durs);
-  const fade = Math.max(0.2, Math.min(0.45, minDur / 4));
+  const fade = 1;
   const args = ["-y"];
   clips.forEach((clip) => args.push("-i", clip));
   args.push("-i", audioPath);
   const filters = clips.map(
     (_, i) => `[${i}:v]scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,fps=30,setsar=1,format=yuv420p[v${i}]`
   );
-  let label = "v0";
-  let cursor = 0;
-  if (clips.length === 1) {
-    filters.push(`[v0]null[joined]`);
-  } else {
-    for (let i = 1; i < clips.length; i++) {
-      cursor += durs[i - 1] - fade;
-      const next = i === clips.length - 1 ? "joined" : `x${i}`;
-      filters.push(
-        `[${label}][v${i}]xfade=transition=fade:duration=${fade.toFixed(2)}:offset=${Math.max(0, cursor).toFixed(2)}[${next}]`
-      );
-      label = next;
+  clips.forEach((_, i) => {
+    const duration = durs[i];
+    const previousIsClip = i > 0 && kinds[i - 1] === "ai-clip";
+    const nextIsClip = i + 1 < kinds.length && kinds[i + 1] === "ai-clip";
+    if (kinds[i] === "ai-clip") {
+      const head = i > 0 && !previousIsClip ? fade : 0;
+      const tail = i + 1 < clips.length && !nextIsClip ? fade : 0;
+      const padIn = head > 0 ? `,tpad=start_mode=clone:start_duration=${head.toFixed(2)},fade=t=in:st=0:d=${head.toFixed(2)}:color=black` : "";
+      const padOut = tail > 0 ? `,tpad=stop_mode=clone:stop_duration=${tail.toFixed(2)},fade=t=out:st=${(head + duration).toFixed(2)}:d=${tail.toFixed(2)}:color=black` : "";
+      filters.push(`[v${i}]trim=0:${duration.toFixed(3)},setpts=PTS-STARTPTS${padIn}${padOut}[seg${i}]`);
+      return;
     }
-  }
-  const total = durs.reduce((sum, dur) => sum + dur, 0) - fade * Math.max(0, clips.length - 1);
-  filters.push(
-    `[joined]fade=t=in:st=0:d=${fade.toFixed(2)},fade=t=out:st=${Math.max(0, total - fade).toFixed(2)}:d=${fade.toFixed(2)},noise=c0s=3:c1s=1:c2s=1:allf=t,format=yuv420p[v]`
-  );
+    let keep = duration;
+    if (previousIsClip) keep -= fade;
+    if (nextIsClip) keep -= fade;
+    keep = Math.max(0.4, keep);
+    const fadeIn = previousIsClip || i === 0 ? Math.min(fade, keep / 2) : 0;
+    const fadeOut = nextIsClip || i === clips.length - 1 ? Math.min(fade, keep / 2) : 0;
+    const outAt = Math.max(fadeIn, keep - fadeOut);
+    const fadeInFilter = fadeIn > 0 ? `,fade=t=in:st=0:d=${fadeIn.toFixed(2)}:color=black` : "";
+    const fadeOutFilter = fadeOut > 0 ? `,fade=t=out:st=${outAt.toFixed(2)}:d=${fadeOut.toFixed(2)}:color=black` : "";
+    filters.push(
+      `[v${i}]trim=0:${keep.toFixed(3)},setpts=PTS-STARTPTS${fadeInFilter}${fadeOutFilter}[seg${i}]`
+    );
+  });
+  filters.push(`${clips.map((_, i) => `[seg${i}]`).join("")}concat=n=${clips.length}:v=1:a=0,format=yuv420p[v]`);
   args.push(
     "-filter_complex",
     filters.join(";"),
@@ -691,6 +708,10 @@ async function assemble(clips: string[], audioPath: string, outPath: string): Pr
     `${clips.length}:a`,
     "-c:v",
     "libx264",
+    "-crf",
+    "18",
+    "-preset",
+    "medium",
     "-pix_fmt",
     "yuv420p",
     "-c:a",
