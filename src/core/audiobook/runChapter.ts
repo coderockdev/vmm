@@ -1,6 +1,8 @@
 import fs from "fs";
 import path from "path";
+import { mixNarrationWithBed } from "../audio/mixNarrationBed";
 import { concatAudioFiles, ffprobeDuration, runFfmpeg } from "../audio/ffmpegUtils";
+import { LibraryMusicProvider } from "../providers/music";
 import { burnStoryCover } from "../providers/image/burnThumbnailText";
 import { JULIO_VERNE_INTERIOR_STYLE_RULES } from "../providers/image/coverFormats";
 import { getImageProvider } from "../providers/image";
@@ -16,6 +18,7 @@ import {
   patchChapter,
 } from "../repo/books";
 import { persistFile } from "../storage";
+import { insertUsageEvent } from "../repo/usage";
 import { setVideoThumbnail, startResumableVideoUpload, putResumableChunk } from "../youtube/upload";
 import { ensureChapterAssetDirs } from "./chapterAssets";
 import { renderCinematicStill } from "./cinematicMotion";
@@ -48,7 +51,7 @@ export async function reproduceChapter(chapterId: string): Promise<void> {
     await patchChapter(chapterId, {
       status: "tts_running",
       attempts: current.attempts + 1,
-      errorMessage: `Versão ${current.attempts + 1} · a gerar de novo (voz 0,85, pausas, título uma vez, portada).`,
+      errorMessage: `Versão ${current.attempts + 1} · a gerar de novo (imagens do texto, clipes no início, portada só com o título).`,
     });
   }
   await produceClaimedChapter(chapterId, "full");
@@ -94,6 +97,7 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
     const plan = planChapterVisuals(chapter.words, settings.visualBudget);
     fitSlots(plan.slots, audioSec);
     const style = channel.dna.visual.interiorStyleRules || JULIO_VERNE_INTERIOR_STYLE_RULES;
+    const look = visualFacts(body);
     const images: string[] = [];
     for (const image of plan.images) {
       const file = path.join(dirs.images, `${String(image.index + 1).padStart(2, "0")}.png`);
@@ -103,10 +107,18 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
       }
       await note(chapter.id, "images_ready", `Imagens: ${image.index + 1}/${plan.images.length} a partir do texto…`);
       const scene = excerpt(body, image.wordStart, image.wordEnd);
-      await getImageProvider().generate({
-        prompt: imagePrompt(style, book.title, scene),
-        outPath: file,
-      });
+      const made = await generateStill(imagePrompt(style, book.title, scene, look), file);
+      await frameTo16x9(file);
+      await insertUsageEvent({
+        channelId: channel.id,
+        stage: "thumbnail",
+        snapshot: {
+          provider: made === "gemini" ? "gemini" : "openai",
+          model: made === "gemini" ? "gemini-3.1-flash-image" : "gpt-image-1 medium 1536x1024",
+          images: 1,
+          raw: { chapterId: chapter.id, task: "image" },
+        },
+      }).catch(() => undefined);
       images.push(file);
     }
 
@@ -120,7 +132,20 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
       const out = path.join(dirs.motion, `slot-${String(slot.index + 1).padStart(2, "0")}.mp4`);
       const still = images[slot.imageIndex] ?? images[0];
       if (slot.kind === "ai-clip") {
-        const animated = await tryFalClip(still, scenePrompt(body, plan.images[slot.imageIndex]), slot.durationSec, out, channel.id, settings.visualBudget.imageToVideoModel);
+        const animated = await tryFalClip(still, motionPrompt(), slot.durationSec, out, channel.id, settings.visualBudget.imageToVideoModel);
+        if (animated) {
+          await insertUsageEvent({
+            channelId: channel.id,
+            stage: "render",
+            snapshot: {
+              provider: "fal",
+              model: `${settings.visualBudget.imageToVideoModel} 720p`,
+              images: 1,
+              durationSeconds: slot.durationSec,
+              raw: { chapterId: chapter.id, task: "animation" },
+            },
+          }).catch(() => undefined);
+        }
         if (!animated) {
           await renderCinematicStill({
             imagePath: still,
@@ -146,9 +171,10 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
       clips.push(out);
     }
 
-    await note(chapter.id, "images_ready", "Vídeo: a juntar imagens, clips e narração…");
+    await note(chapter.id, "images_ready", "Vídeo: a juntar imagens, clips, narração e música suave…");
     const finalPath = path.join(dirs.final, "chapter.mp4");
-    await assemble(clips, audioPath, finalPath);
+    const mixedAudio = await underVoice(audioPath, dirs.audio, channel.id, chapter.id);
+    await assemble(clips, mixedAudio, finalPath);
     const videoBytes = fs.statSync(finalPath).size;
     const videoRef =
       videoBytes > 45 * 1024 * 1024
@@ -244,18 +270,63 @@ function excerpt(text: string, wordStart: number, wordEnd: number): string {
   return words.slice(wordStart, Math.max(wordStart + 1, wordEnd)).join(" ").slice(0, 700);
 }
 
-function imagePrompt(style: string, bookTitle: string, scene: string): string {
+/** Sentences that describe a face, clothes, or the house, so every frame keeps the same people. */
+function visualFacts(text: string): string {
+  const sentences = text
+    .split(/(?<=[.!?»])\s+/)
+    .map((sentence) => sentence.replace(/\s+/g, " ").trim())
+    .filter((sentence) => sentence.length > 40 && sentence.length < 420);
+  const keys =
+    /cabelos|óculos|oculos|olhos azuis|louro|loiro|bengala|punhos fechados|nariz|olmo|empena|meio tijolo|chapéu de pelo|chapeu de pelo/i;
+  const rank = (sentence: string) =>
+    /cabelos|óculos|oculos|olhos azuis|louro|loiro/.test(sentence) ? 0 : /empena|olmo|tijolo/.test(sentence) ? 1 : 2;
+  return sentences
+    .filter((sentence) => keys.test(sentence))
+    .sort((a, b) => rank(a) - rank(b))
+    .slice(0, 3)
+    .join(" ")
+    .slice(0, 520);
+}
+
+async function generateStill(prompt: string, outPath: string): Promise<"openai" | "gemini"> {
+  const quota = (err: unknown) => /429|insufficient_quota|quota/i.test(err instanceof Error ? err.message : String(err));
+  const provider = getImageProvider();
+  try {
+    await provider.generate({ prompt, outPath, quality: "medium", size: "1536x864" });
+    return provider.name === "gemini" ? "gemini" : "openai";
+  } catch (err) {
+    if (!quota(err)) throw err;
+  }
+  if (!process.env.GEMINI_API_KEY?.trim()) {
+    throw new Error("OpenAI sem crédito para as imagens, e não há chave Gemini.");
+  }
+  try {
+    await getImageProvider("gemini").generate({ prompt, outPath, quality: "medium", size: "1536x864" });
+    return "gemini";
+  } catch (err) {
+    if (!quota(err)) throw err;
+    throw new Error(
+      "Sem crédito de imagem: a conta OpenAI esgotou a quota e o Gemini também. Não gerei o capítulo com um modelo grátis, porque o estilo não sai."
+    );
+  }
+}
+
+function imagePrompt(style: string, bookTitle: string, scene: string, look: string): string {
   return [
-    style.slice(0, 6000),
-    `BOOK: ${bookTitle}.`,
-    "Illustrate this moment from the chapter. Do not copy the words onto the image. No letters, no captions, no signs with readable text.",
-    scene,
+    `BOOK: ${bookTitle}. Classic European adventure illustration, ligne claire, clean ink, flat color, 19th century. Not a photo. No letters anywhere, including signs and buildings.`,
+    look
+      ? `KEEP THIS LOOK in every image of the chapter. It is how the book describes them:\n${look}`
+      : "If the same person appears, keep the same face, hair, and clothes.",
+    "Draw ONE frozen moment from the scene. Do not invent another person, another place, or an event that is not in that scene.",
+    `SCENE:\n${scene}`,
+    "Wide 16:9. Faces and feet stay in the middle of the frame. Leave the lower-left corner as floor or street, with no face there.",
+    style.slice(0, 2500),
   ].join("\n\n");
 }
 
-function scenePrompt(body: string, image: { wordStart: number; wordEnd: number } | undefined): string {
-  if (!image) return "Gentle cinematic motion through the illustrated scene. No text.";
-  return `Slow cinematic motion. ${excerpt(body, image.wordStart, image.wordEnd).slice(0, 280)}. No text.`;
+/** Camera move only. The chapter text was tripping the video filter and rewriting the drawing. */
+function motionPrompt(): string {
+  return "Slow cinematic camera move across this illustration. Gentle motion only: cloth, leaves, curtains, hair, and dust in the light. Keep the same drawing, the same faces, and the same clothes. Do not add objects or change the place. No text.";
 }
 
 async function narrateChirp(text: string, voiceId: string, speed: number, outDir: string): Promise<string> {
@@ -324,17 +395,18 @@ async function tryFalClip(
     const imageRef = await persistFile(jpg, channelId, "cover", `motion-${path.basename(jpg)}`, "image/jpeg");
     if (!/^https?:/i.test(imageRef)) return false;
     const videoUrl = await falQueue(key, model, imageRef, prompt);
-    await download(videoUrl, outPath + ".src.mp4");
+    const source = outPath + ".src.mp4";
+    await download(videoUrl, source);
+    const sourceSec = await ffprobeDuration(source).catch(() => durationSec);
+    const factor = sourceSec > 0.2 ? durationSec / sourceSec : 1;
     await runFfmpeg("ffmpeg", [
       "-y",
-      "-stream_loop",
-      "-1",
       "-i",
-      outPath + ".src.mp4",
+      source,
       "-t",
       durationSec.toFixed(2),
       "-vf",
-      "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,fps=30",
+      `setpts=PTS*${factor.toFixed(4)},scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,fps=30`,
       "-an",
       "-pix_fmt",
       "yuv420p",
@@ -351,7 +423,14 @@ async function falQueue(key: string, model: string, imageUrl: string, prompt: st
   const start = await fetch(`https://queue.fal.run/${model}`, {
     method: "POST",
     headers: { Authorization: `Key ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ image_url: imageUrl, prompt, resolution: "720p", aspect_ratio: "16:9" }),
+    body: JSON.stringify({
+      image_url: imageUrl,
+      prompt,
+      resolution: "720p",
+      aspect_ratio: "16:9",
+      enable_prompt_expansion: false,
+      acceleration: "regular",
+    }),
   });
   if (!start.ok) throw new Error(`Fal ${start.status}: ${(await start.text()).slice(0, 240)}`);
   const queued = (await start.json()) as { status_url?: string; response_url?: string };
@@ -380,17 +459,81 @@ async function download(url: string, dest: string): Promise<void> {
   fs.writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
 }
 
+/** Center-crop to 16:9. gpt-image-1's widest frame is 3:2, so the model is asked to keep the action in the middle. */
+async function frameTo16x9(file: string): Promise<void> {
+  const tmp = `${file}.16x9.png`;
+  await runFfmpeg("ffmpeg", [
+    "-y",
+    "-i",
+    file,
+    "-vf",
+    "scale=1536:864:force_original_aspect_ratio=increase,crop=1536:864",
+    tmp,
+  ]);
+  fs.renameSync(tmp, file);
+}
+
+/** Soft instrumental under the voice. If the library has no track, the narration stays alone. */
+async function underVoice(narrationPath: string, outDir: string, channelId: string, chapterId: string): Promise<string> {
+  const mixed = path.join(outDir, "with-bed.mp3");
+  let musicPath: string | null = null;
+  try {
+    const bed = await new LibraryMusicProvider().generate({
+      channelId,
+      videoProjectId: chapterId,
+      durationSeconds: await ffprobeDuration(narrationPath),
+      style: "epico-suave",
+      intensity: "soft",
+      instructions: "Instrumental suave, sem voz, por baixo da narração de um audiolivro.",
+      outDir,
+      fileBaseName: "bed",
+    });
+    musicPath = bed.filePath;
+  } catch (err) {
+    console.warn("[audiobook] sem cama musical:", err instanceof Error ? err.message : err);
+  }
+  await mixNarrationWithBed({
+    narrationPath,
+    musicPath,
+    musicVolume: 0.08,
+    ducking: true,
+    outputPath: mixed,
+  });
+  return mixed;
+}
+
 async function assemble(clips: string[], audioPath: string, outPath: string): Promise<void> {
+  const durs: number[] = [];
+  for (const clip of clips) durs.push(await ffprobeDuration(clip));
+  const minDur = Math.min(...durs);
+  const fade = Math.max(0.2, Math.min(0.45, minDur / 4));
   const args = ["-y"];
   clips.forEach((clip) => args.push("-i", clip));
   args.push("-i", audioPath);
-  const filters = clips
-    .map((_, i) => `[${i}:v]scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,fps=30,setsar=1[v${i}]`)
-    .join(";");
-  const concat = clips.map((_, i) => `[v${i}]`).join("");
+  const filters = clips.map(
+    (_, i) => `[${i}:v]scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,fps=30,setsar=1,format=yuv420p[v${i}]`
+  );
+  let label = "v0";
+  let cursor = 0;
+  if (clips.length === 1) {
+    filters.push(`[v0]null[joined]`);
+  } else {
+    for (let i = 1; i < clips.length; i++) {
+      cursor += durs[i - 1] - fade;
+      const next = i === clips.length - 1 ? "joined" : `x${i}`;
+      filters.push(
+        `[${label}][v${i}]xfade=transition=fade:duration=${fade.toFixed(2)}:offset=${Math.max(0, cursor).toFixed(2)}[${next}]`
+      );
+      label = next;
+    }
+  }
+  const total = durs.reduce((sum, dur) => sum + dur, 0) - fade * Math.max(0, clips.length - 1);
+  filters.push(
+    `[joined]fade=t=in:st=0:d=${fade.toFixed(2)},fade=t=out:st=${Math.max(0, total - fade).toFixed(2)}:d=${fade.toFixed(2)},noise=c0s=3:c1s=1:c2s=1:allf=t,format=yuv420p[v]`
+  );
   args.push(
     "-filter_complex",
-    `${filters};${concat}concat=n=${clips.length}:v=1:a=0[v]`,
+    filters.join(";"),
     "-map",
     "[v]",
     "-map",

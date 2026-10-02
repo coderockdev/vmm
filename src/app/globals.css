@@ -2667,7 +2667,7 @@ body:has(.channel-workspace) .main-content {
 .costs-table-head,
 .costs-table-row {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) repeat(5, minmax(48px, 0.65fr)) minmax(60px, 0.75fr);
+  grid-template-columns: minmax(0, 2fr) repeat(4, minmax(48px, 0.7fr)) minmax(60px, 0.75fr);
   gap: 8px;
   align-items: center;
   padding: 8px 4px;

@@ -58,18 +58,6 @@ function queueRank(status: string): number {
   return 9;
 }
 
-const PROVIDER_LABEL: Record<string, string> = {
-  elevenlabs: "ElevenLabs",
-  openai: "OpenAI",
-  anthropic: "Claude",
-  gemini: "Gemini",
-  cartesia: "Cartesia",
-  heygen: "HeyGen",
-  "remotion-lambda": "Lambda",
-  pollinations: "Pollinations",
-  local: "FFmpeg",
-};
-
 function money(n: number): string {
   return `US$ ${n.toFixed(2)}`;
 }
@@ -96,22 +84,22 @@ function CostLine({
   cost,
   fallback,
 }: {
-  cost?: { totalUsd: number; byProvider: { provider: string; usd: number }[] };
+  cost?: { totalUsd: number; lines: { label: string; usd: number }[] };
   fallback: number | null;
 }) {
-  const parts = (cost?.byProvider ?? []).filter((p) => p.usd > 0);
+  const parts = (cost?.lines ?? []).filter((p) => p.usd > 0);
   const total = cost && cost.totalUsd > 0 ? cost.totalUsd : fallback && fallback > 0 ? fallback : 0;
   if (total <= 0 && parts.length === 0) {
-    return <p className="control-cost">Custo variável: ainda sem registro</p>;
+    return <p className="control-cost">Gasto real: ainda sem registro</p>;
   }
   return (
     <p className="control-cost">
       {parts.map((p) => (
-        <span key={p.provider}>
-          {PROVIDER_LABEL[p.provider] || p.provider} {money(p.usd)}
+        <span key={p.label}>
+          {p.label} {money(p.usd)}
         </span>
       ))}
-      <strong>Total {money(total)}</strong>
+      <strong>Gasto {money(total)}</strong>
     </p>
   );
 }
@@ -130,7 +118,7 @@ export function ControlPanel({
       string,
       {
         totalUsd: number;
-        byProvider: { provider: string; usd: number }[];
+        lines: { label: string; usd: number }[];
         youtubeVideoId: string | null;
         publishedAt: string | null;
       }
@@ -146,7 +134,7 @@ export function ControlPanel({
           projects?: {
             id: string;
             totalUsd: number;
-            byProvider?: { provider: string; usd: number }[];
+            lines?: { label: string; usd: number }[];
             youtubeVideoId?: string | null;
             publishedAt?: string | null;
           }[];
@@ -156,7 +144,7 @@ export function ControlPanel({
         for (const row of json.projects) {
           map[row.id] = {
             totalUsd: row.totalUsd,
-            byProvider: row.byProvider ?? [],
+            lines: row.lines ?? [],
             youtubeVideoId: row.youtubeVideoId ?? null,
             publishedAt: row.publishedAt ?? null,
           };

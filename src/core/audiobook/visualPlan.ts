@@ -104,7 +104,7 @@ export function planChapterVisuals(words: number, budget: AudiobookVisualBudget)
 
   const used = new Set<string>();
   const slots: TimelineSlot[] = [];
-  const playSec = budget.aiClipSourceSeconds;
+  const playSec = budget.aiClipPlaySeconds;
   const audio = estimate.durationSec;
   const clipCount = estimate.aiClips;
 
@@ -140,7 +140,7 @@ export function planChapterVisuals(words: number, budget: AudiobookVisualBudget)
       let hold = holds[(salt + step) % holds.length];
       hold = Math.min(budget.stillHoldMaxSeconds, Math.max(Math.min(budget.stillHoldMinSeconds, remaining), Math.min(hold, remaining)));
       if (remaining < budget.stillHoldMinSeconds) hold = remaining;
-      const imageIndex = (slots.length + step) % imageCount;
+      const imageIndex = step % imageCount;
       push("still-motion", cursor, hold, imageIndex, salt + step);
       cursor += slots[slots.length - 1].durationSec;
       if (cursor > to) {
@@ -154,9 +154,11 @@ export function planChapterVisuals(words: number, budget: AudiobookVisualBudget)
   };
 
   let cursor = 0;
+  // The opening reel is the start of the chapter, where the hook is.
+  // Later images still appear as stills, and these can return.
+  const pool = Math.min(imageCount, Math.max(clipCount, Math.ceil(imageCount * 0.6)));
   for (let index = 0; index < clipCount; index++) {
-    const imageIndex =
-      clipCount <= 1 ? 0 : Math.round((index * (imageCount - 1)) / (clipCount - 1));
+    const imageIndex = clipCount <= 1 ? 0 : Math.round((index * (pool - 1)) / (clipCount - 1));
     push("ai-clip", cursor, playSec, imageIndex, index);
     cursor += playSec;
   }
@@ -208,7 +210,7 @@ export function planChapterVisuals(words: number, budget: AudiobookVisualBudget)
   return {
     estimate,
     images,
-    thumbnailSourceImage: images.length > 1 ? 1 : 0,
+    thumbnailSourceImage: 0,
     slots,
     costs,
     estimatedTotalUsd: estimate.totalUsd,

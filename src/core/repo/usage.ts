@@ -279,6 +279,79 @@ export async function listUsageForPlan(contentPlanId: string): Promise<UsageEven
   return rows.map(rowToEvent);
 }
 
+export type SpendTask = "text" | "image" | "voice" | "video" | "other";
+
+export function spendTask(stage: string): SpendTask {
+  if (stage === "ideas" || stage === "script") return "text";
+  if (stage === "thumbnail") return "image";
+  if (stage === "audio") return "voice";
+  if (stage === "render" || stage === "music" || stage === "sfx") return "video";
+  return "other";
+}
+
+const TASK_PT: Record<SpendTask, string> = {
+  text: "texto",
+  image: "imagem",
+  voice: "voz",
+  video: "vídeo",
+  other: "outro",
+};
+
+const PROVIDER_PT: Record<string, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  gemini: "Gemini",
+  fal: "Fal",
+  cartesia: "Cartesia",
+  elevenlabs: "ElevenLabs",
+  pollinations: "Pollinations",
+  heygen: "HeyGen",
+};
+
+/** Same company can do two jobs. OpenAI text and OpenAI images are separate lines. */
+export function providerTaskLabel(provider: string, stage: string): string {
+  const who = PROVIDER_PT[provider] || provider;
+  return `${who} · ${TASK_PT[spendTask(stage)]}`;
+}
+
+export interface ChapterSpend {
+  textUsd: number;
+  imageUsd: number;
+  voiceUsd: number;
+  videoUsd: number;
+  totalUsd: number;
+}
+
+function emptySpend(): ChapterSpend {
+  return { textUsd: 0, imageUsd: 0, voiceUsd: 0, videoUsd: 0, totalUsd: 0 };
+}
+
+function addSpend(row: ChapterSpend, stage: string, usd: number) {
+  const task = spendTask(stage);
+  if (task === "text") row.textUsd += usd;
+  else if (task === "image") row.imageUsd += usd;
+  else if (task === "voice") row.voiceUsd += usd;
+  else if (task === "video") row.videoUsd += usd;
+  row.totalUsd += usd;
+}
+
+export async function spendByChapterId(channelId: string): Promise<Record<string, ChapterSpend>> {
+  const events = await listUsageForChannel(channelId);
+  const out: Record<string, ChapterSpend> = {};
+  for (const event of events) {
+    const raw = event.rawUsage;
+    const chapterId =
+      raw && typeof raw === "object" && raw !== null && "chapterId" in raw
+        ? String((raw as { chapterId?: unknown }).chapterId || "")
+        : "";
+    if (!chapterId) continue;
+    const row = out[chapterId] ?? emptySpend();
+    addSpend(row, event.stage, event.estimatedUsd);
+    out[chapterId] = row;
+  }
+  return out;
+}
+
 /** All usage events for a channel, optionally since an ISO timestamp (inclusive). */
 export async function listUsageForChannel(
   channelId: string,
