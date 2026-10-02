@@ -1,6 +1,6 @@
 import { getYoutubeClientForChannel } from "../youtube/client";
 import { YoutubeQuotaError, mapYoutubeApiError } from "../youtube/oauth";
-import { upsertYoutubeComment } from "../repo/youtubeComments";
+import { upsertYoutubeCommentsBatch } from "../repo/youtubeComments";
 import { getYoutubeAccountForChannel } from "../repo/youtubeAccounts";
 
 type ThreadItem = {
@@ -39,6 +39,7 @@ export type SyncCommentsResult = {
   imported: number;
   pages: number;
   alreadyAnsweredOnYt: number;
+  nextPageToken: string | null;
 };
 
 /**
@@ -47,15 +48,16 @@ export type SyncCommentsResult = {
  */
 export async function syncChannelComments(args: {
   channelId: string;
-  /** Soft cap on pages (100 comments/page). Default 10 = up to 1000. */
+  /** Pages in THIS request. Kept small so the function returns before the platform timeout. */
   maxPages?: number;
+  pageToken?: string;
 }): Promise<SyncCommentsResult> {
   const account = await getYoutubeAccountForChannel(args.channelId);
   if (!account) throw new Error("YouTube no conectado para este canal.");
 
   const { youtube } = await getYoutubeClientForChannel(args.channelId);
-  const maxPages = Math.min(50, Math.max(1, args.maxPages ?? 10));
-  let pageToken: string | undefined;
+  const maxPages = Math.min(2, Math.max(1, args.maxPages ?? 1));
+  let pageToken = args.pageToken || undefined;
   let imported = 0;
   let pages = 0;
   let alreadyAnsweredOnYt = 0;
@@ -78,6 +80,7 @@ export async function syncChannelComments(args: {
 
     pages += 1;
     const items = (res.data.items ?? []) as ThreadItem[];
+    const batch: Parameters<typeof upsertYoutubeCommentsBatch>[0] = [];
     for (const item of items) {
       const top = item.snippet?.topLevelComment;
       const sn = top?.snippet;
@@ -93,7 +96,7 @@ export async function syncChannelComments(args: {
 
       if (ourReply?.id) alreadyAnsweredOnYt += 1;
 
-      await upsertYoutubeComment({
+      batch.push({
         channelId: args.channelId,
         youtubeCommentId: top.id,
         youtubeThreadId: item.id || top.id,
@@ -111,8 +114,8 @@ export async function syncChannelComments(args: {
         ourReplyText: ourReply?.snippet?.textOriginal ?? null,
         status: ourReply?.id ? "answered" : "pending",
       });
-      imported += 1;
     }
+    imported += await upsertYoutubeCommentsBatch(batch);
 
     pageToken = res.data.nextPageToken || undefined;
     if (!pageToken) break;
@@ -121,7 +124,7 @@ export async function syncChannelComments(args: {
     await sleep(150 + Math.floor(Math.random() * 150));
   }
 
-  return { imported, pages, alreadyAnsweredOnYt };
+  return { imported, pages, alreadyAnsweredOnYt, nextPageToken: pageToken ?? null };
 }
 
 function sleep(ms: number) {
