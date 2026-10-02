@@ -7,7 +7,7 @@ import { burnStoryCover } from "../providers/image/burnThumbnailText";
 import { JULIO_VERNE_INTERIOR_STYLE_RULES } from "../providers/image/coverFormats";
 import { getImageProvider } from "../providers/image";
 import { CartesiaTTSProvider } from "../providers/tts/CartesiaTTSProvider";
-import { synthesizeChirpToFile } from "../providers/tts/chirpSpeech";
+import { chirpBilledCharacters, synthesizeChirpToFile } from "../providers/tts/chirpSpeech";
 import { splitTextForTts } from "../providers/tts/ttsLimits";
 import { getChannel } from "../repo/channels";
 import {
@@ -18,7 +18,7 @@ import {
   patchChapter,
 } from "../repo/books";
 import { persistFile } from "../storage";
-import { insertUsageEvent } from "../repo/usage";
+import { insertUsageEvent, recordChirpUsage } from "../repo/usage";
 import { setVideoThumbnail, startResumableVideoUpload, putResumableChunk } from "../youtube/upload";
 import { ensureChapterAssetDirs } from "./chapterAssets";
 import { renderCinematicStill } from "./cinematicMotion";
@@ -81,7 +81,7 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
     await note(chapter.id, "tts_running", `Áudio: a narrar com ${engine} (${speed.toFixed(2)})…`);
     const audioPath =
       settings.ttsProvider === "google-chirp3-hd"
-        ? await narrateChirp(spoken, settings.ttsVoice, speed, dirs.audio)
+        ? await narrateChirp(spoken, settings.ttsVoice, speed, dirs.audio, channel.id, chapter.id)
         : await narrate(spoken, settings.ttsVoice, settings.ttsLanguageCode, speed, dirs.audio);
     const audioSec = await ffprobeDuration(audioPath);
     const audioRef = await persistFile(audioPath, channel.id, "audio", `${chapter.id}.mp3`, "audio/mpeg");
@@ -329,9 +329,21 @@ function motionPrompt(): string {
   return "Slow cinematic camera move across this illustration. Gentle motion only: cloth, leaves, curtains, hair, and dust in the light. Keep the same drawing, the same faces, and the same clothes. Do not add objects or change the place. No text.";
 }
 
-async function narrateChirp(text: string, voiceId: string, speed: number, outDir: string): Promise<string> {
+async function narrateChirp(
+  text: string,
+  voiceId: string,
+  speed: number,
+  outDir: string,
+  channelId: string,
+  chapterId: string
+): Promise<string> {
   const out = path.join(outDir, "narration.mp3");
   await synthesizeChirpToFile({ text, voiceName: voiceId, speed, outPath: out });
+  await recordChirpUsage({
+    channelId,
+    chapterId,
+    characters: chirpBilledCharacters(text),
+  }).catch(() => undefined);
   return out;
 }
 

@@ -14,6 +14,8 @@ type ChapterSpend = {
   voiceUsd: number;
   videoUsd: number;
   totalUsd: number;
+  listUsd?: number;
+  characters?: number;
 };
 
 type BookDetail = {
@@ -24,6 +26,22 @@ type BookDetail = {
 
 function detailFrom(json: { book?: BookDetail["book"]; chapters?: Chapter[]; spend?: Record<string, ChapterSpend> }): BookDetail {
   return { book: json.book as BookDetail["book"], chapters: json.chapters ?? [], spend: json.spend ?? {} };
+}
+
+function chapterSpendLabel(spend: ChapterSpend | undefined): string {
+  const chars = spend?.characters ?? 0;
+  const list = spend?.listUsd ?? 0;
+  if (!spend || (!(spend.totalUsd > 0) && !(list > 0) && !(chars > 0))) {
+    return " · gasto real ainda sem registo";
+  }
+  const counted = chars > 0 ? ` · ${chars.toLocaleString("pt-BR")} caracteres` : "";
+  const tariff = list > spend.totalUsd + 0.000001 ? ` · a tarifa ${formatUsd(list)}` : "";
+  const parts = [
+    spend.textUsd > 0 ? `texto ${formatUsd(spend.textUsd)}` : "",
+    spend.imageUsd > 0 ? `imagem ${formatUsd(spend.imageUsd)}` : "",
+    spend.voiceUsd > 0 ? `voz ${formatUsd(spend.voiceUsd)}` : "",
+  ].filter(Boolean);
+  return ` · gasto ${formatUsd(spend.totalUsd)}${counted}${tariff}${parts.length ? ` (${parts.join(" · ")})` : ""}`;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -391,9 +409,7 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
                       {(c.attempts > 0 || detail.spend[c.id]) && (
                         <small className="books-muted">
                           Orçamento {formatUsd(estimateChapterCost(c.words, budget).totalUsd)}
-                          {detail.spend[c.id]?.totalUsd
-                            ? ` · gasto ${formatUsd(detail.spend[c.id].totalUsd)} (texto ${formatUsd(detail.spend[c.id].textUsd)} · imagem ${formatUsd(detail.spend[c.id].imageUsd)})`
-                            : " · gasto real ainda sem registo"}
+                          {chapterSpendLabel(detail.spend[c.id])}
                           {snap.version > 1 ? ` · prova 1 mantida${snap.redoing ? ` · agora a versão ${snap.version}` : ""}` : ""}
                         </small>
                       )}

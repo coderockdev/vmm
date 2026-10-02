@@ -8,6 +8,10 @@ const SAMPLE_ES =
   "Julio Verne en audiolibro. Capítulo uno. El profesor Lidenbrock volvió apurado a casa.";
 const SAMPLE_EN = "Jules Verne, audiobook. Chapter one. Professor Lidenbrock hurried back home.";
 
+export function auditionSampleText(language: string): string {
+  return sampleFor(language).text;
+}
+
 function sampleFor(language: string): { text: string; cartesia: "pt" | "es" | "en" } {
   if (language === "es") return { text: SAMPLE_ES, cartesia: "es" };
   if (language === "en") return { text: SAMPLE_EN, cartesia: "en" };

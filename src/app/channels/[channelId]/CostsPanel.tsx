@@ -10,7 +10,16 @@ type UsageSummary = {
   since: string | null;
   totalUsd: number;
   byStage: CostBreakdown;
-  byProvider: { provider: string; task: string; label: string; usd: number; count: number }[];
+  byProvider: {
+    provider: string;
+    task: string;
+    label: string;
+    usd: number;
+    listUsd: number;
+    characters: number;
+    count: number;
+  }[];
+  chirp: { characters: number; freeChars: number; spentUsd: number; listUsd: number };
   projects: {
     id: string;
     title: string;
@@ -30,6 +39,8 @@ type UsageSummary = {
     provider: string;
     model: string | null;
     estimatedUsd: number;
+    listUsd: number;
+    characters: number | null;
     createdAt: string;
     videoProjectId: string | null;
     projectTitle: string | null;
@@ -96,8 +107,21 @@ export function CostsPanel({ channelId }: { channelId: string }) {
           <p>
             Gasto registado, não o teto. O mesmo fornecedor aparece duas vezes quando faz duas
             tarefas: OpenAI texto e OpenAI imagem são contas diferentes. Uma imagem em qualidade
-            média, paisagem, fica em US$0.06; em alta, US$0.25.
+            média, paisagem, fica em US$0.06; em alta, US$0.25. O Google Chirp conta os caracteres
+            enviados: o primeiro milhão do mês é grátis e, a partir daí, US$30 por milhão.
           </p>
+          {data?.chirp ? (
+            <p className="costs-muted">
+              Google Chirp, conta inteira neste mês: {data.chirp.characters.toLocaleString("pt-BR")}{" "}
+              caracteres. Gasto {formatUsd(data.chirp.spentUsd)}
+              {data.chirp.listUsd > data.chirp.spentUsd + 0.000001
+                ? ` · a tarifa desses caracteres ${formatUsd(data.chirp.listUsd)} (US$30 / milhão)`
+                : ""}
+              . Faltam{" "}
+              {Math.max(0, data.chirp.freeChars - data.chirp.characters).toLocaleString("pt-BR")} do
+              milhão grátis.
+            </p>
+          ) : null}
         </div>
         <div className="costs-period-pills" role="group" aria-label="Período">
           {PERIODS.map((item) => (
@@ -219,6 +243,10 @@ export function CostsPanel({ channelId }: { channelId: string }) {
                         <span>{row.label}</span>
                         <span>
                           {formatUsd(row.usd)}
+                          {row.listUsd > row.usd + 0.000001 ? ` · tarifa ${formatUsd(row.listUsd)}` : ""}
+                          {row.characters > 0 ? (
+                            <small> · {row.characters.toLocaleString("pt-BR")} caracteres</small>
+                          ) : null}
                           <small> · {row.count}×</small>
                         </span>
                       </li>
@@ -247,7 +275,11 @@ export function CostsPanel({ channelId }: { channelId: string }) {
                           </small>
                         </div>
                         <div className="costs-event-meta">
-                          <span>{formatUsd(e.estimatedUsd)}</span>
+                          <span>
+                            {formatUsd(e.estimatedUsd)}
+                            {e.listUsd > e.estimatedUsd + 0.000001 ? ` · tarifa ${formatUsd(e.listUsd)}` : ""}
+                            {e.characters ? ` · ${e.characters.toLocaleString("pt-BR")} caracteres` : ""}
+                          </span>
                           <small>{new Date(e.createdAt).toLocaleString("pt-BR")}</small>
                         </div>
                       </li>

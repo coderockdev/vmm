@@ -84,10 +84,10 @@ function CostLine({
   cost,
   fallback,
 }: {
-  cost?: { totalUsd: number; lines: { label: string; usd: number }[] };
+  cost?: { totalUsd: number; lines: { label: string; usd: number; listUsd?: number; characters?: number }[] };
   fallback: number | null;
 }) {
-  const parts = (cost?.lines ?? []).filter((p) => p.usd > 0);
+  const parts = (cost?.lines ?? []).filter((p) => p.usd > 0 || (p.listUsd ?? 0) > 0);
   const total = cost && cost.totalUsd > 0 ? cost.totalUsd : fallback && fallback > 0 ? fallback : 0;
   if (total <= 0 && parts.length === 0) {
     return <p className="control-cost">Gasto real: ainda sem registro</p>;
@@ -97,6 +97,8 @@ function CostLine({
       {parts.map((p) => (
         <span key={p.label}>
           {p.label} {money(p.usd)}
+          {p.characters ? ` · ${p.characters.toLocaleString("pt-BR")} caracteres` : ""}
+          {(p.listUsd ?? 0) > p.usd + 0.000001 ? ` · tarifa ${money(p.listUsd ?? 0)}` : ""}
         </span>
       ))}
       <strong>Gasto {money(total)}</strong>
@@ -118,7 +120,7 @@ export function ControlPanel({
       string,
       {
         totalUsd: number;
-        lines: { label: string; usd: number }[];
+        lines: { label: string; usd: number; listUsd?: number; characters?: number }[];
         youtubeVideoId: string | null;
         publishedAt: string | null;
       }
@@ -134,7 +136,7 @@ export function ControlPanel({
           projects?: {
             id: string;
             totalUsd: number;
-            lines?: { label: string; usd: number }[];
+            lines?: { label: string; usd: number; listUsd?: number; characters?: number }[];
             youtubeVideoId?: string | null;
             publishedAt?: string | null;
           }[];
