@@ -37,12 +37,12 @@ export function lightCoverUrl(args: {
   thumbnailRef?: string | null;
   youtubeVideoId?: string | null;
 }): string | null {
+  if (args.youtubeVideoId) {
+    return `https://i.ytimg.com/vi/${args.youtubeVideoId}/mqdefault.jpg`;
+  }
   const raw = mediaUrl(args.channelId, args.thumbnailRef);
   if (raw && /\.png(?=$|\?)/i.test(raw)) {
     return raw.replace(/\.png(?=$|\?)/i, "-id.jpg");
-  }
-  if (args.youtubeVideoId) {
-    return `https://i.ytimg.com/vi/${args.youtubeVideoId}/mqdefault.jpg`;
   }
   return raw;
 }

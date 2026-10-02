@@ -1644,7 +1644,19 @@ export function ChannelWorkspace({
                   {project.thumbnailRef ? (
                     <div className="review-queue-thumb">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={lightCoverUrl({ channelId: channel.id, thumbnailRef: project.thumbnailRef, youtubeVideoId: project.youtubeVideoId }) ?? undefined} alt="" loading="lazy" decoding="async" />
+                      <img
+                        src={lightCoverUrl({ channelId: channel.id, thumbnailRef: project.thumbnailRef, youtubeVideoId: project.youtubeVideoId }) ?? undefined}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        onError={(event) => {
+                          const full = mediaUrl(channel.id, project.thumbnailRef);
+                          const img = event.currentTarget;
+                          if (!full || img.dataset.fell === "1") return;
+                          img.dataset.fell = "1";
+                          img.src = full;
+                        }}
+                      />
                     </div>
                   ) : (
                     <div className="review-queue-icon"><MiniIcon name="doc" size={22} /></div>
@@ -1857,7 +1869,19 @@ export function ChannelWorkspace({
                     {project.thumbnailRef ? (
                       <div className="review-queue-thumb">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={lightCoverUrl({ channelId: channel.id, thumbnailRef: project.thumbnailRef, youtubeVideoId: project.youtubeVideoId }) ?? undefined} alt="" loading="lazy" decoding="async" />
+                        <img
+                        src={lightCoverUrl({ channelId: channel.id, thumbnailRef: project.thumbnailRef, youtubeVideoId: project.youtubeVideoId }) ?? undefined}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        onError={(event) => {
+                          const full = mediaUrl(channel.id, project.thumbnailRef);
+                          const img = event.currentTarget;
+                          if (!full || img.dataset.fell === "1") return;
+                          img.dataset.fell = "1";
+                          img.src = full;
+                        }}
+                      />
                       </div>
                     ) : (
                       <div className="review-queue-icon"><MiniIcon name="mic" size={22} /></div>
@@ -2282,7 +2306,21 @@ function ProjectThumbnail({
     return (
       <div className="workspace-video-thumb workspace-video-thumb-photo">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={url} alt="" loading="lazy" decoding="async" width={320} height={180} />
+        <img
+          src={url}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          width={320}
+          height={180}
+          onError={(event) => {
+            const full = mediaUrl(channelId, project.thumbnailRef);
+            const img = event.currentTarget;
+            if (!full || img.dataset.fell === "1") return;
+            img.dataset.fell = "1";
+            img.src = full;
+          }}
+        />
         {durationLabel ? <span>{durationLabel}</span> : null}
       </div>
     );
