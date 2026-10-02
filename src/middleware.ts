@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AUTH_COOKIE, isValidSessionToken } from "./core/auth/session";
 
-const PUBLIC_PREFIXES = ["/login", "/api/auth/login", "/_next", "/favicon", "/reference"];
+const PUBLIC_PREFIXES = ["/login", "/api/auth/login", "/api/cron", "/_next", "/favicon", "/reference"];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

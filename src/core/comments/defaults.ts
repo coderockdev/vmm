@@ -27,5 +27,9 @@ export function normalizeCommentAutomation(
     varyResponses: raw.varyResponses !== false,
     skipAlreadyAnswered: raw.skipAlreadyAnswered !== false,
     responseSets: raw.responseSets,
+    historyPageToken:
+      raw.historyPageToken === "done" || (typeof raw.historyPageToken === "string" && raw.historyPageToken)
+        ? raw.historyPageToken
+        : null,
   };
 }

@@ -277,7 +277,8 @@ export function CommentsPanel({ channel }: { channel: Channel }) {
         <h3>AUTO RESPONDER</h3>
         <p className="portadas-actions-hint" style={{ marginBottom: 12 }}>
           Máximo por ejecución. Cada tanda publica 5 respuestas y vuelve, así Vercel no corta la página.
-          YouTube deja unas 200 respuestas por día.
+          El cupo es del proyecto de Google y lo comparten todos los canales: 200 respuestas por día,
+          aparte de las subidas. A las 18, 19 y 20 (Argentina) se responden 50 de Amor Amor. Quedan 50 libres.
         </p>
         <div className="portadas-count-pills" role="group" aria-label="Máximo">
           {[10, 25, 50, 100].map((n) => (
