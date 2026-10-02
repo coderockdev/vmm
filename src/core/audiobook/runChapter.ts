@@ -22,6 +22,7 @@ import {
 import { persistFile } from "../storage";
 import { insertUsageEvent, recordChirpUsage } from "../repo/usage";
 import { setVideoThumbnail, startResumableVideoUpload, putResumableChunk } from "../youtube/upload";
+import { COVER_PENDING_MESSAGE, isYoutubeQuotaError } from "../youtube/quota";
 import { ensureChapterAssetDirs } from "./chapterAssets";
 import { renderCinematicStill } from "./cinematicMotion";
 import { bookSourceDir } from "./paths";
@@ -89,6 +90,7 @@ async function produceClaimedChapter(
 ): Promise<void> {
   const chapter = (await listSafe(chapterId)) ?? null;
   if (!chapter) return;
+  let uploadedVideoId: string | null = null;
   try {
     const book = await getBook(chapter.bookId);
     if (!book) throw new Error("Obra não encontrada.");
@@ -304,12 +306,35 @@ async function produceClaimedChapter(
     const title = youtubeTitle(book.title, chapter.label, chapter.index);
     const description = youtubeDescription(book.title, chapter.label, next?.label ?? null);
     const videoId = await uploadPrivate(channel.id, finalPath, title, description);
-    await setVideoThumbnail({
-      channelId: channel.id,
-      videoId,
-      buffer: fs.readFileSync(thumbJpg),
-      mimeType: "image/jpeg",
+    uploadedVideoId = videoId;
+    const studioUrl = `https://studio.youtube.com/video/${videoId}/edit`;
+    await note(chapter.id, "uploading", "Vídeo no YouTube. A enviar a portada…", {
+      id: "youtube",
+      percent: 70,
+      detail: "Vídeo enviado",
+    }, {
+      youtubeVideoId: videoId,
+      youtubeUrl: studioUrl,
     });
+    try {
+      await setVideoThumbnail({
+        channelId: channel.id,
+        videoId,
+        buffer: fs.readFileSync(thumbJpg),
+        mimeType: "image/jpeg",
+      });
+    } catch (err) {
+      if (!isYoutubeQuotaError(err)) throw err;
+      await note(chapter.id, "thumb_ready", COVER_PENDING_MESSAGE, {
+        id: "cover",
+        percent: 90,
+        detail: "Amanhã, cerca das 4h",
+      }, {
+        youtubeVideoId: videoId,
+        youtubeUrl: studioUrl,
+      });
+      return;
+    }
     await note(chapter.id, "uploaded", "No YouTube (privado).", {
       id: "youtube",
       percent: 100,
@@ -317,17 +342,20 @@ async function produceClaimedChapter(
       done: true,
     }, {
       youtubeVideoId: videoId,
-      youtubeUrl: `https://studio.youtube.com/video/${videoId}/edit`,
+      youtubeUrl: studioUrl,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const current = await listSafe(chapterId);
-    const quota = /quota/i.test(message);
+    const quota = isYoutubeQuotaError(err);
+    const videoAlreadyUp = Boolean(uploadedVideoId);
     await patchChapter(chapterId, {
-      status: quota ? "thumb_ready" : "failed",
+      status: quota ? (videoAlreadyUp ? "thumb_ready" : "video_ready") : "failed",
       errorMessage: packMessage(
         quota
-          ? "Portada pronta. O YouTube ficou sem cota hoje. O vídeo está feito; a capa entra amanhã."
+          ? videoAlreadyUp
+            ? COVER_PENDING_MESSAGE
+            : "A cota de uploads do YouTube acabou hoje (100 por dia). O ficheiro está feito; o envio fica para amanhã."
           : message.slice(0, 500),
         readLog(current?.errorMessage) ?? freshLog()
       ),
