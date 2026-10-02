@@ -1,8 +1,26 @@
 import React from "react";
 import { JobStatus, VideoProject } from "../../../core/types";
+import { StepClock, StepId, STEP_ORDER } from "../../../core/pipeline/stepClock";
 import { ChapterParts } from "./ChapterParts";
 
-type JobSnap = { progress: number; statusMessage: string; status: string };
+type JobSnap = {
+  progress: number;
+  statusMessage: string;
+  status: string;
+  createdAt?: string;
+  updatedAt?: string;
+  steps?: StepClock;
+};
+
+type StageMark = { start: string; end: string } | null;
+type StageMarks = {
+  script?: StageMark;
+  audio?: StageMark;
+  music?: StageMark;
+  render?: StageMark;
+  thumbnail?: StageMark;
+  youtube?: StageMark;
+};
 
 const LIVE: JobStatus[] = ["planned", "audio", "timing", "composing", "rendering"];
 
@@ -27,9 +45,58 @@ function stepIndex(project: VideoProject): number {
   return -1;
 }
 
-function prayerParts(project: VideoProject, job?: JobSnap) {
+function earlier(a: string | null | undefined, b: string | null | undefined): string | null {
+  if (a && b) return a < b ? a : b;
+  return a || b || null;
+}
+
+function prayerParts(project: VideoProject, job?: JobSnap, marks?: StageMarks) {
   const reached = stepIndex(project);
   const liveStatus = job?.status;
+  const clock = job?.steps ?? {};
+  const raw: Record<StepId, { start: string | null; end: string | null }> = {
+    roteiro: {
+      start: earlier(project.createdAt, marks?.script?.start) || clock.roteiro?.startedAt || null,
+      end: marks?.script?.end || clock.roteiro?.finishedAt || null,
+    },
+    voz: {
+      start:
+        clock.voz?.startedAt ||
+        (reached >= 1 || liveStatus === "audio" ? job?.createdAt : null) ||
+        marks?.audio?.start ||
+        null,
+      end: marks?.audio?.end || clock.voz?.finishedAt || null,
+    },
+    musica: {
+      start: clock.musica?.startedAt || marks?.music?.start || null,
+      end: marks?.music?.end || clock.musica?.finishedAt || null,
+    },
+    render: {
+      start: clock.render?.startedAt || (liveStatus === "rendering" ? project.updatedAt : null),
+      end: marks?.render?.end || clock.render?.finishedAt || null,
+    },
+    portada: {
+      start: clock.portada?.startedAt || marks?.thumbnail?.start || null,
+      end: marks?.thumbnail?.end || clock.portada?.finishedAt || null,
+    },
+    copy: {
+      start: clock.copy?.startedAt || null,
+      end: clock.copy?.finishedAt || null,
+    },
+    youtube: {
+      start: clock.youtube?.startedAt || marks?.youtube?.start || null,
+      end: marks?.youtube?.end || clock.youtube?.finishedAt || null,
+    },
+  };
+
+  for (let i = 0; i < STEP_ORDER.length; i++) {
+    const id = STEP_ORDER[i];
+    const prev = i > 0 ? raw[STEP_ORDER[i - 1]] : null;
+    const next = i < STEP_ORDER.length - 1 ? raw[STEP_ORDER[i + 1]] : null;
+    if (!raw[id].start && prev?.end && reached >= i) raw[id].start = prev.end;
+    if (!raw[id].end && next?.start && reached > i) raw[id].end = next.start;
+  }
+
   return STEPS.map((step, index) => {
     const done = reached >= index || Boolean(project.youtubeVideoId);
     const running =
@@ -47,13 +114,15 @@ function prayerParts(project: VideoProject, job?: JobSnap) {
       : running
         ? job?.statusMessage || "Em curso"
         : "À espera";
+    const span = raw[step.id];
+    const show = done || running;
     return {
       id: step.id,
       label: step.label,
       percent: done ? 100 : running ? 45 : 0,
       detail,
-      startedAt: running ? project.updatedAt : null,
-      finishedAt: null,
+      startedAt: show ? span.start : null,
+      finishedAt: done ? span.end || span.start : null,
     };
   });
 }
@@ -157,6 +226,7 @@ export function ControlPanel({
         lines: { label: string; usd: number; listUsd?: number; characters?: number }[];
         youtubeVideoId: string | null;
         publishedAt: string | null;
+        marks?: StageMarks;
       }
     >
   >({});
@@ -173,6 +243,7 @@ export function ControlPanel({
             lines?: { label: string; usd: number; listUsd?: number; characters?: number }[];
             youtubeVideoId?: string | null;
             publishedAt?: string | null;
+            marks?: StageMarks;
           }[];
         };
         if (cancelled || !json.projects) return;
@@ -183,6 +254,7 @@ export function ControlPanel({
             lines: row.lines ?? [],
             youtubeVideoId: row.youtubeVideoId ?? null,
             publishedAt: row.publishedAt ?? null,
+            marks: row.marks,
           };
         }
         setCosts(map);
@@ -287,7 +359,7 @@ export function ControlPanel({
               <div className="control-bar" role="progressbar" aria-valuenow={snap.percent} aria-valuemin={0} aria-valuemax={100}>
                 <span style={{ width: `${snap.percent}%` }} />
               </div>
-              <ChapterParts parts={prayerParts(project, jobByProject[project.id])} />
+              <ChapterParts parts={prayerParts(project, jobByProject[project.id], costs[project.id]?.marks)} />
               <small>{snap.stage.length > 140 ? `${snap.stage.slice(0, 140)}…` : snap.stage}</small>
               <CostLine cost={costs[project.id]} fallback={project.costUsdTotal} />
             </li>

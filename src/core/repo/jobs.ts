@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { getDb } from "../db";
 import { getSupabase, isSupabaseEnabled, assertNoError } from "../supabaseClient";
 import { JobStatus, ProductionJob } from "../types";
+import { advanceClock, humanOf, packClock, readClock } from "../pipeline/stepClock";
 
 interface JobRow {
   id: string;
@@ -104,7 +105,18 @@ export async function updateJob(
   const now = new Date().toISOString();
   const status = fields.status ?? current.status;
   const progress = fields.progress ?? current.progress;
-  const statusMessage = fields.statusMessage ?? current.statusMessage;
+  const human = humanOf(fields.statusMessage ?? current.statusMessage);
+  const statusMessage = packClock(
+    human,
+    advanceClock(readClock(current.statusMessage), {
+      status,
+      message: human,
+      now,
+      jobCreatedAt: current.createdAt,
+      previousUpdatedAt: current.updatedAt,
+      previousStatus: current.status,
+    })
+  );
 
   if (isSupabaseEnabled()) {
     assertNoError(

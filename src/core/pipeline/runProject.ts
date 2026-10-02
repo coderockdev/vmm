@@ -10,7 +10,7 @@ import {
   completeProjectRender,
 } from "../repo/projects";
 import { getChannel } from "../repo/channels";
-import { insertUsageEvent } from "../repo/usage";
+import { insertUsageEvent, recordChirpUsage } from "../repo/usage";
 import { synthesizeNarration } from "./narration";
 import { finishAutoFlowAfterAudio, finishProjectToYoutube } from "./finishAutoFlow";
 import { RawLine, normalizeSceneBreaks } from "../scriptLines";
@@ -111,24 +111,28 @@ export async function runProject(jobId: string): Promise<void> {
       audioAbsolutePath = narration.filePath;
       durationInSeconds = narration.durationSeconds;
 
-      const ttsProvider = (narration.provider === "heygen" ? "heygen" : narration.provider) as UsageProvider;
-      await insertUsageEvent({
-        channelId: channel.id,
-        contentIdeaId: project.contentIdeaId,
-        videoProjectId: project.id,
-        stage: "audio",
-        snapshot: {
-          provider: ttsProvider,
-          model:
-            narration.provider === "elevenlabs"
-              ? "eleven_v3"
-              : narration.provider === "cartesia"
-                ? "sonic-3.6"
-                : narration.provider,
-          characters: narration.characters,
-          durationSeconds: narration.durationSeconds,
-        },
-      });
+      if (narration.provider === "google") {
+        await recordChirpUsage({ channelId: channel.id, characters: narration.characters });
+      } else {
+        const ttsProvider = (narration.provider === "heygen" ? "heygen" : narration.provider) as UsageProvider;
+        await insertUsageEvent({
+          channelId: channel.id,
+          contentIdeaId: project.contentIdeaId,
+          videoProjectId: project.id,
+          stage: "audio",
+          snapshot: {
+            provider: ttsProvider,
+            model:
+              narration.provider === "elevenlabs"
+                ? "eleven_v3"
+                : narration.provider === "cartesia"
+                  ? "sonic-3.6"
+                  : narration.provider,
+            characters: narration.characters,
+            durationSeconds: narration.durationSeconds,
+          },
+        });
+      }
 
       await updateJob(job.id, { status: "timing", progress: 55, statusMessage: "Sincronizando texto..." });
       await updateProjectStatus(project.id, "timing");

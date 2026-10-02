@@ -87,7 +87,11 @@ function partsFromStatus(
 
 export function partClock(iso: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Argentina/Buenos_Aires",
+  });
 }
 
 function clock(iso: string): string {

@@ -138,7 +138,7 @@ Columna: DESEO → DESESPERACIÓN → CLÍMAX → EGO → DIOS.`,
         wordsPerMinute: 145,
         charsPerWord: 6,
         performanceTags: {
-          enabled: true,
+          enabled: false,
           tagsPerThousandWords: 35,
           selected: [
             "[softly]",

@@ -218,7 +218,7 @@ export interface AudioAsset {
   videoProjectId: string;
   filePath: string; // relative to data dir (local storage) or full URL (remote storage)
   durationSeconds: number;
-  provider: "local" | "cartesia" | "uploaded" | "elevenlabs" | "heygen";
+  provider: "local" | "cartesia" | "uploaded" | "elevenlabs" | "heygen" | "google";
   createdAt: string;
 }
 
@@ -245,7 +245,7 @@ export interface VideoProject {
   errorMessage: string | null;
   seed: number;
   /** Per-generation TTS override (e.g. to A/B "local" vs "elevenlabs" for the same script). Null = use channel default. */
-  ttsProviderOverride: "local" | "cartesia" | "elevenlabs" | "uploaded" | "heygen" | null;
+  ttsProviderOverride: "local" | "cartesia" | "elevenlabs" | "uploaded" | "heygen" | "google" | null;
   /** Explicit voice when overriding TTS (required for ElevenLabs — never invent a default). */
   ttsVoiceIdOverride: string | null;
   scriptId: string | null;

@@ -112,6 +112,7 @@ function stripAllDirectives(script: string): string {
  * provider. Throws VoiceCompileError if validation fails.
  */
 export function compileForVoice(script: string, profile: VoiceProfile): string {
+  if (profile.provider === "google") return stripAllDirectives(script);
   const validation = validateScriptForVoice(script, profile);
   if (!validation.ok) throw new VoiceCompileError(validation.badTags);
 

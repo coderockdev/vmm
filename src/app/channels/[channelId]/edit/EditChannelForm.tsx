@@ -121,6 +121,10 @@ export function EditChannelForm({
   );
   const [customTag, setCustomTag] = useState("");
   const [voiceProfile, setVoiceProfile] = useState<VoiceProfile>(() => initialVoiceProfile(channel));
+  const musical = channel.dna.musical;
+  const [useMusic, setUseMusic] = useState(musical?.useMusicByDefault !== false);
+  const [musicPct, setMusicPct] = useState(Math.round((musical?.volume ?? 0.08) * 100));
+  const [useSfx, setUseSfx] = useState(Boolean(musical?.useSfx) && musical?.sfxMode !== "off");
 
   const tagCatalog = useMemo(() => catalogForProvider(voiceProfile.provider as any), [voiceProfile.provider]);
   const catalogMarkups = useMemo(() => tagCatalog.map((t) => t.markup), [tagCatalog]);
@@ -133,14 +137,6 @@ export function EditChannelForm({
 
   function applyVoiceProfile(next: VoiceProfile) {
     setVoiceProfile(next);
-    // Keep performance-tag checklist aligned with what this voice accepts.
-    if (next.capabilities.emotion_tags && next.capabilities.allowed_tags.length) {
-      setPerformanceEnabled(true);
-      setSelectedTags(next.capabilities.allowed_tags);
-    } else {
-      setPerformanceEnabled(false);
-      setSelectedTags([]);
-    }
   }
   const budgetLabel = formatBudgetLabel({
     durationMinutes: defaultDurationMinutes,
@@ -228,6 +224,14 @@ export function EditChannelForm({
               volume: channel.dna.voice.volume ?? 1,
               profile: voiceProfile,
             },
+            musical: {
+              ...channel.dna.musical,
+              useMusicByDefault: useMusic,
+              volume: Math.min(1, Math.max(0, musicPct / 100)),
+              useSfx,
+              sfxMode: useSfx ? "auto" : "off",
+              sfxVolume: useSfx ? channel.dna.musical?.sfxVolume || 0.5 : 0,
+            },
           },
         }),
       });
@@ -291,11 +295,13 @@ export function EditChannelForm({
         {channel.dna.voice.provider === "google"
           ? " · Google Cloud Chirp"
           : channel.dna.voice.profile?.provider === "heygen"
-          ? " · HeyGen (ElevenLabs v3) · tags de emoção ativas"
+          ? " · HeyGen (ElevenLabs v3)"
           : ` · ${channel.dna.voice.provider}`}
         {channel.dna.scriptRules.performanceTags?.enabled
           ? ` · ${channel.dna.scriptRules.performanceTags.selected?.length ?? 0} tags`
-          : ""}
+          : " · sem emoções"}
+        {channel.dna.musical?.useMusicByDefault === false ? " · sem música" : " · com música"}
+        {channel.dna.musical?.useSfx && channel.dna.musical?.sfxMode !== "off" ? " · com efeitos" : " · sem efeitos"}
       </div>
 
       {saveMessage && (
@@ -532,9 +538,8 @@ export function EditChannelForm({
           <section style={sectionStyle}>
             <strong>COMANDOS DE INTERPRETAÇÃO</strong>
             <p style={{ fontSize: 13, color: "var(--text-dim)", marginTop: 8, lineHeight: 1.45 }}>
-              Tags de emocionalidade e pausa no roteiro (ex. <code>[whisper]</code>, <code>[pause]</code>).
-              Só marque o que faz sentido para o motor de voz — se o motor não interpreta, o áudio
-              remove a tag para não ler em voz alta.
+              O padrão do canal é sem emoções: a voz lê o texto como na amostra. Se marcar a caixa,
+              o roteiro volta a usar tags como <code>[emotional]</code> e <code>[pause]</code>.
             </p>
             <label
               style={{
@@ -725,6 +730,32 @@ export function EditChannelForm({
               </strong>
               {performanceEnabled ? ` · ${selectedTags.length} tags de emoção` : ""}
               . Clique em <strong>Salvar alterações</strong> para gravar no canal.
+            </p>
+            <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+              <input type="checkbox" checked={useMusic} onChange={(e) => setUseMusic(e.target.checked)} />
+              Música de fundo
+            </label>
+            {useMusic && (
+              <label style={{ ...labelStyle, marginTop: 10 }}>
+                Volume da música ({musicPct}%)
+                <input
+                  type="range"
+                  min={4}
+                  max={20}
+                  step={1}
+                  value={musicPct}
+                  onChange={(e) => setMusicPct(Number(e.target.value))}
+                  style={{ width: "100%", display: "block", marginTop: 6 }}
+                />
+              </label>
+            )}
+            <label style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+              <input type="checkbox" checked={useSfx} onChange={(e) => setUseSfx(e.target.checked)} />
+              Efeitos de som
+            </label>
+            <p style={{ fontSize: 12, color: "var(--text-dim)", margin: "8px 0 14px", lineHeight: 1.4 }}>
+              Padrão Amor Amor: música suave por baixo da oração, sem efeitos. As emoções ficam na seção de
+              cima, desligadas até alguém marcá-las.
             </p>
             <VoicePicker
               language={channel.dna.language}
