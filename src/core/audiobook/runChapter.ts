@@ -72,7 +72,21 @@ export async function reproduceChapter(chapterId: string): Promise<void> {
   await produceClaimedChapter(chapterId, "full");
 }
 
-async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"): Promise<void> {
+export async function resumeChapterMotion(chapterId: string): Promise<void> {
+  if (busy) return;
+  busy = true;
+  try {
+    await produceClaimedChapter(chapterId, "full", "motion");
+  } finally {
+    busy = false;
+  }
+}
+
+async function produceClaimedChapter(
+  chapterId: string,
+  mode: "audio" | "full",
+  from: "start" | "motion" = "start"
+): Promise<void> {
   const chapter = (await listSafe(chapterId)) ?? null;
   if (!chapter) return;
   try {
@@ -84,16 +98,21 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
     const siblings = await listChaptersForBook(book.id);
     const next = siblings.find((item) => item.index === chapter.index + 1) ?? null;
 
-    await note(chapter.id, "tts_running", "Áudio: a ler o texto…", {
-      id: "audio",
-      percent: 8,
-      detail: "A ler o texto",
-    });
+    if (from !== "motion") {
+      await note(chapter.id, "tts_running", "Áudio: a ler o texto…", {
+        id: "audio",
+        percent: 8,
+        detail: "A ler o texto",
+      });
+    }
     const body = readChapterText(book.folder, chapter.sourceFile);
     const spoken = spokenScript(book.title, chapter.index, body, next?.label ?? null);
     const dirs = ensureChapterAssetDirs(channel.id, book.folder, chapter.index);
     const spokenPath = path.join(dirs.timeline, "spoken.txt");
     fs.writeFileSync(spokenPath, spoken, "utf8");
+    const existingAudio = path.join(dirs.audio, "narration.mp3");
+    const keepAudio =
+      from === "motion" && fs.existsSync(existingAudio) && fs.statSync(existingAudio).size > 1000;
 
     const dnaVoice = channel.dna.voice;
     const dnaChirp = dnaVoice.provider === "google" && isChirpVoiceId(dnaVoice.voiceId ?? "");
@@ -101,16 +120,22 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
     const speed = narrationSpeed(dnaChirp ? dnaVoice.speed : settings.ttsSpeakingRate);
     const useChirp = dnaChirp || settings.ttsProvider === "google-chirp3-hd";
     const engine = useChirp ? "Chirp" : "Cartesia";
-    await note(chapter.id, "tts_running", `Áudio: a narrar com ${engine} (${speed.toFixed(2)})…`, {
-      id: "audio",
-      percent: 35,
-      detail: `A narrar com ${engine}`,
-    });
-    const audioPath = useChirp
-      ? await narrateChirp(spoken, voiceId, speed, dirs.audio, channel.id, chapter.id)
-      : await narrate(spoken, voiceId, settings.ttsLanguageCode, speed, dirs.audio);
+    if (!keepAudio) {
+      await note(chapter.id, "tts_running", `Áudio: a narrar com ${engine} (${speed.toFixed(2)})…`, {
+        id: "audio",
+        percent: 35,
+        detail: `A narrar com ${engine}`,
+      });
+    }
+    const audioPath = keepAudio
+      ? existingAudio
+      : useChirp
+        ? await narrateChirp(spoken, voiceId, speed, dirs.audio, channel.id, chapter.id)
+        : await narrate(spoken, voiceId, settings.ttsLanguageCode, speed, dirs.audio);
     const audioSec = await ffprobeDuration(audioPath);
-    const audioRef = await persistFile(audioPath, channel.id, "audio", `${chapter.id}.mp3`, "audio/mpeg");
+    const audioRef = keepAudio
+      ? chapter.audioPath || audioPath
+      : await persistFile(audioPath, channel.id, "audio", `${chapter.id}.mp3`, "audio/mpeg");
     await note(
       chapter.id,
       mode === "audio" ? "audio_ready" : "tts_running",
@@ -163,63 +188,42 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
       done: true,
     });
 
-    const clips: string[] = [];
-    for (const slot of plan.slots) {
-      const label =
-        slot.kind === "ai-clip"
-          ? `Animação: clipe da imagem ${slot.imageIndex + 1}`
-          : `Animação: movimento da imagem ${slot.imageIndex + 1}`;
-      await note(chapter.id, "images_ready", `${label}…`, {
-        id: "video",
-        percent: Math.round((slot.index / Math.max(1, plan.slots.length)) * 100),
-        detail: `${slot.index + 1}/${plan.slots.length}`,
-      });
-      const out = path.join(dirs.motion, `slot-${String(slot.index + 1).padStart(2, "0")}.mp4`);
+    const clips: string[] = new Array(plan.slots.length);
+    const aiSlots = plan.slots.filter((slot) => slot.kind === "ai-clip");
+    for (let n = 0; n < aiSlots.length; n++) {
+      const slot = aiSlots[n];
       const still = images[slot.imageIndex] ?? images[0];
-      if (slot.kind === "ai-clip") {
-        const animated = await tryFalClip(still, motionPrompt(), slot.durationSec, out, channel.id, settings.visualBudget.imageToVideoModel);
-        if (animated) {
-          await insertUsageEvent({
-            channelId: channel.id,
-            stage: "render",
-            snapshot: {
-              provider: "fal",
-              model: `${settings.visualBudget.imageToVideoModel} 720p`,
-              images: 1,
-              durationSeconds: slot.durationSec,
-              raw: { chapterId: chapter.id, task: "animation" },
-            },
-          }).catch(() => undefined);
-        }
-        if (!animated) {
-          await renderCinematicStill({
-            imagePath: still,
-            outputPath: out,
-            motion: slot.motion,
-            crop: slot.crop,
-            durationSec: slot.durationSec,
-            width: 1280,
-            height: 720,
-          });
-        }
-      } else {
-        await renderCinematicStill({
-          imagePath: still,
-          outputPath: out,
-          motion: slot.motion,
-          crop: slot.crop,
-          durationSec: slot.durationSec,
-          width: 1280,
-          height: 720,
+      const out = path.join(dirs.motion, `slot-${String(slot.index + 1).padStart(2, "0")}.mp4`);
+      await note(chapter.id, "images_ready", `Animação: Fal, imagem ${slot.imageIndex + 1}…`, {
+        id: "video",
+        percent: Math.round((n / Math.max(1, aiSlots.length)) * 100),
+        detail: `Fal ${n + 1}/${aiSlots.length}`,
+      });
+      await tryFalClip(still, motionPrompt(), slot.durationSec, out, channel.id, settings.visualBudget.imageToVideoModel, async (detail) => {
+        await note(chapter.id, "images_ready", `Animação: Fal, imagem ${slot.imageIndex + 1}…`, {
+          id: "video",
+          percent: Math.round((n / Math.max(1, aiSlots.length)) * 100),
+          detail: `${n + 1}/${aiSlots.length} · ${detail}`,
         });
-      }
-      clips.push(out);
+      });
+      await insertUsageEvent({
+        channelId: channel.id,
+        stage: "render",
+        snapshot: {
+          provider: "fal",
+          model: `${settings.visualBudget.imageToVideoModel} 720p`,
+          images: 1,
+          durationSeconds: slot.durationSec,
+          raw: { chapterId: chapter.id, task: "animation" },
+        },
+      }).catch(() => undefined);
+      clips[slot.index] = out;
     }
 
     await note(chapter.id, "images_ready", "Animação pronta. A renderizar…", {
       id: "video",
       percent: 100,
-      detail: `${clips.length} clipes`,
+      detail: `${aiSlots.length} clipes`,
       done: true,
     });
     await note(chapter.id, "images_ready", "Renderização: narração e música…", {
@@ -229,6 +233,27 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
     });
     const finalPath = path.join(dirs.final, "chapter.mp4");
     const mixedAudio = await underVoice(audioPath, dirs.audio, channel.id, chapter.id);
+    const stillSlots = plan.slots.filter((slot) => slot.kind !== "ai-clip");
+    for (let n = 0; n < stillSlots.length; n++) {
+      const slot = stillSlots[n];
+      const still = images[slot.imageIndex] ?? images[0];
+      const out = path.join(dirs.motion, `slot-${String(slot.index + 1).padStart(2, "0")}.mp4`);
+      await note(chapter.id, "images_ready", "Renderização: câmera sobre a imagem fixa…", {
+        id: "render",
+        percent: 30 + Math.round((n / Math.max(1, stillSlots.length)) * 20),
+        detail: `Câmera ${n + 1}/${stillSlots.length}`,
+      });
+      await renderCinematicStill({
+        imagePath: still,
+        outputPath: out,
+        motion: slot.motion,
+        crop: slot.crop,
+        durationSec: slot.durationSec,
+        width: 1280,
+        height: 720,
+      });
+      clips[slot.index] = out;
+    }
     await note(chapter.id, "images_ready", "Renderização: fades, imagens e áudio…", {
       id: "render",
       percent: 55,
@@ -404,9 +429,15 @@ function imagePrompt(style: string, bookTitle: string, scene: string, look: stri
   ].join("\n\n");
 }
 
-/** Camera move only. The chapter text was tripping the video filter and rewriting the drawing. */
+/** Slow living illustration. The picture already shows the scene; the book text was rewriting it. */
 function motionPrompt(): string {
-  return "Slow cinematic camera move across this illustration. Gentle motion only: cloth, leaves, curtains, hair, and dust in the light. Keep the same drawing, the same faces, and the same clothes. Do not add objects or change the place. No text.";
+  return [
+    "Animate this illustration slowly, like a living painting, not an action scene.",
+    "The people already in the frame move a little: a pull, a step, a turn of the head, hands, cloth and hair.",
+    "Smoke, water, leaves and dust drift.",
+    "A slow camera drift or a gentle pan is welcome.",
+    "Keep the same faces, the same clothes and the same place. Do not add people, objects or text. No running, no fighting, no sudden moves.",
+  ].join(" ");
 }
 
 async function narrateChirp(
@@ -468,53 +499,61 @@ async function tryFalClip(
   durationSec: number,
   outPath: string,
   channelId: string,
-  model: string
-): Promise<boolean> {
+  model: string,
+  onTick?: (detail: string) => Promise<void>
+): Promise<void> {
   const key = process.env.FAL_KEY?.trim();
-  if (!key) return false;
-  try {
-    const jpg = imagePath.replace(/\.png$/i, ".fal.jpg");
-    await runFfmpeg("ffmpeg", [
-      "-y",
-      "-i",
-      imagePath,
-      "-vf",
-      "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720",
-      "-q:v",
-      "5",
-      jpg,
-    ]);
-    const imageRef = await persistFile(jpg, channelId, "cover", `motion-${path.basename(jpg)}`, "image/jpeg");
-    if (!/^https?:/i.test(imageRef)) return false;
-    const videoUrl = await falQueue(key, model, imageRef, prompt);
-    const source = outPath + ".src.mp4";
-    await download(videoUrl, source);
-    const sourceSec = await ffprobeDuration(source).catch(() => durationSec);
-    const factor = sourceSec > 0.2 ? durationSec / sourceSec : 1;
-    await runFfmpeg("ffmpeg", [
-      "-y",
-      "-i",
-      source,
-      "-t",
-      durationSec.toFixed(2),
-      "-vf",
-      `setpts=PTS*${factor.toFixed(4)},scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,fps=30`,
-      "-an",
-      "-pix_fmt",
-      "yuv420p",
-      outPath,
-    ]);
-    return true;
-  } catch (err) {
-    console.warn("[audiobook] fal clip failed, using still motion:", err instanceof Error ? err.message : err);
-    return false;
-  }
+  if (!key) throw new Error("Fal não tem chave. A animação não foi substituída por um zoom.");
+  const jpg = imagePath.replace(/\.png$/i, ".fal.jpg");
+  await runFfmpeg("ffmpeg", [
+    "-y",
+    "-i",
+    imagePath,
+    "-vf",
+    "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720",
+    "-q:v",
+    "3",
+    jpg,
+  ]);
+  const imageRef = await persistFile(jpg, channelId, "cover", `motion-${path.basename(jpg)}`, "image/jpeg");
+  if (!/^https?:/i.test(imageRef)) throw new Error("A imagem não ficou num endereço que Fal possa abrir.");
+  const videoUrl = await falQueue(key, model, imageRef, prompt, onTick);
+  const source = outPath + ".src.mp4";
+  await download(videoUrl, source);
+  const sourceSec = await ffprobeDuration(source).catch(() => durationSec);
+  const factor = sourceSec > 0.2 ? durationSec / sourceSec : 1;
+  await runFfmpeg("ffmpeg", [
+    "-y",
+    "-i",
+    source,
+    "-t",
+    durationSec.toFixed(2),
+    "-vf",
+    `setpts=${factor.toFixed(4)}*PTS,fps=30`,
+    "-an",
+    "-c:v",
+    "libx264",
+    "-crf",
+    "17",
+    "-preset",
+    "medium",
+    "-pix_fmt",
+    "yuv420p",
+    outPath,
+  ]);
 }
 
-async function falQueue(key: string, model: string, imageUrl: string, prompt: string): Promise<string> {
+async function falQueue(
+  key: string,
+  model: string,
+  imageUrl: string,
+  prompt: string,
+  onTick?: (detail: string) => Promise<void>
+): Promise<string> {
+  const headers = { Authorization: `Key ${key}`, "Content-Type": "application/json" };
   const start = await fetch(`https://queue.fal.run/${model}`, {
     method: "POST",
-    headers: { Authorization: `Key ${key}`, "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({
       image_url: imageUrl,
       prompt,
@@ -523,26 +562,46 @@ async function falQueue(key: string, model: string, imageUrl: string, prompt: st
       enable_prompt_expansion: false,
       acceleration: "regular",
     }),
+    signal: AbortSignal.timeout(60_000),
   });
   if (!start.ok) throw new Error(`Fal ${start.status}: ${(await start.text()).slice(0, 240)}`);
+  console.log("[audiobook] Fal aceitou a imagem e o prompt. À espera do vídeo.");
   const queued = (await start.json()) as { status_url?: string; response_url?: string };
   if (!queued.status_url || !queued.response_url) throw new Error("Fal não devolveu a fila.");
-  const deadline = Date.now() + 4 * 60 * 1000;
+  const deadline = Date.now() + 15 * 60 * 1000;
+  let state = "na fila";
   while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 4000));
-    const statusRes = await fetch(queued.status_url, { headers: { Authorization: `Key ${key}` } });
-    const status = (await statusRes.json().catch(() => ({}))) as { status?: string };
-    if (status.status === "COMPLETED") break;
-    if (status.status === "FAILED") throw new Error("Fal falhou o clipe.");
+    await new Promise((r) => setTimeout(r, 8000));
+    let status = "";
+    try {
+      const statusRes = await fetch(queued.status_url, {
+        headers: { Authorization: `Key ${key}` },
+        signal: AbortSignal.timeout(25_000),
+      });
+      const body = (await statusRes.json().catch(() => ({}))) as { status?: string };
+      status = body.status || "";
+    } catch {
+      status = "";
+    }
+    if (status === "COMPLETED") {
+      const done = await fetch(queued.response_url, {
+        headers: { Authorization: `Key ${key}` },
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (!done.ok) {
+        const detail = (await done.text()).slice(0, 240);
+        throw new Error(`Fal resultado ${done.status}: ${detail}`);
+      }
+      const body = (await done.json()) as { video?: { url?: string } };
+      if (!body.video?.url) throw new Error("Fal não devolveu vídeo.");
+      console.log("[audiobook] Fal devolveu o vídeo.");
+      return body.video.url;
+    }
+    if (status === "FAILED") throw new Error("Fal falhou o clipe.");
+    state = status === "IN_PROGRESS" ? "a gerar" : status === "IN_QUEUE" ? "na fila" : "à espera";
+    await onTick?.(`Fal ${state}`).catch(() => undefined);
   }
-  const done = await fetch(queued.response_url, { headers: { Authorization: `Key ${key}` } });
-  if (!done.ok) {
-    const detail = (await done.text()).slice(0, 240);
-    throw new Error(`Fal resultado ${done.status}: ${detail}`);
-  }
-  const body = (await done.json()) as { video?: { url?: string } };
-  if (!body.video?.url) throw new Error("Fal não devolveu vídeo.");
-  return body.video.url;
+  throw new Error(`Fal no terminou o clipe (${state}). Não substitui por zoom.`);
 }
 
 async function download(url: string, dest: string): Promise<void> {
