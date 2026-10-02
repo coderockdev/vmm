@@ -33,7 +33,7 @@ export function CommentsPanel({ channel }: { channel: Channel }) {
   const [customMax, setCustomMax] = useState("");
   const [dryRun, setDryRun] = useState(true);
   const [useRules, setUseRules] = useState(true);
-  const [useAi, setUseAi] = useState(false);
+  const [useAi, setUseAi] = useState(true);
   const [skipAnswered, setSkipAnswered] = useState(true);
   const [skipDelicate, setSkipDelicate] = useState(true);
   const [varyResponses, setVaryResponses] = useState(true);
@@ -153,7 +153,7 @@ export function CommentsPanel({ channel }: { channel: Channel }) {
             skipDelicate,
             varyResponses,
             skipAlreadyAnswered: skipAnswered,
-            useAi: useAi && !useRules ? true : false,
+            useAi,
           }),
         });
         const json = await res.json().catch(() => ({}));
@@ -240,7 +240,7 @@ export function CommentsPanel({ channel }: { channel: Channel }) {
       <header className="workspace-section-head">
         <div>
           <h2>{channel.name}</h2>
-          <p>Comentarios de YouTube — respuestas por reglas (sin IA por defecto).</p>
+          <p>Comentarios de YouTube. Amén y gracias van con plantilla. Lo personal lo escribe Gemini, en una o dos frases.</p>
         </div>
         <div className="portadas-actions">
           <button type="button" disabled={syncing || !connected} onClick={() => void syncComments()}>
@@ -312,14 +312,16 @@ export function CommentsPanel({ channel }: { channel: Channel }) {
             Respuestas automáticas por reglas
           </label>
           <label>
-            <input
-              type="checkbox"
-              checked={useAi}
-              disabled
-              onChange={(e) => setUseAi(e.target.checked)}
-            />{" "}
-            Usar IA para comentarios complejos <em>(próximamente)</em>
+            <input type="checkbox" checked={useAi} onChange={(e) => setUseAi(e.target.checked)} />{" "}
+            IA en los personales y en los largos
           </label>
+          {useAi && (
+            <p className="portadas-actions-hint" style={{ margin: "0 0 0 22px" }}>
+              Gemini, una o dos frases, en el idioma del comentario. Cálido, sin prometer que la otra
+              persona vuelve, sin consejos ni pedir datos. Insultos, links y temas médicos siguen en revisión.
+              El corazón del canal no se puede poner desde acá: YouTube no lo ofrece en la API.
+            </p>
+          )}
           <label>
             <input
               type="checkbox"

@@ -3,6 +3,7 @@ import { getChannel } from "../../../../../../core/repo/channels";
 import { getCommentById, updateCommentState } from "../../../../../../core/repo/youtubeComments";
 import { replyToComment } from "../../../../../../core/comments/reply";
 import { classifyComment } from "../../../../../../core/comments/classify";
+import { draftPersonalReply, wantsPersonalReply } from "../../../../../../core/comments/personalReply";
 import { pickReplyText } from "../../../../../../core/comments/replyBank";
 import { normalizeCommentAutomation } from "../../../../../../core/comments/defaults";
 import { getYoutubeAccountForChannel } from "../../../../../../core/repo/youtubeAccounts";
@@ -44,12 +45,18 @@ export async function POST(
   if (action === "suggest") {
     const classified = classifyComment(comment.commentText);
     const cfg = normalizeCommentAutomation(channel.dna.commentAutomation);
-    const replyText = pickReplyText({
-      channelId: channel.id,
-      category: classified.category === "REVIEW_REQUIRED" ? "GENERIC" : classified.category,
-      customSets: cfg.responseSets,
-      vary: true,
-    });
+    const replyText = wantsPersonalReply(classified)
+      ? await draftPersonalReply({
+          channelId: channel.id,
+          channelName: channel.name,
+          commentText: comment.commentText,
+        })
+      : pickReplyText({
+          channelId: channel.id,
+          category: classified.category === "REVIEW_REQUIRED" ? "GENERIC" : classified.category,
+          customSets: cfg.responseSets,
+          vary: true,
+        });
     return NextResponse.json({
       category: classified.category,
       needsReview: classified.needsReview,
