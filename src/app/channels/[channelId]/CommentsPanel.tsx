@@ -415,7 +415,7 @@ export function CommentsPanel({ channel }: { channel: Channel }) {
         )}
       </div>
 
-      <div className="portadas-count-pills" role="tablist" style={{ marginBottom: 12 }}>
+      <div className="comments-filter-pills" role="tablist" style={{ marginBottom: 12 }}>
         {(
           [
             ["pending", "Pendientes"],

@@ -2871,6 +2871,31 @@ body:has(.channel-workspace) .main-content {
   background: #151619;
 }
 
+.comments-filter-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.comments-filter-pills button {
+  width: auto;
+  height: 36px;
+  padding: 0 14px;
+  white-space: nowrap;
+  color: #151619;
+  font-size: 14px;
+  font-weight: 650;
+  background: #eef0f5;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.comments-filter-pills button.active {
+  color: #fff;
+  background: #151619;
+}
+
 .portadas-count-hint {
   display: block;
   margin-top: 6px;
