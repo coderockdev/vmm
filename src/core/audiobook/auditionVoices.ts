@@ -17,12 +17,12 @@ export type AuditionVoice = {
 };
 
 export const AUDITION_PROVIDERS: { id: AuditionProvider; label: string }[] = [
+  { id: "google", label: "Google Cloud · Chirp" },
   { id: "edge", label: "Microsoft · grátis" },
   { id: "cartesia", label: "Cartesia · concorrente da ElevenLabs" },
   { id: "elevenlabs", label: "ElevenLabs" },
   { id: "openai", label: "OpenAI" },
   { id: "gemini", label: "Gemini · Google" },
-  { id: "google", label: "Google Cloud Chirp" },
 ];
 
 /** Masculine Portuguese (or multilingual that speaks Portuguese) voices to compare. */
@@ -105,54 +105,6 @@ export const AUDITION_VOICES: AuditionVoice[] = [
     name: "Puck",
     note: "mais jovem",
     cost: "Cupo do Gemini",
-    canSample: true,
-  },
-  {
-    provider: "google",
-    id: "pt-BR-Chirp3-HD-Charon",
-    name: "Charon",
-    note: "masculina · pt-BR · grave",
-    cost: "1 milhão de caracteres/mês grátis, depois US$ 30 / milhão",
-    canSample: true,
-  },
-  {
-    provider: "google",
-    id: "pt-BR-Chirp3-HD-Orus",
-    name: "Orus",
-    note: "masculina · pt-BR · firme",
-    cost: "1 milhão de caracteres/mês grátis, depois US$ 30 / milhão",
-    canSample: true,
-  },
-  {
-    provider: "google",
-    id: "pt-BR-Chirp3-HD-Fenrir",
-    name: "Fenrir",
-    note: "masculina · pt-BR",
-    cost: "1 milhão de caracteres/mês grátis, depois US$ 30 / milhão",
-    canSample: true,
-  },
-  {
-    provider: "google",
-    id: "es-US-Chirp3-HD-Charon",
-    name: "Charon",
-    note: "masculina · espanhol latino",
-    cost: "1 milhão de caracteres/mês grátis, depois US$ 30 / milhão",
-    canSample: true,
-  },
-  {
-    provider: "google",
-    id: "es-US-Chirp3-HD-Orus",
-    name: "Orus",
-    note: "masculina · espanhol latino",
-    cost: "1 milhão de caracteres/mês grátis, depois US$ 30 / milhão",
-    canSample: true,
-  },
-  {
-    provider: "google",
-    id: "es-US-Chirp3-HD-Fenrir",
-    name: "Fenrir",
-    note: "masculina · espanhol latino",
-    cost: "1 milhão de caracteres/mês grátis, depois US$ 30 / milhão",
     canSample: true,
   },
 ];
