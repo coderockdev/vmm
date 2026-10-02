@@ -151,7 +151,7 @@ export const AMOR_AMOR_COVER_FORMATS: CoverFormat[] = [
     name: "Misterio / Hora / Señal",
     description: "Madrugada, coincidencias, sueños, horas — humano, no paranormal barato.",
     previewHint: "3:33 · night",
-    structure: "Clock, phone, bedroom, dark kitchen, window, dawn light. Mystery without cheap paranormal aesthetic.",
+    structure: "REQUIRED signature: a large analog clock with no numerals and no digits, hands only, upper left. She is by a window at night. Face front-lit and bright, never a silhouette. A red clock hand is the accent. No painted numbers.",
     textStrategy: "3:33 AM / 7:07 / ESA MISMA NOCHE / DI SU NOMBRE",
     enabled: true,
   },

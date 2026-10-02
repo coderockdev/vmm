@@ -7,6 +7,7 @@ import {
 import { defaultAmorAmorCommentAutomation } from "./comments/defaults";
 import { DEFAULT_AMOR_AMOR_MUSICAL } from "./providers/music/musicalDna";
 import { AMOR_AMOR_SUCCESSFUL_TITLES } from "./channels/amorAmorSuccessfulTitles";
+import { AMOR_AMOR_SCRIPT_PROMPT } from "./channels/amorAmorScriptPrompt";
 
 export interface SeedChannel {
   id: string;
@@ -29,16 +30,16 @@ No es un canal de meditación ni de bienestar emocional suave. Amor Amor habla d
 
 Los videos comienzan con alta tensión emocional y una promesa narrativa inmediata. La oración acompaña el deseo urgente del espectador sin juzgarlo ni darle lecciones sobre cómo debería sentir.
 
-La intensidad crece durante el video hasta llegar a un momento central de invocación y repetición. Solo después de atravesar esa emoción aparece el alivio: perdonar, soltar la rabia y permitir que el amor encuentre su camino.
+La intensidad crece hasta un clímax casi excesivo: que vuelva, que llore, que vuelva a mis pies. Después el quiebre. La persona no renuncia al deseo. Reconoce que su voluntad es humana y entrega el control a Dios. El deseo permanece. El control termina.
 
-Amor Amor no empieza en paz. Empieza donde está la persona: en el dolor.`,
+Amor Amor no empieza en la aceptación. Empieza en el deseo.`,
       purpose: `Crear videos de oración amorosa altamente emocionales y adictivos, capaces de captar inmediatamente a una persona que está sufriendo por amor y mantenerla escuchando hasta el final.
 
 El espectador debe sentir desde los primeros segundos: «Esto habla exactamente de lo que me está pasando.»
 
 La narrativa debe transformar dolor, abandono, bronca y desesperación en expectativa: algo puede cambiar, el silencio puede romperse, esa persona puede recordar lo vivido, arrepentirse, buscar contacto y regresar.
 
-El final proporciona descarga emocional, agradecimiento y cierre.`,
+El final no es terapia de ruptura. El deseo sigue dicho. Sobre esa voluntad humana queda la de Dios. Amén.`,
       audience: `Adultos hispanohablantes que atraviesan: rupturas; abandono; contacto cero; bloqueos; mensajes sin responder; infidelidad; distancia; orgullo de la pareja o expareja; peleas; separaciones; amores que parecen perdidos; ansiedad por una llamada o mensaje; deseo urgente de reconciliación.
 
 El espectador llega emocionalmente activado. No busca una clase sobre relaciones saludables. Busca esperanza, intensidad, compañía emocional y una oración que represente exactamente lo que desea en ese momento.`,
@@ -97,6 +98,14 @@ El espectador llega emocionalmente activado. No busca una clase sobre relaciones
         "Regañar al espectador por querer que alguien vuelva",
         "Convertir inmediatamente todo en amor propio",
         "Decir demasiado pronto que debe olvidar a esa persona",
+        "Si este amor terminó, dame fuerzas para aceptarlo",
+        "Quizás debemos seguir caminos separados",
+        "Enséñame a olvidarlo",
+        "Dame fuerzas para dejarlo ir",
+        "Quizás esa persona no era para mí",
+        "Si no vuelve, ayúdame a superarlo",
+        "Tal vez debo cerrar este capítulo",
+        "Repetir en todos los videos la misma frase «Cuidado, no pronuncies su nombre todavía»",
         "Lenguaje corporativo o terapéutico",
         "Oraciones genéricas para cualquier tema",
         "Repeticiones mecánicas sin aumento emocional",
@@ -108,103 +117,23 @@ El espectador llega emocionalmente activado. No busca una clase sobre relaciones
       ],
       scriptRules: {
         opening:
-          "Entrada fuerte en los primeros segundos: advertencia/gancho de peligro (cuidado, no pronuncies su nombre todavía, si te ignora escucha hasta el final). Voz humana, lenta, apasionada. Nunca saludos largos, respiración, relájate ni prepararse un té.",
-        structure: `1. ADVERTENCIA / GANCHO DE PELIGRO — abrir inmediato con frase fuerte (cuidado, no pronuncies su nombre todavía, si te ignora escucha hasta el final). Miedo activo, curiosidad. Nunca saludar 20s.
-2. PROMESA EMOCIONAL — deseo exacto: que piense en ti, recuerde, sienta ausencia, rompa silencio, deje orgullo, vuelva, pida perdón. Sin explicar de más.
-3. CTA TEMPRANO — dentro de la emoción: Suscríbete a Amor Amor, escribe su nombre en comentarios, quédate hasta el final. Variar.
-4. ENTRADA DIRECTA EN LA ORACIÓN — sin relajación previa. Hablar a Dios/universo. Nombrar dolor, ausencia, silencio, deseo.
-5. ESCALADA — recuerdo de lo vivido, noches, mensajes, orgullo, lo no dicho, miedo a perderlo. Cada minuto avanza.
-6. ARREPENTIMIENTO Y REGRESO — que recuerde el vínculo, comprenda lo perdido, orgullo ceda, deseo urgente de hablar, reparar, «Perdóname. Quiero hablar contigo.»
-7. MOMENTO CENTRAL — UNA frase poderosa del tema, repetir 3 veces con más intensidad, pausas e inflexión.
-8. CLÍMAX — frases cortas, más pausas, máxima intensidad: que vuelva / llame / escriba / deje de huir / pida perdón. No resolver antes.
-9. DESCARGA — tono cambia; bronca cede; si hay amor verdadero, que encuentre camino; primera paz clara.
-10. PERDÓN — cierre del arco (no tema principal): perdono lo que pueda, suelto lo que no cargo; si los caminos se encuentran, que sea desde la verdad.
-11. AGRADECIMIENTO TRIPLE — Gracias. Gracias. Gracias. (pausa) Amén.
-12. CTA FINAL — escribe AMÉN, suscríbete a Amor Amor, vuelve mañana.`,
-        cta: "CTA temprano integrado en la emoción (Suscríbete a Amor Amor, escribe su nombre en comentarios, quédate hasta el final) y CTA final breve (escribe AMÉN, suscríbete, vuelve mañana). Variar para no sonar grabado.",
+          "Cada video abre con su propio gancho: tensión, peligro, deseo, curiosidad y consecuencia. No saludar. No meditar. No copiar siempre «Cuidado, no pronuncies su nombre todavía». La advertencia de que el vínculo tiene que ser el correcto vive solo en este comienzo. Después, los cuatro pedidos (suscribirse a Amor Amor, comentar, compartir, like) y la frase «Ahora sí. Vamos a comenzar con la oración.»",
+        structure: `1. GANCHO — algo importante está a punto de ocurrir. Entrar directo en el conflicto.
+2. ADVERTENCIA — la oración no es inocua. Eficacia, consecuencias inmediatas, no decir el nombre todavía, confirmar que el vínculo es el correcto. Si no lo es: amarre, calvario, sufrimiento. Si sigue aquí, ya sabe quién es.
+3. CTA — Suscríbete a Amor Amor. Comentario. Compartir. Like. Dentro de la tensión, no como comercial.
+4. AHORA SÍ — «Ahora sí. Vamos a comenzar con la oración.» Y empieza la oración, sin otra introducción.
+5. DESEO — quiero que vuelva. Sin vergüenza. Sin «si todavía siente algo».
+6. INTENSIFICACIÓN — que me busque, que recuerde, escenas concretas (teléfono, mensaje, cama, puerta).
+7. RABIA / DOLOR — que sienta mi ausencia.
+8. CLÍMAX HUMANO — que vuelva llorando, desesperado, a mis pies. Casi excesivo.
+9. RECONOCIMIENTO — Dios, escucha lo que acabo de pedir. Ésta es mi voluntad humana. Éste es mi ego herido. No me retracto.
+10. ENTREGA — sigo queriendo que vuelva. Entrego el control, no el deseo. Yo no soy Dios. Tú eres Dios.
+11. CIERRE — mi deseo permanece. Mi control termina. Tu voluntad permanece sobre la mía. Amén.
+Columna: DESEO → DESESPERACIÓN → CLÍMAX → EGO → DIOS.`,
+        cta: "Temprano, antes de la oración, y dentro de la tensión: «Suscríbete a Amor Amor», comentario, compartir y like. Después: «Ahora sí. Vamos a comenzar con la oración.» No interrumpir el clímax con otro comercial.",
         defaultDurationMinutes: 11,
         defaultSceneCount: 4,
-        generationPrompt: `Escribe un guion completo para el canal Amor Amor en español latinoamericano neutro.
-
-IMPORTANTE: Amor Amor NO es un canal de meditación, mindfulness ni autoayuda convencional.
-
-El espectador llega herido, enojado, abandonado, bloqueado o desesperado porque alguien se alejó. No corrijas inmediatamente esa emoción. Entra dentro de ella.
-
-El guion debe comenzar en los primeros segundos con una ADVERTENCIA poderosa que produzca curiosidad, tensión y miedo activo.
-
-Ejemplos conceptuales:
-"Cuidado."
-"No hagas esta oración todavía."
-"Antes de pronunciar su nombre, escucha esto."
-"Si lleva días sin hablarte, necesito advertirte algo."
-
-No copies siempre las mismas frases. Inventa un gancho específico para el tema.
-
-Inmediatamente después identifica el deseo central del espectador: quiere que esa persona recuerde, extrañe, se arrepienta, rompa el silencio, escriba, llame, vuelva o pida perdón.
-
-Introduce tempranamente un CTA natural:
-"Suscríbete a Amor Amor…"
-y una acción relacionada con los comentarios cuando corresponda.
-
-Después entra directamente en la oración.
-
-PROHIBIDO comenzar con respiraciones, relajación, meditación, visualizaciones largas, preparar té, buscar un lugar tranquilo o discursos psicológicos.
-
-La oración debe crecer en intensidad.
-No escribir diez minutos con la misma energía.
-
-Debe existir una progresión clara:
-dolor → ausencia → recuerdo → tensión → arrepentimiento → deseo de contacto → regreso → clímax → descarga → perdón → agradecimiento.
-
-En la zona central crea UNA FRASE PODEROSA específica para el tema y repítela TRES VECES.
-Cada repetición debe tener mayor intensidad y debe permitir una interpretación vocal diferente.
-
-Utiliza recursos de interpretación entre corchetes únicamente cuando estén en la lista permitida de la voz del canal (DNA), por ejemplo:
-[softly] [sighs] [whispers] [warmly] [pause] [emotional]
-
-NUNCA uses tags de acento como [soft Colombian accent] — el acento viene de la voz elegida.
-Puedes usar <break time="2.7s"/> y <break time="1.4s"/> según las capacidades de la voz.
-
-No saturar el texto con instrucciones.
-
-La voz debe sonar humana, íntima, apasionada y ligeramente lenta.
-Evitar frases excesivamente largas. Crear espacios naturales para respirar y cambiar de intención.
-
-En el clímax pueden utilizarse expresiones directas como:
-"Que vuelva."
-"Que me busque."
-"Que rompa este silencio."
-"Que deje atrás su orgullo."
-"Que reconozca lo que hizo."
-"Que tenga el valor de pedirme perdón."
-
-El guion puede ser dramático. No suavizar artificialmente el sufrimiento del espectador.
-Al mismo tiempo, presentar la oración como oración y esperanza, no como garantía factual de controlar las acciones de otra persona.
-
-NO introducir el mensaje de "soltar" demasiado pronto.
-El perdón, la libertad y la descarga emocional pertenecen AL FINAL, después del clímax.
-
-Terminar con una transición hacia reconciliación y paz.
-Cerrar la oración diciendo lentamente:
-"Gracias.
-Gracias.
-Gracias.
-
-Amén."
-
-Después realizar un CTA final breve para comentar y suscribirse a Amor Amor.
-
-Cada guion debe sentirse escrito específicamente para su título y situación. Evitar plantillas obvias, relleno, frases genéricas y repeticiones que no hagan avanzar la emoción.
-
-REGLA DE TÍTULOS (canal):
-En el banco de 111 títulos taquilleros, MANTRA es excepción (casi no aparece).
-Usa "mantra" como máximo en ~5% de los títulos — o menos.
-Prioriza ganchos tipo: CUIDADO / ADVERTENCIA / ORACIÓN / REGRESA / ESCRIBE / LLAMA / DI SU NOMBRE / 3:33 / 7:07 / silencio / bloqueo / orgullo.
-Si el título lleva "mantra", debe ser una variación rara y distinta — nunca el default del lote.
-
-REGLA PRINCIPAL:
-AMOR AMOR EMPIEZA EN LA HERIDA Y TERMINA EN EL ALIVIO.
-No empieces en el alivio.`,
+        generationPrompt: AMOR_AMOR_SCRIPT_PROMPT,
         pauses: { betweenLines: 0.55, betweenSections: 1.6 },
         wordsPerMinute: 145,
         charsPerWord: 6,

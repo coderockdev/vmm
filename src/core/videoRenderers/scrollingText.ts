@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { ffprobeDuration, runFfmpeg, ensureParentDir, trimMedia } from "../audio/ffmpegUtils";
 import { stripVoiceTags } from "./stripVoiceTags";
-import { wrapTextToLines, estimateBlockHeightPx } from "./measureText";
+import { wrapTextToLines } from "./measureText";
 import {
   ASPECT_SIZES,
   RenderStyledVideoArgs,
@@ -40,25 +40,23 @@ function buildAssFile(args: {
   height: number;
 }): string {
   const { lines, settings, duration, width, height } = args;
-  const blockH = estimateBlockHeightPx(lines.length, settings);
   // readingZone: 0 = bottom, 0.5 = mid, 1 = top (see VideoStyleSettings).
   const zone = Math.min(1, Math.max(0, settings.readingZone));
-  // Start with the top of the text block at the reading line (mid screen by default),
-  // not below the frame — so the first lines are readable from t=0.
-  const startY = height * (1 - zone);
-  const endY = -blockH - settings.fontSize;
-  const travel = Math.max(1, startY - endY);
-  // Span the real audio duration; speed factor stretches travel when ≠ 1.
-  const adjustedEndY = startY - travel * Math.max(0.5, settings.scrollSpeedFactor);
-  const x = Math.round(width / 2);
+  // Each line is its own move, with a step we control. A single \move on a guessed
+  // block height was longer than the real text, so the lines left the frame and
+  // the rest of the prayer played over black.
+  const lineStep = Math.round(settings.fontSize * 1.2);
+  const readingY = Math.round(height * (1 - zone));
+  const travel = Math.max(0, (lines.length - 1) * lineStep);
   const alignNum = settings.align === "left" ? 7 : settings.align === "right" ? 9 : 8;
-  const body = lines.map((l) => (l === "" ? "\\N" : escapeAss(l))).join("\\N");
+  const marginL = Math.round(width * settings.sideMarginPct);
+  const marginR = marginL;
+  const x =
+    alignNum === 7 ? marginL : alignNum === 9 ? width - marginR : Math.round(width / 2);
   const outline = settings.textOutline ? 2.2 : 0;
   const shadow = settings.textShadow ? 2 : 0;
   const primary = assColor(settings.textColor);
   const outlineC = assColor(settings.outlineColor, "60");
-  const marginL = Math.round(width * settings.sideMarginPct);
-  const marginR = marginL;
 
   return `[Script Info]
 Title: VMM Scrolling Text
@@ -74,7 +72,16 @@ Style: Scroll,${settings.fontFamily},${Math.round(settings.fontSize)},${primary}
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,${formatAssTime(0)},${formatAssTime(duration)},Scroll,,0,0,0,,{\\move(${x},${Math.round(startY)},${x},${Math.round(adjustedEndY)},0,${Math.round(duration * 1000)})\\an${alignNum}\\q2}${body}
+${lines
+  .map((line, i) => {
+    const y0 = readingY + i * lineStep;
+    // Last line is still on the reading line when the audio ends.
+    const y1 = y0 - travel;
+    const text = line.trim() ? escapeAss(line) : "\\h";
+    const moveMs = Math.round(duration * 1000);
+    return `Dialogue: 0,${formatAssTime(0)},${formatAssTime(duration)},Scroll,,0,0,0,,{\\move(${x},${y0},${x},${y1},0,${moveMs})\\an${alignNum}\\q2}${text}`;
+  })
+  .join("\n")}
 `;
 }
 

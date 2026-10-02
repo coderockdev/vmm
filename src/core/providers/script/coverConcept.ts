@@ -392,9 +392,10 @@ export function buildThumbnailImagePrompt(args: {
     "YouTube thumbnail photograph, 16:9 landscape, hyperrealistic, cinematic.",
     "CAST: the only face is a woman. One look for the whole frame, including both sides of a split — the same woman. Either an older Andean woman (indigenous Andean features, silver hair, lined face, dignified, everyday clothes) or a young attractive Latin American woman (contemporary, clear face). Never a man. No male face.",
     "ABSOLUTE: the photograph contains zero letters, zero numbers, zero logos, zero captions, zero subtitles, zero speech-bubble text, zero UI. A caption is composited afterwards. If any glyph appears, the image is wrong.",
-    "PHONE: if a phone is in frame it is a matte dark object, out of focus, screen OFF and solid black. No lock screen, no incoming call, no clock, no caller name, no icons, no mirrored or backwards writing on the glass or on the back.",
-    "LIGHT: the face is brightly lit with a frontal key light. Eyes, skin and expression are the brightest, clearest part of the frame. Background may stay darker.",
-    "COMPOSITION: the person's face is entirely in the right third. Eyes, nose and mouth are fully visible. The left half is empty and darker — a large caption will be placed there and must not cover the face.",
+    "PHONE: if a phone is in frame it is a matte dark object, screen OFF and solid black. No lock screen, no incoming call, no caller name, no icons, no writing. An analog clock with no numerals is allowed only when the format requires a clock.",
+    "LIGHT: frontal key light on the face. Catchlight in both eyes. Skin and expression are the brightest part of the frame. A window may rim the hair, but it is never the only light. A face in silhouette or lost in shadow is a failed image.",
+    "COMPOSITION: her face fills the right half, eyes and mouth fully visible. The format's signature object sits upper-left, large and unmistakable. The lower-left stays darker and empty for a caption.",
+    "QUALITY: this must read as a finished YouTube thumbnail, not a moody still. One clear object from the format, a lit face, and one red or yellow accent. A generic portrait that ignores the format is a failed image.",
     `Channel mood: ${args.channel.name}.`,
     `Format: ${format.name}. Structure: ${"structure" in format ? format.structure : ""}.`,
     scene ? `Scene (photograph only, no writing): ${scene}.` : "",
@@ -403,7 +404,7 @@ export function buildThumbnailImagePrompt(args: {
     `Accent colors in the scene: ${cover.accentColors.primary} and ${cover.accentColors.emphasis}.`,
     `Avoid: ${cover.avoid.join(", ")}.`,
     args.styleExtra?.trim() || "",
-    "FINAL: no words anywhere in the image. No phone interface. Face well lit.",
+    "FINAL: no words anywhere in the image. No phone interface. Face brightly lit. The format's signature object is visible.",
   ]
     .filter(Boolean)
     .join(" ");
