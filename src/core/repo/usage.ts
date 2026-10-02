@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { getDb } from "../db";
 import { getSupabase, isSupabaseEnabled, assertNoError } from "../supabaseClient";
-import { estimateUsd } from "../usage/pricing";
+import { chirpFreeChars, chirpPrices, estimateUsd } from "../usage/pricing";
 import {
   CostBreakdown,
   emptyBreakdown,
@@ -29,6 +29,18 @@ interface UsageRow {
   estimated_usd: number;
   raw_usage: string | object | null;
   created_at: string;
+}
+
+function spentUsdOverride(raw: unknown): number | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = (raw as { spentUsd?: unknown }).spentUsd;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+export function listUsdOf(raw: unknown, fallback: number): number {
+  if (!raw || typeof raw !== "object") return fallback;
+  const value = (raw as { listUsd?: unknown }).listUsd;
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 function rowToEvent(row: UsageRow): UsageEvent {
@@ -135,7 +147,8 @@ export async function insertUsageEvent(input: {
   const outputTokens = input.snapshot.outputTokens ?? null;
   const totalTokens =
     inputTokens != null || outputTokens != null ? (inputTokens ?? 0) + (outputTokens ?? 0) : null;
-  const estimatedUsd = estimateUsd(input.snapshot);
+  const override = spentUsdOverride(input.snapshot.raw);
+  const estimatedUsd = override ?? estimateUsd(input.snapshot);
   const rawJson = input.snapshot.raw != null ? JSON.stringify(input.snapshot.raw) : null;
 
   if (isSupabaseEnabled()) {
@@ -260,6 +273,73 @@ export async function listUsageForProject(videoProjectId: string): Promise<Usage
   return rows.map(rowToEvent);
 }
 
+/** Chirp's free million is one Google project, shared by every channel. */
+export async function recordChirpUsage(input: {
+  channelId: string;
+  characters: number;
+  chapterId?: string | null;
+}): Promise<void> {
+  const chars = Math.max(0, Math.round(input.characters));
+  if (chars <= 0) return;
+  const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString();
+  const already = await chirpCharactersSince(monthStart);
+  const prices = chirpPrices(chars, already);
+  await insertUsageEvent({
+    channelId: input.channelId,
+    stage: "audio",
+    snapshot: {
+      provider: "google",
+      model: "chirp-3-hd",
+      characters: chars,
+      raw: {
+        chapterId: input.chapterId ?? null,
+        task: "voice",
+        spentUsd: prices.spentUsd,
+        listUsd: prices.listUsd,
+        freeCharsPerMonth: 1_000_000,
+        listPerMillionUsd: 30,
+      },
+    },
+  });
+}
+
+async function chirpCharactersSince(since: string): Promise<number> {
+  if (isSupabaseEnabled()) {
+    const res = await getSupabase()
+      .from("usage_events")
+      .select("characters")
+      .eq("provider", "google")
+      .gte("created_at", since);
+    if (res.error) return 0;
+    return (res.data ?? []).reduce((sum, row) => sum + (Number(row.characters) || 0), 0);
+  }
+  const rows = getDb()
+    .prepare(
+      `SELECT characters FROM usage_events WHERE provider = 'google' AND created_at >= ?`
+    )
+    .all(since) as Array<{ characters: number | null }>;
+  return rows.reduce((sum, row) => sum + (Number(row.characters) || 0), 0);
+}
+
+/** Free million is the calendar month of the whole Google project, not one channel. */
+export async function chirpMonthSummary(): Promise<{
+  characters: number;
+  freeChars: number;
+  spentUsd: number;
+  listUsd: number;
+}> {
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  const characters = await chirpCharactersSince(monthStart);
+  const prices = chirpPrices(characters, 0);
+  return {
+    characters,
+    freeChars: chirpFreeChars(),
+    spentUsd: prices.spentUsd,
+    listUsd: prices.listUsd,
+  };
+}
+
 export async function listUsageForPlan(contentPlanId: string): Promise<UsageEvent[]> {
   if (isSupabaseEnabled()) {
     const res = await getSupabase()
@@ -301,6 +381,7 @@ const PROVIDER_PT: Record<string, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
   gemini: "Gemini",
+  google: "Google Chirp",
   fal: "Fal",
   cartesia: "Cartesia",
   elevenlabs: "ElevenLabs",
@@ -320,19 +401,24 @@ export interface ChapterSpend {
   voiceUsd: number;
   videoUsd: number;
   totalUsd: number;
+  /** List price before a free tier. Equals totalUsd when the call is billed in full. */
+  listUsd: number;
+  /** Characters sent to a metered voice, such as Cloud TTS. */
+  characters: number;
 }
 
 function emptySpend(): ChapterSpend {
-  return { textUsd: 0, imageUsd: 0, voiceUsd: 0, videoUsd: 0, totalUsd: 0 };
+  return { textUsd: 0, imageUsd: 0, voiceUsd: 0, videoUsd: 0, totalUsd: 0, listUsd: 0, characters: 0 };
 }
 
-function addSpend(row: ChapterSpend, stage: string, usd: number) {
+function addSpend(row: ChapterSpend, stage: string, usd: number, listUsd: number) {
   const task = spendTask(stage);
   if (task === "text") row.textUsd += usd;
   else if (task === "image") row.imageUsd += usd;
   else if (task === "voice") row.voiceUsd += usd;
   else if (task === "video") row.videoUsd += usd;
   row.totalUsd += usd;
+  row.listUsd += listUsd;
 }
 
 export async function spendByChapterId(channelId: string): Promise<Record<string, ChapterSpend>> {
@@ -346,7 +432,8 @@ export async function spendByChapterId(channelId: string): Promise<Record<string
         : "";
     if (!chapterId) continue;
     const row = out[chapterId] ?? emptySpend();
-    addSpend(row, event.stage, event.estimatedUsd);
+    addSpend(row, event.stage, event.estimatedUsd, listUsdOf(event.rawUsage, event.estimatedUsd));
+    row.characters += event.characters ?? 0;
     out[chapterId] = row;
   }
   return out;

@@ -40,7 +40,24 @@ const PRICES = {
   falWanTurbo480p: () => numEnv("PRICING_FAL_WAN_TURBO_480P", 0.05),
   falWanTurbo580p: () => numEnv("PRICING_FAL_WAN_TURBO_580P", 0.075),
   falWanTurbo720p: () => numEnv("PRICING_FAL_WAN_TURBO_720P", 0.1),
+  /** Cloud Text-to-Speech Chirp 3 HD, after the monthly free million. */
+  chirpPerMillion: () => numEnv("PRICING_CHIRP_PER_MILLION", 30),
+  chirpFreeChars: () => numEnv("PRICING_CHIRP_FREE_CHARS", 1_000_000),
 };
+
+/** What Chirp would cost with no free tier, and what this call actually bills. */
+export function chirpPrices(characters: number, alreadyThisMonth: number): { spentUsd: number; listUsd: number } {
+  const chars = Math.max(0, characters);
+  const listUsd = (chars / 1_000_000) * PRICES.chirpPerMillion();
+  const freeLeft = Math.max(0, PRICES.chirpFreeChars() - Math.max(0, alreadyThisMonth));
+  const billed = Math.max(0, chars - freeLeft);
+  const spentUsd = (billed / 1_000_000) * PRICES.chirpPerMillion();
+  return { spentUsd, listUsd };
+}
+
+export function chirpFreeChars(): number {
+  return PRICES.chirpFreeChars();
+}
 
 /**
  * gpt-image-1 list price, Oct 2026. Landscape is 1536x1024.
@@ -79,6 +96,8 @@ export function estimateUsd(snapshot: UsageSnapshot): number {
     case "gemini":
       if (images > 0) return images * PRICES.geminiImagePerImage();
       return tokensUsd(input, output, PRICES.geminiInputPerMTok(), PRICES.geminiOutputPerMTok());
+    case "google":
+      return (chars / 1_000_000) * PRICES.chirpPerMillion();
     case "cartesia":
       return (chars / 1000) * PRICES.cartesiaPer1kChars();
     case "elevenlabs":

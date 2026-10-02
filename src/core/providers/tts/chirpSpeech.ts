@@ -9,6 +9,13 @@ export function clampChirpSpeed(speed: number): number {
   return Math.min(1.05, Math.max(0.85, value));
 }
 
+/** Characters sent to Cloud Text-to-Speech. Silence tags are not billed. */
+export function chirpBilledCharacters(text: string): number {
+  return splitBreaks(text)
+    .filter((piece): piece is { kind: "text"; text: string } => piece.kind === "text")
+    .reduce((sum, piece) => sum + piece.text.length, 0);
+}
+
 export function chirpLanguageCode(voiceName: string, fallback = "pt-BR"): string {
   const match = voiceName.match(/^(pt-BR|es-US)-Chirp3-HD-/);
   return match?.[1] ?? fallback;

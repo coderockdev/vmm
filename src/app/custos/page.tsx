@@ -38,7 +38,8 @@ export default function CostsPage() {
         Assinaturas fixas da conta MY. Chip, crédito Claro e o depósito do Google Cloud são da VMM
         inteira e ficam abaixo, fora deste total mensal. Em cada canal, o gasto de um vídeo é o que
         se registou, partido por fornecedor e por tarefa: o texto e a imagem da OpenAI não se somam
-        na mesma linha.
+        na mesma linha. O Google Chirp mostra o gasto real e a tarifa dos caracteres enviados:
+        o primeiro milhão do mês sai US$0 e, depois, US$30 por milhão.
       </p>
       <table className="costs-table">
         <thead>

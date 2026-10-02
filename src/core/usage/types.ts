@@ -13,6 +13,7 @@ export type UsageProvider =
   | "anthropic"
   | "openai"
   | "gemini"
+  | "google"
   | "cartesia"
   | "elevenlabs"
   | "heygen"

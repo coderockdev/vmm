@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getChannel } from "../../../../../../core/repo/channels";
 import { getAudiobookSettings } from "../../../../../../core/repo/books";
-import { synthesizeAudition } from "../../../../../../core/audiobook/auditionSample";
+import { auditionSampleText, synthesizeAudition } from "../../../../../../core/audiobook/auditionSample";
+import { chirpBilledCharacters } from "../../../../../../core/providers/tts/chirpSpeech";
+import { recordChirpUsage } from "../../../../../../core/repo/usage";
 import {
   findAuditionVoice,
   isCartesiaVoiceId,
@@ -47,6 +49,12 @@ export async function POST(
     const settings = await getAudiobookSettings(channel.id);
     const speed = typeof body.speed === "number" && body.speed > 0 ? body.speed : settings.ttsSpeakingRate;
     const buf = await synthesizeAudition(provider, voiceId, channel.dna.language, speed);
+    if (provider === "google") {
+      await recordChirpUsage({
+        channelId: channel.id,
+        characters: chirpBilledCharacters(auditionSampleText(channel.dna.language)),
+      }).catch(() => undefined);
+    }
     const mime = provider === "gemini" ? "audio/wav" : "audio/mpeg";
     return NextResponse.json({
       provider,
