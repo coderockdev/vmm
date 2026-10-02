@@ -9,6 +9,7 @@ import { getImageProvider } from "../providers/image";
 import { CartesiaTTSProvider } from "../providers/tts/CartesiaTTSProvider";
 import { chirpBilledCharacters, synthesizeChirpToFile } from "../providers/tts/chirpSpeech";
 import { isChirpVoiceId } from "./chirpVoices";
+import { freshLog, markPart, packMessage, readLog, type ChapterPartId } from "./chapterLog";
 import { splitTextForTts } from "../providers/tts/ttsLimits";
 import { getChannel } from "../repo/channels";
 import {
@@ -41,8 +42,18 @@ export async function runNextAudiobookChapter(): Promise<boolean> {
   }
 }
 
-async function note(chapterId: string, status: Parameters<typeof patchChapter>[1]["status"], message: string) {
-  await patchChapter(chapterId, { status, errorMessage: message });
+async function note(
+  chapterId: string,
+  status: Parameters<typeof patchChapter>[1]["status"],
+  message: string,
+  part?: { id: ChapterPartId; percent: number; detail: string; done?: boolean },
+  extra?: Parameters<typeof patchChapter>[1]
+) {
+  const current = await listSafe(chapterId);
+  const log = part
+    ? markPart(readLog(current?.errorMessage) ?? freshLog(), part.id, part)
+    : readLog(current?.errorMessage) ?? freshLog();
+  await patchChapter(chapterId, { ...extra, status, errorMessage: packMessage(message, log) });
 }
 
 export async function reproduceChapter(chapterId: string): Promise<void> {
@@ -52,7 +63,10 @@ export async function reproduceChapter(chapterId: string): Promise<void> {
     await patchChapter(chapterId, {
       status: "tts_running",
       attempts: current.attempts + 1,
-      errorMessage: `Versão ${current.attempts + 1} · a gerar de novo (imagens do texto, clipes no início, portada só com o título).`,
+      errorMessage: packMessage(
+        `Versão ${current.attempts + 1} · a gerar de novo (imagens do texto, clipes no início, portada só com o título).`,
+        freshLog()
+      ),
     });
   }
   await produceClaimedChapter(chapterId, "full");
@@ -70,7 +84,11 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
     const siblings = await listChaptersForBook(book.id);
     const next = siblings.find((item) => item.index === chapter.index + 1) ?? null;
 
-    await note(chapter.id, "tts_running", "Áudio: a ler o texto…");
+    await note(chapter.id, "tts_running", "Áudio: a ler o texto…", {
+      id: "audio",
+      percent: 8,
+      detail: "A ler o texto",
+    });
     const body = readChapterText(book.folder, chapter.sourceFile);
     const spoken = spokenScript(book.title, chapter.index, body, next?.label ?? null);
     const dirs = ensureChapterAssetDirs(channel.id, book.folder, chapter.index);
@@ -83,19 +101,23 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
     const speed = narrationSpeed(dnaChirp ? dnaVoice.speed : settings.ttsSpeakingRate);
     const useChirp = dnaChirp || settings.ttsProvider === "google-chirp3-hd";
     const engine = useChirp ? "Chirp" : "Cartesia";
-    await note(chapter.id, "tts_running", `Áudio: a narrar com ${engine} (${speed.toFixed(2)})…`);
+    await note(chapter.id, "tts_running", `Áudio: a narrar com ${engine} (${speed.toFixed(2)})…`, {
+      id: "audio",
+      percent: 35,
+      detail: `A narrar com ${engine}`,
+    });
     const audioPath = useChirp
       ? await narrateChirp(spoken, voiceId, speed, dirs.audio, channel.id, chapter.id)
       : await narrate(spoken, voiceId, settings.ttsLanguageCode, speed, dirs.audio);
     const audioSec = await ffprobeDuration(audioPath);
     const audioRef = await persistFile(audioPath, channel.id, "audio", `${chapter.id}.mp3`, "audio/mpeg");
-    await patchChapter(chapter.id, {
-      status: mode === "audio" ? "audio_ready" : "tts_running",
-      errorMessage: mode === "audio" ? "Áudio pronto." : "Áudio pronto. A planear as imagens…",
-      audioPath: audioRef,
-      audioDurationSec: audioSec,
-      ttsTextPath: spokenPath,
-    });
+    await note(
+      chapter.id,
+      mode === "audio" ? "audio_ready" : "tts_running",
+      mode === "audio" ? "Áudio pronto." : "Áudio pronto. A planear as imagens…",
+      { id: "audio", percent: 100, detail: "Pronto", done: true },
+      { audioPath: audioRef, audioDurationSec: audioSec, ttsTextPath: spokenPath }
+    );
     if (mode === "audio") return;
 
     const plan = planChapterVisuals(chapter.words, settings.visualBudget);
@@ -109,7 +131,16 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
         images.push(file);
         continue;
       }
-      await note(chapter.id, "images_ready", `Imagens: ${image.index + 1}/${plan.images.length} a partir do texto…`);
+      await note(
+        chapter.id,
+        "images_ready",
+        `Imagens: ${image.index + 1}/${plan.images.length} a partir do texto…`,
+        {
+          id: "images",
+          percent: Math.round((image.index / plan.images.length) * 100),
+          detail: `${image.index + 1}/${plan.images.length}`,
+        }
+      );
       const scene = excerpt(body, image.wordStart, image.wordEnd);
       const made = await generateStill(imagePrompt(style, book.title, scene, look), file);
       await frameTo16x9(file);
@@ -125,6 +156,12 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
       }).catch(() => undefined);
       images.push(file);
     }
+    await note(chapter.id, "images_ready", "Imagens prontas.", {
+      id: "images",
+      percent: 100,
+      detail: `${images.length} prontas`,
+      done: true,
+    });
 
     const clips: string[] = [];
     for (const slot of plan.slots) {
@@ -132,7 +169,11 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
         slot.kind === "ai-clip"
           ? `Animação: clipe da imagem ${slot.imageIndex + 1}`
           : `Vídeo: movimento da imagem ${slot.imageIndex + 1}`;
-      await note(chapter.id, "images_ready", `${label}…`);
+      await note(chapter.id, "images_ready", `${label}…`, {
+        id: "video",
+        percent: Math.round((slot.index / Math.max(1, plan.slots.length)) * 80),
+        detail: `${slot.index + 1}/${plan.slots.length}`,
+      });
       const out = path.join(dirs.motion, `slot-${String(slot.index + 1).padStart(2, "0")}.mp4`);
       const still = images[slot.imageIndex] ?? images[0];
       if (slot.kind === "ai-clip") {
@@ -175,7 +216,11 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
       clips.push(out);
     }
 
-    await note(chapter.id, "images_ready", "Vídeo: a juntar imagens, clips, narração e música suave…");
+    await note(chapter.id, "images_ready", "Vídeo: a juntar imagens, clips, narração e música suave…", {
+      id: "video",
+      percent: 90,
+      detail: "A juntar",
+    });
     const finalPath = path.join(dirs.final, "chapter.mp4");
     const mixedAudio = await underVoice(audioPath, dirs.audio, channel.id, chapter.id);
     await assemble(clips, mixedAudio, finalPath);
@@ -184,13 +229,18 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
       videoBytes > 45 * 1024 * 1024
         ? finalPath
         : await persistFile(finalPath, channel.id, "render", `${chapter.id}.mp4`, "video/mp4");
-    await patchChapter(chapter.id, {
-      status: "video_ready",
-      errorMessage: "Vídeo pronto. A fazer a portada…",
-      videoPath: videoRef,
-    });
+    await note(chapter.id, "video_ready", "Vídeo pronto. A fazer a portada…", {
+      id: "video",
+      percent: 100,
+      detail: "Pronto",
+      done: true,
+    }, { videoPath: videoRef });
 
-    await note(chapter.id, "thumb_ready", "Portada: a pintar o título…");
+    await note(chapter.id, "thumb_ready", "Portada: a pintar o título…", {
+      id: "cover",
+      percent: 40,
+      detail: "A pintar o título",
+    });
     const thumbStill = images[plan.thumbnailSourceImage] ?? images[0];
     const thumbPath = path.join(dirs.thumbnails, "cover.png");
     fs.copyFileSync(thumbStill, thumbPath);
@@ -198,9 +248,17 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
     await burnStoryCover(thumbPath, cover.title, cover.author);
     const thumbJpg = await jpegThumb(thumbPath);
     const thumbRef = await persistFile(thumbJpg, channel.id, "thumbnails", `${chapter.id}.jpg`, "image/jpeg");
-    await patchChapter(chapter.id, { thumbPath: thumbRef, errorMessage: "Portada pronta. A escrever a descrição…" });
+    await note(chapter.id, "thumb_ready", "Portada pronta. A escrever a descrição…", {
+      id: "copy",
+      percent: 50,
+      detail: "A escrever título e descrição",
+    }, { thumbPath: thumbRef });
 
-    await note(chapter.id, "uploading", "YouTube: a enviar o capítulo em privado…");
+    await note(chapter.id, "uploading", "YouTube: a enviar o capítulo em privado…", {
+      id: "youtube",
+      percent: 20,
+      detail: "A enviar em privado",
+    });
     const title = youtubeTitle(book.title, chapter.label, chapter.index);
     const description = youtubeDescription(book.title, chapter.label, next?.label ?? null);
     const videoId = await uploadPrivate(channel.id, finalPath, title, description);
@@ -210,15 +268,22 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
       buffer: fs.readFileSync(thumbJpg),
       mimeType: "image/jpeg",
     });
-    await patchChapter(chapter.id, {
-      status: "uploaded",
-      errorMessage: "No YouTube (privado).",
+    await note(chapter.id, "uploaded", "No YouTube (privado).", {
+      id: "youtube",
+      percent: 100,
+      detail: "Privado",
+      done: true,
+    }, {
       youtubeVideoId: videoId,
       youtubeUrl: `https://studio.youtube.com/video/${videoId}/edit`,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await patchChapter(chapterId, { status: "failed", errorMessage: message.slice(0, 500) });
+    const current = await listSafe(chapterId);
+    await patchChapter(chapterId, {
+      status: "failed",
+      errorMessage: packMessage(message.slice(0, 500), readLog(current?.errorMessage) ?? freshLog()),
+    });
   }
 }
 

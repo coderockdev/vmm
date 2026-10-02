@@ -3540,6 +3540,39 @@ body:has(.channel-workspace) .main-content {
   font-weight: 650;
 }
 
+.chapter-parts {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chapter-part {
+  display: grid;
+  grid-template-columns: 88px 42px minmax(0, 1.4fr) minmax(92px, 0.8fr);
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.chapter-part.is-run {
+  color: #151619;
+  font-weight: 650;
+}
+
+.chapter-part.is-done {
+  color: #2f7d57;
+}
+
+.chapter-part span:nth-child(3) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .control-when {
   display: flex;
   flex-wrap: wrap;
