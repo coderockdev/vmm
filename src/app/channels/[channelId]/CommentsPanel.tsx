@@ -129,7 +129,7 @@ export function CommentsPanel({ channel }: { channel: Channel }) {
         dryRun
           ? `DRY RUN: se simularán hasta ${max} comentarios pendientes (nada se publica en YouTube).`
           : allPending
-            ? `Se publican respuestas en YouTube para los ${max} pendientes, de a 10. Los delicados van a revisión. YouTube suele frenar cerca de las 200 respuestas por el cupo del día; el resto queda para mañana.`
+            ? `Se publican respuestas en YouTube para los ${max} pendientes, de a 5. Los delicados van a revisión. YouTube suele frenar cerca de las 200 respuestas por el cupo del día; el resto queda para mañana.`
             : `Se procesarán hasta ${max} comentarios pendientes y se publicarán respuestas en YouTube.`
       )
     ) {
@@ -147,7 +147,7 @@ export function CommentsPanel({ channel }: { channel: Channel }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             maxItems: max,
-            batchSize: dryRun ? 30 : 10,
+            batchSize: dryRun ? 15 : 5,
             runId,
             dryRun,
             skipDelicate,
@@ -276,8 +276,8 @@ export function CommentsPanel({ channel }: { channel: Channel }) {
       <div className="costs-block" style={{ marginBottom: 24 }}>
         <h3>AUTO RESPONDER</h3>
         <p className="portadas-actions-hint" style={{ marginBottom: 12 }}>
-          Máximo por ejecución. Vercel corta cada pedido alrededor de un minuto, así que las
-          respuestas salen de a 10. YouTube deja unas 200 respuestas por día.
+          Máximo por ejecución. Cada tanda publica 5 respuestas y vuelve, así Vercel no corta la página.
+          YouTube deja unas 200 respuestas por día.
         </p>
         <div className="portadas-count-pills" role="group" aria-label="Máximo">
           {[10, 25, 50, 100].map((n) => (

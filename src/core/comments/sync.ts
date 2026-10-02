@@ -69,7 +69,7 @@ export async function syncChannelComments(args: {
       res = await youtube.commentThreads.list({
         part: ["snippet", "replies"],
         allThreadsRelatedToChannelId: ourYtChannelId,
-        maxResults: 100,
+        maxResults: 40,
         textFormat: "plainText",
         order: "time",
         pageToken,

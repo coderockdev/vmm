@@ -72,7 +72,13 @@ export async function runAutoRespond(args: AutoRespondOptions): Promise<YoutubeC
     return (await getCommentRun(run.id))!;
   }
 
+  const deadline = Date.now() + (args.dryRun ? 12_000 : 8_000);
+  let hitDeadline = false;
   for (const comment of pending) {
+    if (Date.now() > deadline) {
+      hitDeadline = true;
+      break;
+    }
     // Re-read stop flag
     const live = await getCommentRun(run.id);
     if (live?.stopRequested) {
@@ -269,7 +275,7 @@ export async function runAutoRespond(args: AutoRespondOptions): Promise<YoutubeC
   }
 
   const hitGoal = processed >= run.maxItems;
-  const drained = pending.length < batchSize;
+  const drained = !hitDeadline && pending.length < batchSize;
   const finished = hitGoal || drained;
   await patchCommentRun(run.id, {
     status: finished ? "completed" : "running",

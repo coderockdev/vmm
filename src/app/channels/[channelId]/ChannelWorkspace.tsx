@@ -240,6 +240,7 @@ export function ChannelWorkspace({
   const [audioActionMsg, setAudioActionMsg] = useState<string | null>(null);
   const [bedBusyByProject, setBedBusyByProject] = useState<Record<string, string | null>>({});
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollBusy = useRef(false);
 
   const durationMinutes = durationKey === "default" ? channel.dna.scriptRules.defaultDurationMinutes : Number(durationKey);
   const hasActiveJobs = Object.values(jobByProject).some((j) =>
@@ -252,9 +253,12 @@ export function ChannelWorkspace({
   useEffect(() => {
     if (watchBoard && !pollRef.current) {
       pollRef.current = setInterval(() => {
-        void refreshProjects();
-        void refreshJobs();
-      }, 2000);
+        if (pollBusy.current) return;
+        pollBusy.current = true;
+        void Promise.all([refreshProjects(), refreshJobs()]).finally(() => {
+          pollBusy.current = false;
+        });
+      }, 8000);
       void refreshJobs();
       void refreshProjects();
     }
@@ -303,11 +307,14 @@ export function ChannelWorkspace({
   useEffect(() => {
     if (autoProjectIds.length === 0) return;
     const tick = () => {
-      void refreshProjects();
-      void refreshJobs();
+      if (pollBusy.current) return;
+      pollBusy.current = true;
+      void Promise.all([refreshProjects(), refreshJobs()]).finally(() => {
+        pollBusy.current = false;
+      });
     };
     tick();
-    const id = window.setInterval(tick, 2000);
+    const id = window.setInterval(tick, 8000);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoProjectIds.join(",")]);

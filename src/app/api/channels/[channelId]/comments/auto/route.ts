@@ -37,8 +37,8 @@ export async function POST(req: NextRequest, { params }: { params: { channelId: 
   const skipDelicate = body.skipDelicate !== false;
   const varyResponses = body.varyResponses !== false;
   const skipAlreadyAnswered = body.skipAlreadyAnswered !== false;
-  const batchCap = dryRun ? 40 : 12;
-  const batchSize = Math.min(batchCap, Math.max(1, Number(body.batchSize) || (dryRun ? 30 : 10)));
+  const batchCap = dryRun ? 20 : 5;
+  const batchSize = Math.min(batchCap, Math.max(1, Number(body.batchSize) || (dryRun ? 15 : 5)));
   const runId = typeof body.runId === "string" ? body.runId : undefined;
 
   try {
