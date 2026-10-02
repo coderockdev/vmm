@@ -14,6 +14,7 @@ import {
   isCartesiaVoiceId,
 } from "../../../../../../core/audiobook/auditionVoices";
 import { isChirpVoiceId, listChirpVoices } from "../../../../../../core/audiobook/chirpVoices";
+import { mirrorAudiobookVoiceToDna } from "../../../../../../core/audiobook/channelVoice";
 
 export const dynamic = "force-dynamic";
 
@@ -110,5 +111,6 @@ export async function PATCH(
   }
 
   const saved = await saveAudiobookSettings(channel.id, next);
+  await mirrorAudiobookVoiceToDna(channel, saved).catch(() => undefined);
   return NextResponse.json({ settings: saved });
 }

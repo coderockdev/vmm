@@ -7,10 +7,12 @@ import { TTSProviderName } from "../../../../core/providers/tts/TTSProvider";
 import {
   JUAN_CARLOS_HEYGEN,
   capabilitiesForProvider,
+  chirpVoiceProfile,
   profileFromLegacyVoice,
 } from "../../../../core/providers/tts/voiceCapabilities";
+import { chirpCatalogVoices } from "../../../../core/audiobook/chirpVoices";
 
-type TabId = "validated" | "elevenlabs" | "cartesia" | "local";
+type TabId = "validated" | "elevenlabs" | "cartesia" | "local" | "google";
 
 type RemoteVoice = {
   id: string;
@@ -86,13 +88,17 @@ export function VoicePicker({
   language,
   profile,
   onChange,
+  channelId,
 }: {
   language: Language;
   profile: VoiceProfile;
   onChange: (next: VoiceProfile) => void;
+  channelId?: string;
 }) {
   const [tab, setTab] = useState<TabId>(
-    profile.provider === "heygen" || profile.validated_for_channel
+    profile.provider === "google"
+      ? "google"
+      : profile.provider === "heygen" || profile.validated_for_channel
       ? "validated"
       : profile.provider === "elevenlabs"
         ? "elevenlabs"
@@ -113,6 +119,8 @@ export function VoicePicker({
   const [startingAfter, setStartingAfter] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [genderFilter, setGenderFilter] = useState<"male" | "all">("male");
+  const [chirpQuery, setChirpQuery] = useState("");
+  const [chirpGender, setChirpGender] = useState<"all" | "masculine" | "feminine">("all");
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const curated = useMemo(
@@ -221,6 +229,30 @@ export function VoicePicker({
   }
 
   async function handlePaidTest() {
+    if (profile.provider === "google" && channelId && profile.voice_id) {
+      setTesting(true);
+      setError(null);
+      try {
+        const res = await fetch(`/api/channels/${channelId}/audiobook/sample`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            provider: "google",
+            voiceId: profile.voice_id,
+            name: profile.voice_name,
+            speed: localSpeed,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error ?? "Falha ao gerar amostra");
+        await playUrl(data.audio);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setTesting(false);
+      }
+      return;
+    }
     if (!window.confirm(`Isto usa ~150 caracteres de crédito do provider ${profile.provider}. Continuar?`)) {
       return;
     }
@@ -316,7 +348,15 @@ export function VoicePicker({
     );
   }
 
+  const chirpVoices = chirpCatalogVoices(language).filter((voice) => {
+    if (chirpGender === "masculine" && !voice.note.startsWith("masculina")) return false;
+    if (chirpGender === "feminine" && !voice.note.startsWith("feminina")) return false;
+    const q = chirpQuery.trim().toLowerCase();
+    return !q || voice.name.toLowerCase().includes(q);
+  });
+
   const tabs: { id: TabId; label: string }[] = [
+    { id: "google", label: "Google Cloud" },
     { id: "validated", label: "Validadas" },
     { id: "elevenlabs", label: "ElevenLabs" },
     { id: "cartesia", label: "Cartesia" },
@@ -349,6 +389,45 @@ export function VoicePicker({
           </button>
         ))}
       </div>
+
+      {tab === "google" && (
+        <div>
+          <p style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 0 }}>
+            Vozes Chirp em {language === "pt" ? "português do Brasil" : language === "en" ? "inglês" : "espanhol latino"}.
+            Escolher uma e salvar grava essa voz no DNA do canal.
+          </p>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+            <input
+              value={chirpQuery}
+              onChange={(e) => setChirpQuery(e.target.value)}
+              placeholder="Buscar voz Chirp…"
+              style={{ flex: 1, minWidth: 160, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)" }}
+            />
+            <select
+              value={chirpGender}
+              onChange={(e) => setChirpGender(e.target.value as "all" | "masculine" | "feminine")}
+              style={{ borderRadius: 8, border: "1px solid var(--border)", padding: "8px 10px" }}
+            >
+              <option value="all">Todas</option>
+              <option value="masculine">Masculinas</option>
+              <option value="feminine">Femininas</option>
+            </select>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {chirpVoices.map((voice) =>
+              renderCard({
+                key: voice.id,
+                title: voice.name,
+                subtitle: `${voice.note} · ${voice.cost}`,
+                profile: chirpVoiceProfile(voice.id, localSpeed || 0.95, language),
+              })
+            )}
+          </div>
+          {chirpVoices.length === 0 && (
+            <p style={{ fontSize: 13, color: "var(--text-dim)", margin: 0 }}>Nenhuma voz Chirp com esse filtro.</p>
+          )}
+        </div>
+      )}
 
       {tab === "validated" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

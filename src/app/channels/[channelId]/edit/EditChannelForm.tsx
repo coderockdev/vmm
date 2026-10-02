@@ -239,7 +239,9 @@ export function EditChannelForm({
       const voiceLabel =
         voiceProfile.provider === "heygen"
           ? `${voiceProfile.voice_name} · HeyGen (ElevenLabs v3)`
-          : `${voiceProfile.voice_name} · ${voiceProfile.provider}`;
+          : voiceProfile.provider === "google"
+            ? `${voiceProfile.voice_name} · Google Cloud Chirp`
+            : `${voiceProfile.voice_name} · ${voiceProfile.provider}`;
       const tagsLabel = performanceEnabled
         ? ` · ${selectedTags.length} tags de emoção ativas`
         : " · sem tags de emoção";
@@ -285,8 +287,10 @@ export function EditChannelForm({
         }}
       >
         <strong style={{ color: "#1a7f37" }}>Voz salva no canal:</strong>{" "}
-        {channel.dna.voice.profile?.voice_name ?? channel.dna.voice.provider}
-        {channel.dna.voice.profile?.provider === "heygen"
+        {channel.dna.voice.profile?.voice_name ?? channel.dna.voice.voiceId ?? channel.dna.voice.provider}
+        {channel.dna.voice.provider === "google"
+          ? " · Google Cloud Chirp"
+          : channel.dna.voice.profile?.provider === "heygen"
           ? " · HeyGen (ElevenLabs v3) · tags de emoção ativas"
           : ` · ${channel.dna.voice.provider}`}
         {channel.dna.scriptRules.performanceTags?.enabled
@@ -722,7 +726,12 @@ export function EditChannelForm({
               {performanceEnabled ? ` · ${selectedTags.length} tags de emoção` : ""}
               . Clique em <strong>Salvar alterações</strong> para gravar no canal.
             </p>
-            <VoicePicker language={channel.dna.language} profile={voiceProfile} onChange={applyVoiceProfile} />
+            <VoicePicker
+              language={channel.dna.language}
+              profile={voiceProfile}
+              onChange={applyVoiceProfile}
+              channelId={channel.id}
+            />
             {voiceProfile.provider === "heygen" && voiceProfile.heygen_template_id === JUAN_CARLOS_HEYGEN.heygen_template_id && (
               <p style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 10, lineHeight: 1.4 }}>
                 Juan Carlos: vídeo via <code>generate_from_template</code> (texto_oracion_1..4), sem voice_id.

@@ -147,11 +147,14 @@ function channelDisplay(channel: Channel) {
   const catalogVoice = channel.dna.voice.voiceId
     ? findVoice(channel.dna.voice.provider as TTSProviderName, channel.dna.voice.voiceId)
     : undefined;
+  const dnaName = channel.dna.voice.profile?.voice_name;
   const voice = !channel.dna.usesNarration
     ? "Sem narração"
-    : catalogVoice
-      ? `${catalogVoice.name} (${catalogVoice.gender === "feminine" ? "Feminina" : "Masculina"})`
-      : `Padrão do provedor (${channel.dna.voice.provider})`;
+    : dnaName
+      ? `${dnaName}${channel.dna.voice.provider === "google" ? " · Google Cloud Chirp" : ""}`
+      : catalogVoice
+        ? `${catalogVoice.name} (${catalogVoice.gender === "feminine" ? "Feminina" : "Masculina"})`
+        : `Padrão do provedor (${channel.dna.voice.provider})`;
 
   return {
     name: channel.name,

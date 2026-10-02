@@ -96,7 +96,7 @@ export interface ChannelDNA {
   };
 
   voice: {
-    provider: "local" | "cartesia" | "uploaded" | "elevenlabs" | "heygen";
+    provider: "local" | "cartesia" | "uploaded" | "elevenlabs" | "heygen" | "google";
     voiceId: string | null;
     speed: number;
     volume: number;

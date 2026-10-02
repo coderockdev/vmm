@@ -20,7 +20,7 @@ export const AMOR_AMOR_ALLOWED_TAGS = [
 
 export type AmorAmorTag = (typeof AMOR_AMOR_ALLOWED_TAGS)[number];
 
-export type VoiceProvider = "heygen" | "elevenlabs" | "cartesia" | "local" | "uploaded";
+export type VoiceProvider = "heygen" | "elevenlabs" | "cartesia" | "local" | "uploaded" | "google";
 
 export interface VoiceCapabilities {
   emotion_tags: boolean;
@@ -111,11 +111,30 @@ export function capabilitiesForProvider(provider: VoiceProvider): VoiceCapabilit
         break_tags: true,
         accent_tag: false,
       };
+    case "google":
+      return { ...EMPTY_CAPS, break_tags: false };
     case "local":
     case "uploaded":
     default:
       return { ...EMPTY_CAPS };
   }
+}
+
+/** Cloud Text-to-Speech Chirp 3 HD, stored on the channel DNA. */
+export function chirpVoiceProfile(voiceId: string, speed: number, language: string): VoiceProfile {
+  const name = voiceId.split("-Chirp3-HD-")[1] || voiceId;
+  return {
+    provider: "google",
+    voice_id: voiceId,
+    voice_name: name,
+    model: "chirp-3-hd",
+    language,
+    locale: voiceId.startsWith("es-US") ? "es-US" : "pt-BR",
+    accent: voiceId.startsWith("es-US") ? "latin american" : "brazilian",
+    speed,
+    capabilities: capabilitiesForProvider("google"),
+    notes: "Google Cloud Chirp 3 HD. O primeiro milhão de caracteres do mês é grátis.",
+  };
 }
 
 /** Build a VoiceProfile from the legacy catalog / DNA voice fields. */
@@ -127,6 +146,9 @@ export function profileFromLegacyVoice(args: {
   language: Language;
   volume?: number;
 }): VoiceProfile {
+  if (args.provider === "google" || (args.voiceId ?? "").includes("-Chirp3-HD-")) {
+    return chirpVoiceProfile(args.voiceId ?? "", args.speed, args.language);
+  }
   const provider = (args.provider === "uploaded" ? "uploaded" : args.provider) as VoiceProvider;
   const caps = capabilitiesForProvider(provider);
   return {

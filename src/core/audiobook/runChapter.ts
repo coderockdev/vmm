@@ -8,6 +8,7 @@ import { JULIO_VERNE_INTERIOR_STYLE_RULES } from "../providers/image/coverFormat
 import { getImageProvider } from "../providers/image";
 import { CartesiaTTSProvider } from "../providers/tts/CartesiaTTSProvider";
 import { chirpBilledCharacters, synthesizeChirpToFile } from "../providers/tts/chirpSpeech";
+import { isChirpVoiceId } from "./chirpVoices";
 import { splitTextForTts } from "../providers/tts/ttsLimits";
 import { getChannel } from "../repo/channels";
 import {
@@ -76,13 +77,16 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
     const spokenPath = path.join(dirs.timeline, "spoken.txt");
     fs.writeFileSync(spokenPath, spoken, "utf8");
 
-    const speed = narrationSpeed(settings.ttsSpeakingRate);
-    const engine = settings.ttsProvider === "google-chirp3-hd" ? "Chirp" : "Cartesia";
+    const dnaVoice = channel.dna.voice;
+    const dnaChirp = dnaVoice.provider === "google" && isChirpVoiceId(dnaVoice.voiceId ?? "");
+    const voiceId = dnaChirp ? dnaVoice.voiceId! : settings.ttsVoice;
+    const speed = narrationSpeed(dnaChirp ? dnaVoice.speed : settings.ttsSpeakingRate);
+    const useChirp = dnaChirp || settings.ttsProvider === "google-chirp3-hd";
+    const engine = useChirp ? "Chirp" : "Cartesia";
     await note(chapter.id, "tts_running", `Áudio: a narrar com ${engine} (${speed.toFixed(2)})…`);
-    const audioPath =
-      settings.ttsProvider === "google-chirp3-hd"
-        ? await narrateChirp(spoken, settings.ttsVoice, speed, dirs.audio, channel.id, chapter.id)
-        : await narrate(spoken, settings.ttsVoice, settings.ttsLanguageCode, speed, dirs.audio);
+    const audioPath = useChirp
+      ? await narrateChirp(spoken, voiceId, speed, dirs.audio, channel.id, chapter.id)
+      : await narrate(spoken, voiceId, settings.ttsLanguageCode, speed, dirs.audio);
     const audioSec = await ffprobeDuration(audioPath);
     const audioRef = await persistFile(audioPath, channel.id, "audio", `${chapter.id}.mp3`, "audio/mpeg");
     await patchChapter(chapter.id, {

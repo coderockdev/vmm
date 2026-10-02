@@ -65,6 +65,11 @@ function toVoice(locale: "pt-BR" | "es-US", name: string, gender: "M" | "F"): Au
   };
 }
 
+/** Static catalog for the DNA editor. The live Google list is used on the server. */
+export function chirpCatalogVoices(language: string): AuditionVoice[] {
+  return fallback(chirpLocale(language));
+}
+
 function fallback(locale: "pt-BR" | "es-US"): AuditionVoice[] {
   return CHIRP_NAMES.map(([name, gender]) => toVoice(locale, name, gender)).sort(byNarration);
 }

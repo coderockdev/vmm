@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getChannel, updateChannelDna, updateChannelMeta, deleteChannel } from "../../../../core/repo/channels";
+import { mirrorDnaVoiceToAudiobook } from "../../../../core/audiobook/channelVoice";
 import { listProjectsForChannel, listAudioAssetsForChannel, getAudioAsset } from "../../../../core/repo/projects";
 import { listPlansForChannel } from "../../../../core/repo/plans";
 import { deleteStoredFile } from "../../../../core/storage";
@@ -31,7 +32,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { channelId:
   }
 
   if (body.dna) {
-    await updateChannelDna(channel.id, { ...channel.dna, ...body.dna });
+    const nextDna = { ...channel.dna, ...body.dna };
+    await updateChannelDna(channel.id, nextDna);
+    if (channel.dna.mode === "audiobook" && nextDna.voice) {
+      await mirrorDnaVoiceToAudiobook(channel.id, nextDna.voice).catch(() => undefined);
+    }
   }
 
   return NextResponse.json({ channel: await getChannel(channel.id) });
