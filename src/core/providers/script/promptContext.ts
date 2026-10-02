@@ -76,7 +76,7 @@ export function buildScriptGenerationContext(args: {
       voiceProfile.capabilities.break_tags ||
         voiceProfile.provider === "elevenlabs" ||
         voiceProfile.provider === "heygen"
-        ? `- Pausas curtas: no máximo <break time="0.8s"/> entre parágrafos. Antes de «Ahora sí. Vamos a comenzar con la oración.» um só respiro, sem [pause] e sem silêncio longo. A oração começa na frase seguinte.`
+        ? `- Pausas curtas: no máximo <break time="0.8s"/> entre parágrafos. Antes de «Ahora sí. Vamos a comenzar con la oración.» NÃO escreva [pause] nem <break>: o pipeline já deixa 1,5 segundos. A oração começa na frase seguinte.`
         : `- NÃO use <break time="…"/> — este motor não aceita; use [pause] se estiver na lista permitida.`,
       `- As tags NÃO são faladas: são direção de performance. Não invente outras tags.`
     );
