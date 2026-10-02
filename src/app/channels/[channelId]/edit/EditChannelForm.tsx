@@ -87,7 +87,7 @@ export function EditChannelForm({
   const [audience, setAudience] = useState(channel.dna.audience);
   const [tone, setTone] = useState(channel.dna.tone.join(", "));
   const [topics, setTopics] = useState(channel.dna.topics.join(", "));
-  const [avoid, setAvoid] = useState(channel.dna.avoid.join(", "));
+  const [avoid, setAvoid] = useState(channel.dna.avoid.join("\n"));
   const [successfulTitles, setSuccessfulTitles] = useState(
     (channel.dna.successfulTitles ?? []).join("\n")
   );
@@ -199,7 +199,10 @@ export function EditChannelForm({
             audience,
             tone: tone.split(",").map((s) => s.trim()).filter(Boolean),
             topics: topics.split(",").map((s) => s.trim()).filter(Boolean),
-            avoid: avoid.split(",").map((s) => s.trim()).filter(Boolean),
+            avoid: avoid
+              .split("\n")
+              .map((s) => s.trim())
+              .filter(Boolean),
             successfulTitles: successfulTitles
               .split("\n")
               .map((s) => s.trim())
@@ -401,8 +404,12 @@ export function EditChannelForm({
           <input style={inputStyle} value={tone} onChange={(e) => setTone(e.target.value)} />
           <label style={labelStyle}>Temas principais</label>
           <input style={inputStyle} value={topics} onChange={(e) => setTopics(e.target.value)} />
-          <label style={labelStyle}>Assuntos a evitar</label>
-          <input style={inputStyle} value={avoid} onChange={(e) => setAvoid(e.target.value)} />
+          <label style={labelStyle}>Assuntos a evitar (1 por linha — as vírgulas não separam)</label>
+          <textarea
+            style={{ ...inputStyle, minHeight: 140, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12 }}
+            value={avoid}
+            onChange={(e) => setAvoid(e.target.value)}
+          />
           <label style={labelStyle}>
             Títulos de sucesso (1 por linha) — banco para o automático / ideias
           </label>

@@ -53,6 +53,8 @@ export async function POST(req: NextRequest, { params }: { params: { channelId: 
               done: p.done,
               total: p.total,
               projectId: p.projectId ?? null,
+              ideaId: p.ideaId ?? null,
+              planId: p.planId ?? null,
             });
           },
         });

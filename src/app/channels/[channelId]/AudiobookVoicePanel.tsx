@@ -114,6 +114,22 @@ export function AudiobookVoicePanel({ channelId }: { channelId: string }) {
     };
   }, [language, cartesiaGender, cartesiaQuery]);
 
+  async function saveRate(ttsSpeakingRate: number) {
+    setError(null);
+    try {
+      const res = await fetch(`/api/channels/${channelId}/audiobook/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ttsSpeakingRate }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      setSettings(json.settings);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function saveVoice(voice: AuditionVoice) {
     setSavingId(voice.id);
     setError(null);
@@ -150,7 +166,11 @@ export function AudiobookVoicePanel({ channelId }: { channelId: string }) {
       const res = await fetch(`/api/channels/${channelId}/audiobook/sample`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: voice.provider, voiceId: voice.id }),
+        body: JSON.stringify({
+          provider: voice.provider,
+          voiceId: voice.id,
+          speed: settings?.ttsSpeakingRate,
+        }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
@@ -233,6 +253,34 @@ export function AudiobookVoicePanel({ channelId }: { channelId: string }) {
           clica em <strong>Usar como padrão</strong>. As outras casas continuam disponíveis abaixo.
         </p>
       </div>
+
+      {settings && (
+        <label className="audiobook-speed">
+          <span>
+            Velocidade {settings.ttsSpeakingRate.toFixed(2)}
+            <small>
+              1,00 é o ritmo natural. 0,95 deixa tempo para acompanhar o capítulo. Chirp não aceita
+              velocidade na API: o ajuste é feito no áudio.
+            </small>
+          </span>
+          <input
+            type="range"
+            min={0.85}
+            max={1.05}
+            step={0.01}
+            value={settings.ttsSpeakingRate}
+            onChange={(event) => {
+              const ttsSpeakingRate = Number(event.target.value);
+              setSettings({ ...settings, ttsSpeakingRate });
+              setClips({});
+            }}
+            onPointerUp={(event) => {
+              const ttsSpeakingRate = Number((event.target as HTMLInputElement).value);
+              void saveRate(ttsSpeakingRate);
+            }}
+          />
+        </label>
+      )}
 
       <p className="books-muted">
         Padrão atual:{" "}

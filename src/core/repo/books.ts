@@ -8,8 +8,8 @@ import {
   Chapter,
   ChapterStatus,
   ChannelAudiobookSettings,
-  DEFAULT_AUDIOBOOK_SETTINGS,
 } from "../types";
+import { normalizeAudiobookSettings } from "../audiobook/visualBudget";
 
 interface BookRow {
   id: string;
@@ -235,6 +235,85 @@ export async function getChapter(chapterId: string): Promise<Chapter | null> {
     | ChapterRow
     | undefined;
   return row ? rowToChapter(row) : null;
+}
+
+export async function patchChapter(
+  chapterId: string,
+  fields: {
+    status?: ChapterStatus;
+    errorMessage?: string | null;
+    audioPath?: string | null;
+    audioDurationSec?: number | null;
+    videoPath?: string | null;
+    thumbPath?: string | null;
+    youtubeVideoId?: string | null;
+    youtubeUrl?: string | null;
+    ttsTextPath?: string | null;
+    attempts?: number;
+  }
+): Promise<void> {
+  const now = new Date().toISOString();
+  const payload: Record<string, unknown> = { updated_at: now };
+  if (fields.status !== undefined) payload.status = fields.status;
+  if (fields.errorMessage !== undefined) payload.error_message = fields.errorMessage;
+  if (fields.audioPath !== undefined) payload.audio_path = fields.audioPath;
+  if (fields.audioDurationSec !== undefined) payload.audio_duration_sec = fields.audioDurationSec;
+  if (fields.videoPath !== undefined) payload.video_path = fields.videoPath;
+  if (fields.thumbPath !== undefined) payload.thumb_path = fields.thumbPath;
+  if (fields.youtubeVideoId !== undefined) payload.youtube_video_id = fields.youtubeVideoId;
+  if (fields.youtubeUrl !== undefined) payload.youtube_url = fields.youtubeUrl;
+  if (fields.ttsTextPath !== undefined) payload.tts_text_path = fields.ttsTextPath;
+  if (fields.attempts !== undefined) payload.attempts = fields.attempts;
+
+  if (isSupabaseEnabled()) {
+    assertNoError(await getSupabase().from("chapters").update(payload).eq("id", chapterId));
+    return;
+  }
+  const keys = Object.keys(payload);
+  getDb()
+    .prepare(`UPDATE chapters SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`)
+    .run(...keys.map((k) => payload[k]), chapterId);
+}
+
+/** Take the oldest chapter that was only marked "Na fila", so a worker can run it. */
+export async function claimQueuedChapter(): Promise<{ chapter: Chapter; mode: "audio" | "full" } | null> {
+  const note = "Áudio: a ler o capítulo…";
+  const modeOf = (message: string | null): "audio" | "full" =>
+    /sequência completa/i.test(message || "") ? "full" : "audio";
+  if (isSupabaseEnabled()) {
+    const res = await getSupabase()
+      .from("chapters")
+      .select("*")
+      .eq("status", "tts_running")
+      .like("error_message", "Na fila:%")
+      .order("updated_at", { ascending: true })
+      .limit(1);
+    const rows = assertNoError(res) as ChapterRow[];
+    const row = rows[0];
+    if (!row) return null;
+    const taken = await getSupabase()
+      .from("chapters")
+      .update({ error_message: note, updated_at: new Date().toISOString() })
+      .eq("id", row.id)
+      .eq("error_message", row.error_message)
+      .select("*");
+    const won = assertNoError(taken) as ChapterRow[];
+    return won[0] ? { chapter: rowToChapter(won[0]), mode: modeOf(row.error_message) } : null;
+  }
+  const row = getDb()
+    .prepare(
+      `SELECT * FROM chapters WHERE status = 'tts_running' AND error_message LIKE 'Na fila:%' ORDER BY updated_at ASC LIMIT 1`
+    )
+    .get() as ChapterRow | undefined;
+  if (!row) return null;
+  const changed = getDb()
+    .prepare(
+      `UPDATE chapters SET error_message = ?, updated_at = ? WHERE id = ? AND error_message = ?`
+    )
+    .run(note, new Date().toISOString(), row.id, row.error_message);
+  if (changed.changes !== 1) return null;
+  const chapter = await getChapter(row.id);
+  return chapter ? { chapter, mode: modeOf(row.error_message) } : null;
 }
 
 export type ChapterBoardItem = Chapter & { bookTitle: string };
@@ -628,22 +707,22 @@ export async function getAudiobookSettings(
       .eq("channel_id", channelId)
       .maybeSingle();
     const row = assertNoError(res) as { settings_json: ChannelAudiobookSettings | string } | null;
-    if (!row) return { ...DEFAULT_AUDIOBOOK_SETTINGS };
+    if (!row) return normalizeAudiobookSettings(null);
     const parsed =
       typeof row.settings_json === "string"
         ? (JSON.parse(row.settings_json) as ChannelAudiobookSettings)
         : row.settings_json;
-    return { ...DEFAULT_AUDIOBOOK_SETTINGS, ...parsed };
+    return normalizeAudiobookSettings(parsed);
   }
 
   const row = getDb()
     .prepare(`SELECT settings_json FROM channel_audiobook_settings WHERE channel_id = ?`)
     .get(channelId) as { settings_json: string } | undefined;
-  if (!row) return { ...DEFAULT_AUDIOBOOK_SETTINGS };
+  if (!row) return normalizeAudiobookSettings(null);
   try {
-    return { ...DEFAULT_AUDIOBOOK_SETTINGS, ...JSON.parse(row.settings_json) };
+    return normalizeAudiobookSettings(JSON.parse(row.settings_json));
   } catch {
-    return { ...DEFAULT_AUDIOBOOK_SETTINGS };
+    return normalizeAudiobookSettings(null);
   }
 }
 
@@ -652,7 +731,7 @@ export async function saveAudiobookSettings(
   settings: ChannelAudiobookSettings
 ): Promise<ChannelAudiobookSettings> {
   const now = new Date().toISOString();
-  const merged = { ...DEFAULT_AUDIOBOOK_SETTINGS, ...settings };
+  const merged = normalizeAudiobookSettings(settings);
 
   if (isSupabaseEnabled()) {
     const res = await getSupabase().from("channel_audiobook_settings").upsert({

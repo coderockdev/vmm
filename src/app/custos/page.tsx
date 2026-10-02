@@ -1,3 +1,18 @@
+const SHARED = [
+  {
+    name: "Chip Claro",
+    amount: "R$21 · US$4.02",
+    detail:
+      "Crédito pré-pago de R$50 · US$9.58, válido por 120 dias. Juntos, R$71 · US$13.60. Câmbio de 1 out 2026: US$1 = R$5,22. Vale para a VMM inteira.",
+  },
+  {
+    name: "Google Cloud Console",
+    amount: "R$150 · US$28.74",
+    detail:
+      "Depósito para ativar a conta. Devolução pedida. Subir um vídeo pela API custa R$0 e não desconta esse valor. A cota é do projeto: 100 vídeos por dia, para todos os canais juntos. A capa sai das 10.000 consultas por dia.",
+  },
+];
+
 const SUBSCRIPTIONS = [
   { account: "MY", name: "Cursor Pro+", monthly: 60, detail: "Plano Pro+. O valor mensal é US$ 60, não um extra em cima do Pro de US$ 20." },
   { account: "MY", name: "Claude", monthly: 20, detail: "Assinatura do chat." },
@@ -20,7 +35,8 @@ export default function CostsPage() {
     <section className="costs-page">
       <h1>Custos</h1>
       <p className="lead">
-        Assinaturas fixas da conta MY. O que cada vídeo gasta de voz e de modelo aparece no painel do canal, separado disto.
+        Assinaturas fixas da conta MY. Chip, crédito Claro e o depósito do Google Cloud são da VMM
+        inteira e ficam abaixo, fora deste total mensal. O que cada vídeo gasta aparece no painel do canal.
       </p>
       <table className="costs-table">
         <thead>
@@ -46,6 +62,26 @@ export default function CostsPage() {
             <td>Total fixo</td>
             <td>US$ {total.toFixed(2)}</td>
           </tr>
+        </tbody>
+      </table>
+      <h2>Custos gerais da VMM</h2>
+      <table className="costs-table">
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>Valor</th>
+          </tr>
+        </thead>
+        <tbody>
+          {SHARED.map((row) => (
+            <tr key={row.name}>
+              <td>
+                {row.name}
+                <div className="costs-note" style={{ marginTop: 4 }}>{row.detail}</div>
+              </td>
+              <td>{row.amount}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
       <p className="costs-note">

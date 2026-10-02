@@ -16,7 +16,7 @@ import {
   YoutubeQuotaError,
   expectedYoutubeChannelIdForVmm,
 } from "./oauth";
-import { sanitizeYoutubeDescription, sanitizeYoutubeTitle, studioEditUrl } from "./upload";
+import { fitThumbnailForYoutube, sanitizeYoutubeDescription, sanitizeYoutubeTitle, studioEditUrl } from "./upload";
 
 export type PublishProjectResult = {
   videoId: string;
@@ -126,31 +126,14 @@ export async function publishProjectToYoutube(args: {
         project.thumbnailRef,
         `yt-thumb-${project.id}${path.extname(project.thumbnailRef) || ".png"}`
       );
-      let buf = fs.readFileSync(thumbLocal);
-      let mime = /\.png$/i.test(thumbLocal) ? "image/png" : "image/jpeg";
-      if (buf.length > 2 * 1024 * 1024) {
-        // YouTube rejects thumbs > 2 MB — compress to JPEG ≤1280px.
-        const { spawnSync } = await import("child_process");
-        const outJpg = path.join(
-          path.dirname(thumbLocal),
-          `yt-thumb-${project.id}-compressed.jpg`
-        );
-        const ff = process.env.FFMPEG_PATH?.trim() || "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg";
-        const argsFf = ["-y", "-i", thumbLocal, "-vf", "scale='min(1280,iw)':-2", "-q:v", "5", outJpg];
-        const run = spawnSync(ff, argsFf, { encoding: "utf8" });
-        if (run.status === 0 && fs.existsSync(outJpg)) {
-          buf = fs.readFileSync(outJpg);
-          mime = "image/jpeg";
-        }
-        if (buf.length > 2 * 1024 * 1024) {
-          throw new Error("Capa > 2 MB — YouTube rejeita (compressão falhou)");
-        }
-      }
+      const raw = fs.readFileSync(thumbLocal);
+      const mime = /\.png$/i.test(thumbLocal) ? "image/png" : "image/jpeg";
+      const fitted = await fitThumbnailForYoutube(raw, mime);
       await youtube.thumbnails.set({
         videoId,
         media: {
-          mimeType: mime,
-          body: Readable.from(buf),
+          mimeType: fitted.mimeType,
+          body: Readable.from(fitted.buffer),
         },
       });
       thumbnailOk = true;

@@ -28,6 +28,11 @@ export async function ensureSeeded(options: { allowRemoteSeed?: boolean } = {}):
     console.warn("[seed] julio-verne mode heal failed:", err);
   });
 
+  await healJulioVerneCover().catch((err) => {
+    // eslint-disable-next-line no-console
+    console.warn("[seed] julio-verne cover heal failed:", err);
+  });
+
   await healAmorAmorMusicalStandards().catch((err) => {
     // eslint-disable-next-line no-console
     console.warn("[seed] amor-amor musical heal failed:", err);
@@ -122,6 +127,51 @@ async function healJulioVerneAudiobookMode(): Promise<void> {
   const raw = JSON.parse(row.dna_json) as ChannelDNA;
   if (raw.mode === "audiobook") return;
   await updateChannelDna(id, { ...raw, mode: "audiobook" });
+}
+
+/** Write the Verne cover norm into the channel DNA when it is missing or still the prayer style. */
+async function healJulioVerneCover(): Promise<void> {
+  const { isJulioVerneCoverDna, defaultJulioVerneCoverDna, JULIO_VERNE_INTERIOR_STYLE_RULES } =
+    await import("./providers/image/coverFormats");
+  const id = "julio-verne-audiolivro";
+  const seed = SEED_CHANNELS.find((c) => c.id === id);
+  if (!seed) return;
+
+  const apply = async (raw: ChannelDNA) => {
+    const cover = raw.visual?.cover;
+    const interior = raw.visual?.interiorStyleRules ?? "";
+    const coverOk = isJulioVerneCoverDna(cover);
+    const interiorOk = /ligne claire/i.test(interior) && /NO TEXT/i.test(interior);
+    if (coverOk && interiorOk) return;
+    await updateChannelDna(id, {
+      ...raw,
+      mode: "audiobook",
+      visual: {
+        ...raw.visual,
+        cover: coverOk ? cover : defaultJulioVerneCoverDna(),
+        interiorStyleRules: interiorOk ? interior : JULIO_VERNE_INTERIOR_STYLE_RULES,
+      },
+    });
+    // eslint-disable-next-line no-console
+    console.log(`[seed] healed ${id} cover DNA`);
+  };
+
+  if (isSupabaseEnabled()) {
+    const { getSupabase, assertNoError } = await import("./supabaseClient");
+    const res = await getSupabase().from("channels").select("dna_json").eq("id", id).maybeSingle();
+    const row = assertNoError(res) as { dna_json: ChannelDNA | string } | null;
+    if (!row) return;
+    const raw = typeof row.dna_json === "string" ? JSON.parse(row.dna_json) : row.dna_json;
+    await apply(raw);
+    return;
+  }
+
+  const { getDb } = await import("./db");
+  const row = getDb().prepare(`SELECT dna_json FROM channels WHERE id = ?`).get(id) as
+    | { dna_json: string }
+    | undefined;
+  if (!row) return;
+  await apply(JSON.parse(row.dna_json) as ChannelDNA);
 }
 
 /** Pin Amor Amor music standards + 8% volume (Voxscape → Rest Now → Vastness). */

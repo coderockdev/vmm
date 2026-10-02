@@ -231,6 +231,55 @@ export async function putResumableChunk(args: {
 
 const THUMB_MAX_BYTES = 2 * 1024 * 1024;
 
+/**
+ * YouTube rejects custom thumbnails over 2 MB. GPT PNGs often land just above that.
+ * Shrink to a JPEG on the ffmpeg that this machine actually has.
+ */
+export async function fitThumbnailForYoutube(
+  buffer: Buffer,
+  mimeType: string
+): Promise<{ buffer: Buffer; mimeType: string }> {
+  const type = mimeType.toLowerCase();
+  const okType = type === "image/jpeg" || type === "image/jpg" || type === "image/png";
+  if (!okType) throw new Error("Capa: só JPG ou PNG.");
+  if (buffer.length <= THUMB_MAX_BYTES) {
+    return { buffer, mimeType: type === "image/png" ? "image/png" : "image/jpeg" };
+  }
+
+  const { mkdtemp, writeFile, readFile, rm } = await import("fs/promises");
+  const os = await import("os");
+  const { runFfmpeg } = await import("../audio/ffmpegUtils");
+  const dir = await mkdtemp(path.join(os.tmpdir(), "vmm-thumb-"));
+  const input = path.join(dir, "in");
+  const output = path.join(dir, "out.jpg");
+  try {
+    await writeFile(input, buffer);
+    let quality = 5;
+    let out = buffer;
+    while (quality <= 12) {
+      await runFfmpeg("ffmpeg", [
+        "-y",
+        "-i",
+        input,
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-q:v",
+        String(quality),
+        output,
+      ]);
+      out = await readFile(output);
+      if (out.length <= THUMB_MAX_BYTES) break;
+      quality += 3;
+    }
+    if (out.length > THUMB_MAX_BYTES) {
+      throw new Error("Capa > 2 MB — YouTube rejeita (compressão falhou)");
+    }
+    return { buffer: out, mimeType: "image/jpeg" };
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
 export function validateThumbnailFile(args: {
   buffer: Buffer;
   mimeType: string;
@@ -256,16 +305,17 @@ export async function setVideoThumbnail(args: {
   buffer: Buffer;
   mimeType: string;
 }): Promise<void> {
-  validateThumbnailFile({ buffer: args.buffer, mimeType: args.mimeType });
+  const fitted = await fitThumbnailForYoutube(args.buffer, args.mimeType);
+  validateThumbnailFile({ buffer: fitted.buffer, mimeType: fitted.mimeType });
 
   try {
     const { youtube } = await getYoutubeClientForChannel(args.channelId);
     const { Readable } = await import("stream");
-    const stream = Readable.from(args.buffer);
+    const stream = Readable.from(fitted.buffer);
     await youtube.thumbnails.set({
       videoId: args.videoId,
       media: {
-        mimeType: args.mimeType === "image/png" ? "image/png" : "image/jpeg",
+        mimeType: fitted.mimeType,
         body: stream,
       },
     });

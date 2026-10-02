@@ -1,5 +1,9 @@
 import { ChannelDNA } from "./types";
-import { defaultAmorAmorCoverDna } from "./providers/image/coverFormats";
+import {
+  defaultAmorAmorCoverDna,
+  defaultJulioVerneCoverDna,
+  JULIO_VERNE_INTERIOR_STYLE_RULES,
+} from "./providers/image/coverFormats";
 import { defaultAmorAmorCommentAutomation } from "./comments/defaults";
 import { DEFAULT_AMOR_AMOR_MUSICAL } from "./providers/music/musicalDna";
 import { AMOR_AMOR_SUCCESSFUL_TITLES } from "./channels/amorAmorSuccessfulTitles";
@@ -447,6 +451,8 @@ No empieces en el alivio.`,
         template: "neon-meditation",
         palette: "night-sky",
         textPreset: "none",
+        cover: defaultJulioVerneCoverDna(),
+        interiorStyleRules: JULIO_VERNE_INTERIOR_STYLE_RULES,
       },
       voice: {
         provider: "local",

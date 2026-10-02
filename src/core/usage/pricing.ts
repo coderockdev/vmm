@@ -36,6 +36,10 @@ const PRICES = {
   openaiImagePerImage: () => numEnv("PRICING_OPENAI_IMAGE_PER_IMAGE", 0.04),
   /** Imagen 3 / Gemini image generation per image. */
   geminiImagePerImage: () => numEnv("PRICING_GEMINI_IMAGE_PER_IMAGE", 0.04),
+  /** Wan 2.2 A14B Turbo is a flat fee per clip, not per second. */
+  falWanTurbo480p: () => numEnv("PRICING_FAL_WAN_TURBO_480P", 0.05),
+  falWanTurbo580p: () => numEnv("PRICING_FAL_WAN_TURBO_580P", 0.075),
+  falWanTurbo720p: () => numEnv("PRICING_FAL_WAN_TURBO_720P", 0.1),
 };
 
 function tokensUsd(input: number, output: number, inPerM: number, outPerM: number): number {
@@ -69,6 +73,18 @@ export function estimateUsd(snapshot: UsageSnapshot): number {
       return (chars / 1000) * PRICES.elevenlabsPer1kChars();
     case "remotion-lambda":
       return minutes * PRICES.lambdaPerMin();
+    case "fal": {
+      const clips = Math.max(1, snapshot.images ?? 1);
+      const model = snapshot.model || "";
+      const resolution = /480p/i.test(model) ? "480p" : /580p/i.test(model) ? "580p" : "720p";
+      const each =
+        resolution === "480p"
+          ? PRICES.falWanTurbo480p()
+          : resolution === "580p"
+            ? PRICES.falWanTurbo580p()
+            : PRICES.falWanTurbo720p();
+      return clips * each;
+    }
     case "pollinations":
     case "local":
     case "mock":

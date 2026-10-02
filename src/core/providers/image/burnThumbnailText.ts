@@ -4,7 +4,7 @@ import path from "path";
 import { runFfmpeg, ffprobeBin } from "../../audio/ffmpegUtils";
 
 /** Caption is painted by us so the image model cannot crop letters or mirror a phone UI. */
-const MARGIN = 0.06;
+const MARGIN = 0.12;
 
 const FONT_CANDIDATES = [
   "/System/Library/Fonts/Supplemental/Arial Black.ttf",
@@ -75,6 +75,23 @@ function layoutOptions(text: string): string[][] {
   return options;
 }
 
+function fitLines(
+  lines: string[],
+  maxW: number,
+  maxH: number,
+  height: number
+): { lines: string[]; size: number } {
+  const minSize = Math.max(36, Math.round(height * 0.08));
+  let size = Math.round(height * 0.22);
+  while (size > minSize) {
+    const longest = Math.max(...lines.map((line) => lineWidth(line, size)));
+    const block = lines.length * size * 1.08;
+    if (longest <= maxW && block <= maxH) return { lines, size };
+    size -= 2;
+  }
+  return { lines, size: minSize };
+}
+
 function chooseLayout(text: string, maxW: number, maxH: number, height: number): { lines: string[]; size: number } {
   const minSize = Math.max(48, Math.round(height * 0.14));
   let best: { lines: string[]; size: number } | null = null;
@@ -96,13 +113,37 @@ function chooseLayout(text: string, maxW: number, maxH: number, height: number):
   return { lines: wrapLines(text, 10), size: minSize };
 }
 
+/** Center-crop to 16:9 so YouTube does not shave the caption off a 3:2 frame. */
+export async function frameThumbnail16x9(imagePath: string): Promise<void> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vmm-thumb-frame-"));
+  try {
+    const tmp = path.join(dir, "frame.png");
+    await runFfmpeg("ffmpeg", [
+      "-y",
+      "-i",
+      imagePath,
+      "-vf",
+      "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720",
+      tmp,
+    ]);
+    fs.copyFileSync(tmp, imagePath);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 /**
- * Paint thumbnailText in the channel style: very large, top-left, inside the margin.
+ * Paint thumbnailText in the channel style: very large, lower-left, inside the margin.
  * Last line is yellow; earlier lines are white. Thick black stroke.
  * Overwrites imagePath.
  */
 export async function burnThumbnailText(imagePath: string, rawText: string): Promise<void> {
-  const text = rawText.replace(/\s+/g, " ").trim();
+  await frameThumbnail16x9(imagePath);
+  const explicit = rawText
+    .split(/\n+/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const text = explicit.length > 1 ? explicit.join("\n") : rawText.replace(/\s+/g, " ").trim();
   if (!text) return;
 
   const probe = await runFfmpeg(ffprobeBin(), [
@@ -123,25 +164,93 @@ export async function burnThumbnailText(imagePath: string, rawText: string): Pro
 
   const marginX = Math.round(width * MARGIN);
   const marginY = Math.round(height * MARGIN);
-  const { lines, size } = chooseLayout(
-    text,
-    Math.round(width * 0.62) - marginX,
-    Math.round(height * 0.55),
-    height
-  );
+  // Left column only. The face stays in the right third, uncovered.
+  const maxW = Math.round(width * 0.9) - marginX;
+  const maxH = Math.round(height * 0.55);
+  const { lines, size } =
+    explicit.length > 1
+      ? fitLines(explicit, maxW, maxH, height)
+      : chooseLayout(text, Math.round(width * 0.46) - marginX, Math.round(height * 0.5), height);
   const border = Math.max(8, Math.round(size * 0.1));
   const font = fontFile().replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'");
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vmm-thumb-"));
   try {
+    const blockH = Math.round(lines.length * size * 1.05);
+    const y0 = height - marginY - border - blockH;
     const filters = lines.map((line, i) => {
       const file = path.join(dir, `line-${i}.txt`);
       fs.writeFileSync(file, line, "utf8");
-      const y = marginY + border + Math.round(i * size * 1.05);
+      const y = y0 + Math.round(i * size * 1.05);
       const color = i === lines.length - 1 ? "0xFFE14A" : "white";
       const textFile = file.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'");
       return `drawtext=fontfile='${font}':textfile='${textFile}':fontsize=${size}:fontcolor=${color}:borderw=${border}:bordercolor=black:x=${marginX + border}:y=${y}`;
     });
+    const tmp = path.join(dir, "out.png");
+    await runFfmpeg("ffmpeg", ["-y", "-i", imagePath, "-vf", filters.join(","), tmp]);
+    fs.copyFileSync(tmp, imagePath);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Audiobook cover: chapter title as the hook, author small under it,
+ * both in the lower left so the scene stays visible.
+ */
+export async function burnStoryCover(imagePath: string, title: string, author: string): Promise<void> {
+  await frameThumbnail16x9(imagePath);
+  const cleanTitle = title.replace(/\s+/g, " ").trim();
+  const cleanAuthor = author.replace(/\s+/g, " ").trim();
+  if (!cleanTitle) return;
+
+  const probe = await runFfmpeg(ffprobeBin(), [
+    "-v",
+    "error",
+    "-select_streams",
+    "v:0",
+    "-show_entries",
+    "stream=width,height",
+    "-of",
+    "csv=p=0:s=x",
+    imagePath,
+  ]);
+  const [wStr, hStr] = probe.stdout.trim().split("x");
+  const width = Number(wStr);
+  const height = Number(hStr);
+  if (!width || !height) throw new Error("Could not read thumbnail size.");
+
+  const marginX = Math.round(width * 0.05);
+  const marginY = Math.round(height * 0.05);
+  const maxW = Math.round(width * 0.68);
+  const maxH = Math.round(height * 0.32);
+  const wrapped = layoutOptions(cleanTitle).find((lines) => lines.length > 1) ?? [cleanTitle];
+  const { lines, size } = fitLines(wrapped, maxW, maxH, height);
+  const border = Math.max(4, Math.round(size * 0.08));
+  const authorSize = Math.max(22, Math.round(size * 0.38));
+  const authorBorder = Math.max(2, Math.round(authorSize * 0.1));
+  const font = fontFile().replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'");
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vmm-story-cover-"));
+  try {
+    const blockH = Math.round(lines.length * size * 1.05);
+    const y0 = height - marginY - (cleanAuthor ? authorSize + 10 : 0) - blockH;
+    const filters = lines.map((line, i) => {
+      const file = path.join(dir, `line-${i}.txt`);
+      fs.writeFileSync(file, line, "utf8");
+      const y = y0 + Math.round(i * size * 1.05);
+      const textFile = file.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'");
+      return `drawtext=fontfile='${font}':textfile='${textFile}':fontsize=${size}:fontcolor=white:borderw=${border}:bordercolor=black:x=${marginX}:y=${y}`;
+    });
+    if (cleanAuthor) {
+      const file = path.join(dir, "author.txt");
+      fs.writeFileSync(file, cleanAuthor, "utf8");
+      const textFile = file.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'");
+      const y = y0 + blockH + 8;
+      filters.push(
+        `drawtext=fontfile='${font}':textfile='${textFile}':fontsize=${authorSize}:fontcolor=0xFFE14A:borderw=${authorBorder}:bordercolor=black:x=${marginX}:y=${y}`
+      );
+    }
     const tmp = path.join(dir, "out.png");
     await runFfmpeg("ffmpeg", ["-y", "-i", imagePath, "-vf", filters.join(","), tmp]);
     fs.copyFileSync(tmp, imagePath);

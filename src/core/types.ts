@@ -89,6 +89,8 @@ export interface ChannelDNA {
     textPreset: TextPresetId;
     /** YouTube thumbnail creative engine (formats + style rules). */
     cover?: CoverVisualDna;
+    /** Still frames shown while the chapter is read. No lettering. */
+    interiorStyleRules?: string;
     /** Default FFmpeg/Remotion video style for this channel. */
     defaultVideoStyle?: VideoStyleChoice | null;
   };
@@ -401,6 +403,44 @@ export interface ChannelAudiobookSettings {
   publishEveryDays: number;
   maxUploadsPerDay: number;
   youtubeCategoryId: string;
+  /** Hybrid stills + a few AI clips. All amounts are configurable. */
+  visualBudget: AudiobookVisualBudget;
+}
+
+export type ImageToVideoProviderId = "fal" | "runway" | "kling" | "luma" | "pika";
+
+/** Reference prices for a 10-minute chapter. Scaled by the real duration. */
+export interface AudiobookVisualBudget {
+  referenceMinutes: number;
+  wordsPerMinute: number;
+  staticImageBudgetUsd: number;
+  aiVideoBudgetUsd: number;
+  voiceBudgetUsd: number;
+  scriptCostUsd: number;
+  maxCostPerChapterUsd: number;
+  autoApproveUnderUsd: number;
+  staticImagesPerReference: number;
+  aiClipsPerReference: number;
+  minStaticImages: number;
+  maxStaticImages: number;
+  minAiClips: number;
+  maxAiClips: number;
+  openingAiSeconds: number;
+  aiClipSeconds: number;
+  /** Flat Wan Turbo price for one clip at the chosen resolution. */
+  aiClipUsd: number;
+  /** Generated length before the timeline slows the clip. */
+  aiClipSourceSeconds: number;
+  /** How long the 5s clip stays on screen after a gentle slow-down. */
+  aiClipPlaySeconds: number;
+  imageToVideoModel: string;
+  imageToVideoResolution: "480p" | "580p" | "720p";
+  imageToVideoAspect: "16:9";
+  stillHoldMinSeconds: number;
+  stillHoldMaxSeconds: number;
+  transitionSeconds: number;
+  defaultImageToVideoProvider: ImageToVideoProviderId | null;
+  favoriteImageToVideoProvider: ImageToVideoProviderId | null;
 }
 
 export const DEFAULT_AUDIOBOOK_SETTINGS: ChannelAudiobookSettings = {
@@ -414,6 +454,35 @@ export const DEFAULT_AUDIOBOOK_SETTINGS: ChannelAudiobookSettings = {
   publishEveryDays: 1,
   maxUploadsPerDay: 5,
   youtubeCategoryId: "27",
+  visualBudget: {
+    referenceMinutes: 10,
+    wordsPerMinute: 150,
+    staticImageBudgetUsd: 0.2,
+    aiVideoBudgetUsd: 0.5,
+    voiceBudgetUsd: 0.6,
+    scriptCostUsd: 0,
+    maxCostPerChapterUsd: 1.5,
+    autoApproveUnderUsd: 1.3,
+    staticImagesPerReference: 10,
+    aiClipsPerReference: 5,
+    minStaticImages: 6,
+    maxStaticImages: 25,
+    minAiClips: 3,
+    maxAiClips: 10,
+    openingAiSeconds: 30,
+    aiClipSeconds: 5,
+    aiClipUsd: 0.1,
+    aiClipSourceSeconds: 5,
+    aiClipPlaySeconds: 8,
+    imageToVideoModel: "fal-ai/wan/v2.2-a14b/image-to-video/turbo",
+    imageToVideoResolution: "720p",
+    imageToVideoAspect: "16:9",
+    stillHoldMinSeconds: 30,
+    stillHoldMaxSeconds: 60,
+    transitionSeconds: 1,
+    defaultImageToVideoProvider: "fal",
+    favoriteImageToVideoProvider: null,
+  },
 };
 
 /** Book list row with progress counters for the Livros tab. */

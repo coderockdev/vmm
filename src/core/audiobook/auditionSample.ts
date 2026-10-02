@@ -1,3 +1,4 @@
+import { synthesizeChirpMp3 } from "../providers/tts/chirpSpeech";
 import { synthesizeEdgeMp3 } from "./edgeVoices";
 import { findAuditionVoice, isCartesiaVoiceId, type AuditionProvider } from "./auditionVoices";
 
@@ -16,22 +17,22 @@ function sampleFor(language: string): { text: string; cartesia: "pt" | "es" | "e
 export async function synthesizeAudition(
   provider: AuditionProvider,
   voiceId: string,
-  language = "pt"
+  language = "pt",
+  speed = 0.95
 ): Promise<Buffer> {
   const sample = sampleFor(language);
   const known = findAuditionVoice(provider, voiceId);
   const dynamicCartesia = provider === "cartesia" && isCartesiaVoiceId(voiceId);
   if (!known && !dynamicCartesia) throw new Error("Voz desconhecida.");
   if (known && !known.canSample) {
-    throw new Error(
-      "Google Cloud não está ligado nesta conta. Charon por esse caminho estourava em 504. Ouve o Charon do Gemini, que responde."
-    );
+    throw new Error("Esta voz ainda não tem amostra.");
   }
   if (provider === "edge") return synthesizeEdgeMp3(voiceId, sample.text);
   if (provider === "cartesia") return cartesia(voiceId, sample.text, sample.cartesia);
   if (provider === "elevenlabs") return eleven(voiceId);
   if (provider === "openai") return openai(voiceId);
   if (provider === "gemini") return gemini(voiceId);
+  if (provider === "google") return synthesizeChirpMp3({ text: sample.text, voiceName: voiceId, speed });
   throw new Error("Provedor sem amostra.");
 }
 

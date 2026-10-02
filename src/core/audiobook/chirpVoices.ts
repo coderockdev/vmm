@@ -8,9 +8,5 @@ export const CHIRP_TEST_VOICES = [
 export type ChirpVoiceId = (typeof CHIRP_TEST_VOICES)[number]["id"];
 
 export function isChirpConfigured(): boolean {
-  return Boolean(
-    process.env.GOOGLE_APPLICATION_CREDENTIALS ||
-      process.env.GOOGLE_CLOUD_PROJECT ||
-      process.env.GCLOUD_PROJECT
-  );
+  return Boolean(process.env.GOOGLE_TTS_API_KEY?.trim());
 }

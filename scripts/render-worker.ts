@@ -5,7 +5,7 @@ const POLL_MS = 20_000;
 
 async function main() {
   const name = process.env.VMM_WORKER_NAME || "hetzner";
-  console.log(`[worker] ${name} — un video a la vez. La página no renderiza.`);
+  console.log(`[worker] ${name} — un video a la vez. Si no hay video, toma un capítulo de audiolivro.`);
   await reconcileStuckJobs();
   wake();
   setInterval(() => {

@@ -159,6 +159,14 @@ export function CostsPanel({ channelId }: { channelId: string }) {
                 </article>
               );
             })}
+            <article className="costs-stage-card costs-fal-card">
+              <span className="costs-card-label">Fal · Wan 2.2 A14B Turbo</span>
+              <strong className="costs-card-value">US$0.10</strong>
+              <small>
+                por clipe a 720p, 16:9, tarifa fixa. 480p US$0.05 · 580p US$0.075. Cinco clipes num
+                capítulo de 10 min = US$0.50. O áudio do modelo não entra no vídeo.
+              </small>
+            </article>
           </div>
 
           <div className="costs-columns">

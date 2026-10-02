@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getChannel } from "../../../../../../core/repo/channels";
+import { getAudiobookSettings } from "../../../../../../core/repo/books";
 import { synthesizeAudition } from "../../../../../../core/audiobook/auditionSample";
 import {
   findAuditionVoice,
@@ -43,7 +44,9 @@ export async function POST(
   }
 
   try {
-    const buf = await synthesizeAudition(provider, voiceId, channel.dna.language);
+    const settings = await getAudiobookSettings(channel.id);
+    const speed = typeof body.speed === "number" && body.speed > 0 ? body.speed : settings.ttsSpeakingRate;
+    const buf = await synthesizeAudition(provider, voiceId, channel.dna.language, speed);
     const mime = provider === "gemini" ? "audio/wav" : "audio/mpeg";
     return NextResponse.json({
       provider,

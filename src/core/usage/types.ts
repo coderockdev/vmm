@@ -20,6 +20,7 @@ export type UsageProvider =
   | "pollinations"
   | "ffmpeg-ambient"
   | "ffmpeg-lavfi-sfx"
+  | "fal"
   | "local"
   | "mock"
   | "uploaded"

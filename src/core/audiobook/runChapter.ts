@@ -1,0 +1,474 @@
+import fs from "fs";
+import path from "path";
+import { concatAudioFiles, ffprobeDuration, runFfmpeg } from "../audio/ffmpegUtils";
+import { burnStoryCover } from "../providers/image/burnThumbnailText";
+import { JULIO_VERNE_INTERIOR_STYLE_RULES } from "../providers/image/coverFormats";
+import { getImageProvider } from "../providers/image";
+import { CartesiaTTSProvider } from "../providers/tts/CartesiaTTSProvider";
+import { synthesizeChirpToFile } from "../providers/tts/chirpSpeech";
+import { splitTextForTts } from "../providers/tts/ttsLimits";
+import { getChannel } from "../repo/channels";
+import {
+  claimQueuedChapter,
+  getAudiobookSettings,
+  getBook,
+  listChaptersForBook,
+  patchChapter,
+} from "../repo/books";
+import { persistFile } from "../storage";
+import { setVideoThumbnail, startResumableVideoUpload, putResumableChunk } from "../youtube/upload";
+import { ensureChapterAssetDirs } from "./chapterAssets";
+import { renderCinematicStill } from "./cinematicMotion";
+import { bookSourceDir } from "./paths";
+import { planChapterVisuals } from "./visualPlan";
+
+let busy = false;
+
+export async function runNextAudiobookChapter(): Promise<boolean> {
+  if (busy) return false;
+  const claimed = await claimQueuedChapter();
+  if (!claimed) return false;
+  busy = true;
+  try {
+    await produceClaimedChapter(claimed.chapter.id, claimed.mode);
+    return true;
+  } finally {
+    busy = false;
+  }
+}
+
+async function note(chapterId: string, status: Parameters<typeof patchChapter>[1]["status"], message: string) {
+  await patchChapter(chapterId, { status, errorMessage: message });
+}
+
+export async function reproduceChapter(chapterId: string): Promise<void> {
+  const { getChapter } = await import("../repo/books");
+  const current = await getChapter(chapterId);
+  if (current) {
+    await patchChapter(chapterId, {
+      status: "tts_running",
+      attempts: current.attempts + 1,
+      errorMessage: `Versão ${current.attempts + 1} · a gerar de novo (voz 0,85, pausas, título uma vez, portada).`,
+    });
+  }
+  await produceClaimedChapter(chapterId, "full");
+}
+
+async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"): Promise<void> {
+  const chapter = (await listSafe(chapterId)) ?? null;
+  if (!chapter) return;
+  try {
+    const book = await getBook(chapter.bookId);
+    if (!book) throw new Error("Obra não encontrada.");
+    const channel = await getChannel(book.channelId);
+    if (!channel) throw new Error("Canal não encontrado.");
+    const settings = await getAudiobookSettings(channel.id);
+    const siblings = await listChaptersForBook(book.id);
+    const next = siblings.find((item) => item.index === chapter.index + 1) ?? null;
+
+    await note(chapter.id, "tts_running", "Áudio: a ler o texto…");
+    const body = readChapterText(book.folder, chapter.sourceFile);
+    const spoken = spokenScript(book.title, chapter.index, body, next?.label ?? null);
+    const dirs = ensureChapterAssetDirs(channel.id, book.folder, chapter.index);
+    const spokenPath = path.join(dirs.timeline, "spoken.txt");
+    fs.writeFileSync(spokenPath, spoken, "utf8");
+
+    const speed = narrationSpeed(settings.ttsSpeakingRate);
+    const engine = settings.ttsProvider === "google-chirp3-hd" ? "Chirp" : "Cartesia";
+    await note(chapter.id, "tts_running", `Áudio: a narrar com ${engine} (${speed.toFixed(2)})…`);
+    const audioPath =
+      settings.ttsProvider === "google-chirp3-hd"
+        ? await narrateChirp(spoken, settings.ttsVoice, speed, dirs.audio)
+        : await narrate(spoken, settings.ttsVoice, settings.ttsLanguageCode, speed, dirs.audio);
+    const audioSec = await ffprobeDuration(audioPath);
+    const audioRef = await persistFile(audioPath, channel.id, "audio", `${chapter.id}.mp3`, "audio/mpeg");
+    await patchChapter(chapter.id, {
+      status: mode === "audio" ? "audio_ready" : "tts_running",
+      errorMessage: mode === "audio" ? "Áudio pronto." : "Áudio pronto. A planear as imagens…",
+      audioPath: audioRef,
+      audioDurationSec: audioSec,
+      ttsTextPath: spokenPath,
+    });
+    if (mode === "audio") return;
+
+    const plan = planChapterVisuals(chapter.words, settings.visualBudget);
+    fitSlots(plan.slots, audioSec);
+    const style = channel.dna.visual.interiorStyleRules || JULIO_VERNE_INTERIOR_STYLE_RULES;
+    const images: string[] = [];
+    for (const image of plan.images) {
+      const file = path.join(dirs.images, `${String(image.index + 1).padStart(2, "0")}.png`);
+      if (fs.existsSync(file) && fs.statSync(file).size > 1000) {
+        images.push(file);
+        continue;
+      }
+      await note(chapter.id, "images_ready", `Imagens: ${image.index + 1}/${plan.images.length} a partir do texto…`);
+      const scene = excerpt(body, image.wordStart, image.wordEnd);
+      await getImageProvider().generate({
+        prompt: imagePrompt(style, book.title, scene),
+        outPath: file,
+      });
+      images.push(file);
+    }
+
+    const clips: string[] = [];
+    for (const slot of plan.slots) {
+      const label =
+        slot.kind === "ai-clip"
+          ? `Animação: clipe da imagem ${slot.imageIndex + 1}`
+          : `Vídeo: movimento da imagem ${slot.imageIndex + 1}`;
+      await note(chapter.id, "images_ready", `${label}…`);
+      const out = path.join(dirs.motion, `slot-${String(slot.index + 1).padStart(2, "0")}.mp4`);
+      const still = images[slot.imageIndex] ?? images[0];
+      if (slot.kind === "ai-clip") {
+        const animated = await tryFalClip(still, scenePrompt(body, plan.images[slot.imageIndex]), slot.durationSec, out, channel.id, settings.visualBudget.imageToVideoModel);
+        if (!animated) {
+          await renderCinematicStill({
+            imagePath: still,
+            outputPath: out,
+            motion: slot.motion,
+            crop: slot.crop,
+            durationSec: slot.durationSec,
+            width: 1280,
+            height: 720,
+          });
+        }
+      } else {
+        await renderCinematicStill({
+          imagePath: still,
+          outputPath: out,
+          motion: slot.motion,
+          crop: slot.crop,
+          durationSec: slot.durationSec,
+          width: 1280,
+          height: 720,
+        });
+      }
+      clips.push(out);
+    }
+
+    await note(chapter.id, "images_ready", "Vídeo: a juntar imagens, clips e narração…");
+    const finalPath = path.join(dirs.final, "chapter.mp4");
+    await assemble(clips, audioPath, finalPath);
+    const videoBytes = fs.statSync(finalPath).size;
+    const videoRef =
+      videoBytes > 45 * 1024 * 1024
+        ? finalPath
+        : await persistFile(finalPath, channel.id, "render", `${chapter.id}.mp4`, "video/mp4");
+    await patchChapter(chapter.id, {
+      status: "video_ready",
+      errorMessage: "Vídeo pronto. A fazer a portada…",
+      videoPath: videoRef,
+    });
+
+    await note(chapter.id, "thumb_ready", "Portada: a pintar o título…");
+    const thumbStill = images[plan.thumbnailSourceImage] ?? images[0];
+    const thumbPath = path.join(dirs.thumbnails, "cover.png");
+    fs.copyFileSync(thumbStill, thumbPath);
+    const cover = coverCopy(chapter.label);
+    await burnStoryCover(thumbPath, cover.title, cover.author);
+    const thumbJpg = await jpegThumb(thumbPath);
+    const thumbRef = await persistFile(thumbJpg, channel.id, "thumbnails", `${chapter.id}.jpg`, "image/jpeg");
+    await patchChapter(chapter.id, { thumbPath: thumbRef, errorMessage: "Portada pronta. A escrever a descrição…" });
+
+    await note(chapter.id, "uploading", "YouTube: a enviar o capítulo em privado…");
+    const title = youtubeTitle(book.title, chapter.label, chapter.index);
+    const description = youtubeDescription(book.title, chapter.label, next?.label ?? null);
+    const videoId = await uploadPrivate(channel.id, finalPath, title, description);
+    await setVideoThumbnail({
+      channelId: channel.id,
+      videoId,
+      buffer: fs.readFileSync(thumbJpg),
+      mimeType: "image/jpeg",
+    });
+    await patchChapter(chapter.id, {
+      status: "uploaded",
+      errorMessage: "No YouTube (privado).",
+      youtubeVideoId: videoId,
+      youtubeUrl: `https://studio.youtube.com/video/${videoId}/edit`,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await patchChapter(chapterId, { status: "failed", errorMessage: message.slice(0, 500) });
+  }
+}
+
+async function listSafe(chapterId: string) {
+  const { getChapter } = await import("../repo/books");
+  return getChapter(chapterId);
+}
+
+function readChapterText(folder: string, sourceFile: string): string {
+  const file = path.join(bookSourceDir(folder), sourceFile);
+  if (!fs.existsSync(file)) {
+    throw new Error(
+      `Texto não encontrado: ${file}. O pacote julio_verne_capitulos tem de estar em data/books no worker.`
+    );
+  }
+  const text = fs.readFileSync(file, "utf8").trim();
+  if (!text) throw new Error("O ficheiro do capítulo está vazio.");
+  return text;
+}
+
+function narrationSpeed(stored: number): number {
+  const value = Number.isFinite(stored) && stored > 0 ? stored : 0.95;
+  return Math.min(1.05, Math.max(0.85, value));
+}
+
+function spokenScript(bookTitle: string, chapterIndex: number, body: string, nextLabel: string | null): string {
+  const story = body
+    .split(/\n\n+/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .filter((paragraph, index) => index > 0 || !isRepeatedHeading(paragraph, bookTitle))
+    .join('\n\n<break time="0.7s"/>\n\n');
+  const opening = `Júlio Verne em Audiolivro. ${bookTitle}. Capítulo ${chapterIndex}.`;
+  const closing = nextLabel
+    ? `Fim do capítulo. O próximo é ${nextLabel}. Inscreva-se para acompanhar a obra.`
+    : "Fim deste capítulo. Inscreva-se para acompanhar a obra.";
+  return `${opening}\n\n<break time="1s"/>\n\n${story}\n\n<break time="0.8s"/>\n\n${closing}`;
+}
+
+function isRepeatedHeading(paragraph: string, bookTitle: string): boolean {
+  const first = paragraph.split("\n")[0]?.trim() ?? "";
+  const fold = (value: string) =>
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+  const line = fold(first);
+  return line.includes(fold(bookTitle)) || /^capitulo\b/.test(line);
+}
+
+function excerpt(text: string, wordStart: number, wordEnd: number): string {
+  const words = text.split(/\s+/).filter(Boolean);
+  return words.slice(wordStart, Math.max(wordStart + 1, wordEnd)).join(" ").slice(0, 700);
+}
+
+function imagePrompt(style: string, bookTitle: string, scene: string): string {
+  return [
+    style.slice(0, 6000),
+    `BOOK: ${bookTitle}.`,
+    "Illustrate this moment from the chapter. Do not copy the words onto the image. No letters, no captions, no signs with readable text.",
+    scene,
+  ].join("\n\n");
+}
+
+function scenePrompt(body: string, image: { wordStart: number; wordEnd: number } | undefined): string {
+  if (!image) return "Gentle cinematic motion through the illustrated scene. No text.";
+  return `Slow cinematic motion. ${excerpt(body, image.wordStart, image.wordEnd).slice(0, 280)}. No text.`;
+}
+
+async function narrateChirp(text: string, voiceId: string, speed: number, outDir: string): Promise<string> {
+  const out = path.join(outDir, "narration.mp3");
+  await synthesizeChirpToFile({ text, voiceName: voiceId, speed, outPath: out });
+  return out;
+}
+
+async function narrate(text: string, voiceId: string, language: string, speed: number, outDir: string): Promise<string> {
+  const provider = new CartesiaTTSProvider();
+  const chunks = splitTextForTts(text, 4500);
+  const parts: string[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const result = await provider.synthesize({
+      text: chunks[i],
+      voiceId,
+      language: language.toLowerCase().startsWith("es") ? "es" : language.toLowerCase().startsWith("en") ? "en" : "pt",
+      speed,
+      outDir,
+      fileBaseName: `part-${String(i + 1).padStart(2, "0")}`,
+      measureDuration: false,
+    });
+    parts.push(result.filePath);
+  }
+  const out = path.join(outDir, "narration.mp3");
+  await concatAudioFiles(parts, out);
+  return out;
+}
+
+function fitSlots(slots: Array<{ durationSec: number; kind?: string }>, audioSec: number) {
+  const stills = slots.filter((slot) => slot.kind !== "ai-clip");
+  const clipTotal = slots.reduce((sum, slot) => sum + (slot.kind === "ai-clip" ? slot.durationSec : 0), 0);
+  const stillPlanned = stills.reduce((sum, slot) => sum + slot.durationSec, 0) || 1;
+  const stillTarget = Math.max(stills.length, audioSec - clipTotal);
+  const scale = stillTarget / stillPlanned;
+  stills.forEach((slot) => {
+    slot.durationSec = Math.max(1, Math.round(slot.durationSec * scale * 10) / 10);
+  });
+  const drift = audioSec - slots.reduce((sum, slot) => sum + slot.durationSec, 0);
+  const lastStill = stills[stills.length - 1];
+  if (lastStill) lastStill.durationSec = Math.max(1, Math.round((lastStill.durationSec + drift) * 10) / 10);
+}
+
+async function tryFalClip(
+  imagePath: string,
+  prompt: string,
+  durationSec: number,
+  outPath: string,
+  channelId: string,
+  model: string
+): Promise<boolean> {
+  const key = process.env.FAL_KEY?.trim();
+  if (!key) return false;
+  try {
+    const jpg = imagePath.replace(/\.png$/i, ".fal.jpg");
+    await runFfmpeg("ffmpeg", [
+      "-y",
+      "-i",
+      imagePath,
+      "-vf",
+      "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720",
+      "-q:v",
+      "5",
+      jpg,
+    ]);
+    const imageRef = await persistFile(jpg, channelId, "cover", `motion-${path.basename(jpg)}`, "image/jpeg");
+    if (!/^https?:/i.test(imageRef)) return false;
+    const videoUrl = await falQueue(key, model, imageRef, prompt);
+    await download(videoUrl, outPath + ".src.mp4");
+    await runFfmpeg("ffmpeg", [
+      "-y",
+      "-stream_loop",
+      "-1",
+      "-i",
+      outPath + ".src.mp4",
+      "-t",
+      durationSec.toFixed(2),
+      "-vf",
+      "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,fps=30",
+      "-an",
+      "-pix_fmt",
+      "yuv420p",
+      outPath,
+    ]);
+    return true;
+  } catch (err) {
+    console.warn("[audiobook] fal clip failed, using still motion:", err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
+async function falQueue(key: string, model: string, imageUrl: string, prompt: string): Promise<string> {
+  const start = await fetch(`https://queue.fal.run/${model}`, {
+    method: "POST",
+    headers: { Authorization: `Key ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ image_url: imageUrl, prompt, resolution: "720p", aspect_ratio: "16:9" }),
+  });
+  if (!start.ok) throw new Error(`Fal ${start.status}: ${(await start.text()).slice(0, 240)}`);
+  const queued = (await start.json()) as { status_url?: string; response_url?: string };
+  if (!queued.status_url || !queued.response_url) throw new Error("Fal não devolveu a fila.");
+  const deadline = Date.now() + 4 * 60 * 1000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 4000));
+    const statusRes = await fetch(queued.status_url, { headers: { Authorization: `Key ${key}` } });
+    const status = (await statusRes.json().catch(() => ({}))) as { status?: string };
+    if (status.status === "COMPLETED") break;
+    if (status.status === "FAILED") throw new Error("Fal falhou o clipe.");
+  }
+  const done = await fetch(queued.response_url, { headers: { Authorization: `Key ${key}` } });
+  if (!done.ok) {
+    const detail = (await done.text()).slice(0, 240);
+    throw new Error(`Fal resultado ${done.status}: ${detail}`);
+  }
+  const body = (await done.json()) as { video?: { url?: string } };
+  if (!body.video?.url) throw new Error("Fal não devolveu vídeo.");
+  return body.video.url;
+}
+
+async function download(url: string, dest: string): Promise<void> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Download ${res.status}`);
+  fs.writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
+}
+
+async function assemble(clips: string[], audioPath: string, outPath: string): Promise<void> {
+  const args = ["-y"];
+  clips.forEach((clip) => args.push("-i", clip));
+  args.push("-i", audioPath);
+  const filters = clips
+    .map((_, i) => `[${i}:v]scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,fps=30,setsar=1[v${i}]`)
+    .join(";");
+  const concat = clips.map((_, i) => `[v${i}]`).join("");
+  args.push(
+    "-filter_complex",
+    `${filters};${concat}concat=n=${clips.length}:v=1:a=0[v]`,
+    "-map",
+    "[v]",
+    "-map",
+    `${clips.length}:a`,
+    "-c:v",
+    "libx264",
+    "-pix_fmt",
+    "yuv420p",
+    "-c:a",
+    "aac",
+    "-shortest",
+    outPath
+  );
+  await runFfmpeg("ffmpeg", args);
+}
+
+function coverCopy(chapterLabel: string): { title: string; author: string } {
+  const title = chapterLabel.replace(/^capítulo\s+\d+\s*[—:.-]\s*/i, "").trim() || chapterLabel.trim();
+  return { title, author: "Júlio Verne" };
+}
+
+async function jpegThumb(pngPath: string): Promise<string> {
+  const jpg = pngPath.replace(/\.png$/i, ".jpg");
+  await runFfmpeg("ffmpeg", ["-y", "-i", pngPath, "-vf", "scale=1280:-2", "-q:v", "5", jpg]);
+  return jpg;
+}
+
+function youtubeTitle(bookTitle: string, chapterLabel: string, chapterIndex: number): string {
+  const hook = chapterLabel.replace(/^capítulo\s+\d+\s*[—:.-]\s*/i, "").trim() || chapterLabel.trim();
+  const sequence = `${bookTitle}, capítulo ${chapterIndex} · Júlio Verne`;
+  const raw = `${hook} | ${sequence}`;
+  if (raw.length <= 100) return raw;
+  const withoutAuthor = `${hook} | ${bookTitle}, capítulo ${chapterIndex}`;
+  if (withoutAuthor.length <= 100) return withoutAuthor;
+  const room = 100 - ` | ${bookTitle}, capítulo ${chapterIndex}`.length;
+  const shortHook = room > 8 ? hook.slice(0, room - 1).trimEnd() + "…" : hook.slice(0, 40);
+  return `${shortHook} | ${bookTitle}, capítulo ${chapterIndex}`.slice(0, 100);
+}
+
+function youtubeDescription(bookTitle: string, chapterLabel: string, nextLabel: string | null): string {
+  return [
+    `${bookTitle}`,
+    chapterLabel,
+    "",
+    "Júlio Verne em Audiolivro. Narração integral deste capítulo, sem resumo.",
+    nextLabel ? `Próximo capítulo: ${nextLabel}.` : "",
+    "Inscreva-se para acompanhar a obra.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+async function uploadPrivate(channelId: string, filePath: string, title: string, description: string): Promise<string> {
+  const buffer = fs.readFileSync(filePath);
+  const session = await startResumableVideoUpload({
+    channelId,
+    title,
+    description,
+    contentType: "video/mp4",
+    contentLength: buffer.length,
+  });
+  const chunk = 8 * 1024 * 1024;
+  let start = 0;
+  let videoId: string | null = null;
+  while (start < buffer.length) {
+    const end = Math.min(buffer.length, start + chunk) - 1;
+    const result = await putResumableChunk({
+      uploadId: session.uploadId,
+      channelId,
+      start,
+      end,
+      total: buffer.length,
+      body: buffer.subarray(start, end + 1),
+    });
+    videoId = result.videoId ?? videoId;
+    start = result.bytesReceived;
+    if (result.done) break;
+  }
+  if (!videoId) throw new Error("YouTube não devolveu o id do vídeo.");
+  return videoId;
+}
