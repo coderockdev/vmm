@@ -381,6 +381,11 @@ body:has(.channel-edit-page) .topbar {
   display: none;
 }
 
+.channel-edit-page {
+  width: 100%;
+  max-width: none;
+}
+
 body:has(.dashboard-page) .main-content {
   padding-top: 25px;
 }
