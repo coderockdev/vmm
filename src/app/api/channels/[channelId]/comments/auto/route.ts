@@ -32,11 +32,14 @@ export async function POST(req: NextRequest, { params }: { params: { channelId: 
   }
 
   const body = await req.json().catch(() => ({}));
-  const maxItems = Math.min(100, Math.max(1, Number(body.maxItems) || 25));
+  const maxItems = Math.min(2000, Math.max(1, Number(body.maxItems) || 25));
   const dryRun = Boolean(body.dryRun);
   const skipDelicate = body.skipDelicate !== false;
   const varyResponses = body.varyResponses !== false;
   const skipAlreadyAnswered = body.skipAlreadyAnswered !== false;
+  const batchCap = dryRun ? 40 : 12;
+  const batchSize = Math.min(batchCap, Math.max(1, Number(body.batchSize) || (dryRun ? 30 : 10)));
+  const runId = typeof body.runId === "string" ? body.runId : undefined;
 
   try {
     const run = await runAutoRespond({
@@ -46,6 +49,8 @@ export async function POST(req: NextRequest, { params }: { params: { channelId: 
       skipDelicate,
       varyResponses,
       skipAlreadyAnswered,
+      runId,
+      batchSize,
     });
     return NextResponse.json({ run });
   } catch (err) {
