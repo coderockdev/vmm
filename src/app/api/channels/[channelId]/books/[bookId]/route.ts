@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getChannel } from "../../../../../../core/repo/channels";
 import { getBook, listChaptersForBook } from "../../../../../../core/repo/books";
+import { spendByChapterId } from "../../../../../../core/repo/usage";
 
 export const dynamic = "force-dynamic";
 
@@ -17,5 +18,6 @@ export async function GET(
   }
 
   const chapters = await listChaptersForBook(book.id);
-  return NextResponse.json({ book, chapters });
+  const spend = await spendByChapterId(channel.id);
+  return NextResponse.json({ book, chapters, spend });
 }

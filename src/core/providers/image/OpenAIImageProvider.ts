@@ -19,6 +19,10 @@ export class OpenAIImageProvider implements ImageProvider {
       throw new Error("OPENAI_API_KEY is not set. Add it to your .env.local to generate cover art with AI.");
     }
 
+    const quality = args.quality ?? (process.env.OPENAI_IMAGE_QUALITY === "high" || process.env.OPENAI_IMAGE_QUALITY === "low"
+      ? process.env.OPENAI_IMAGE_QUALITY
+      : "medium");
+    const size = imageSize(MODEL, args.size);
     const response = await fetchWithRetry("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: {
@@ -28,8 +32,8 @@ export class OpenAIImageProvider implements ImageProvider {
       body: JSON.stringify({
         model: MODEL,
         prompt: args.prompt,
-        // Prefer landscape for YouTube thumbs when the model allows it.
-        size: MODEL.includes("gpt-image") ? "1536x1024" : "1024x1024",
+        size,
+        quality,
         n: 1,
       }),
     });
@@ -50,4 +54,12 @@ export class OpenAIImageProvider implements ImageProvider {
 
     return { filePath: args.outPath };
   }
+}
+
+/** gpt-image-2 can take 1536x864 (16:9). gpt-image-1 cannot, so the widest landscape is 1536x1024. */
+function imageSize(model: string, requested?: string): string {
+  if (/gpt-image-2/i.test(model)) return requested || "1536x864";
+  if (/dall-e-3/i.test(model)) return "1792x1024";
+  if (/gpt-image/i.test(model)) return "1536x1024";
+  return "1024x1024";
 }

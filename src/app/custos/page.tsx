@@ -36,7 +36,9 @@ export default function CostsPage() {
       <h1>Custos</h1>
       <p className="lead">
         Assinaturas fixas da conta MY. Chip, crédito Claro e o depósito do Google Cloud são da VMM
-        inteira e ficam abaixo, fora deste total mensal. O que cada vídeo gasta aparece no painel do canal.
+        inteira e ficam abaixo, fora deste total mensal. Em cada canal, o gasto de um vídeo é o que
+        se registou, partido por fornecedor e por tarefa: o texto e a imagem da OpenAI não se somam
+        na mesma linha.
       </p>
       <table className="costs-table">
         <thead>

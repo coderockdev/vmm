@@ -141,7 +141,12 @@ export async function POST(req: NextRequest, { params }: { params: { videoProjec
             : provider.name === "gemini"
               ? "gemini"
               : "pollinations",
-        model: provider.name,
+        model:
+          provider.name === "openai"
+            ? "gpt-image-1 medium 1536x1024"
+            : provider.name === "gemini"
+              ? "gemini-3.1-flash-image"
+              : provider.name,
         images: candidates.length,
         characters: styles.length,
       },

@@ -32,11 +32,11 @@ export function buildMotionFilter(args: {
   const frames = Math.max(1, Math.round(args.durationSec * fps));
   const zoom =
     args.motion === "zoom-out" || args.motion === "pull-out"
-      ? "max(1.18-0.0007*on,1.02)"
+      ? "max(1.06-0.00028*on,1.01)"
       : args.motion === "zoom-in" || args.motion === "push-in"
-        ? "min(1.02+0.0007*on,1.18)"
-        : "1.12";
-  const drift = args.motion === "drift" || args.motion === "parallax" ? "on*0.15" : "0";
+        ? "min(1.01+0.00028*on,1.06)"
+        : "1.04";
+  const drift = args.motion === "drift" || args.motion === "parallax" ? "on*0.08" : "0";
   const span = `(iw-iw/zoom)`;
   const spanY = `(ih-ih/zoom)`;
   const panX =

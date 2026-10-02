@@ -18,21 +18,25 @@ export function ProjectCostLabel({
 
   const parts: string[] = [];
   if (b) {
-    if (b.ideas > 0) parts.push(`ideias ${formatUsd(b.ideas)}`);
-    if (b.script > 0) parts.push(`roteiro ${formatUsd(b.script)}`);
-    if (b.audio > 0) parts.push(`áudio ${formatUsd(b.audio)}`);
-    if (b.thumbnail > 0) parts.push(`portada ${formatUsd(b.thumbnail)}`);
-    if (b.render > 0) parts.push(`render ${formatUsd(b.render)}`);
+    const text = (b.ideas || 0) + (b.script || 0);
+    const image = b.thumbnail || 0;
+    const voice = b.audio || 0;
+    const motion = (b.render || 0) + (b.music || 0) + (b.sfx || 0);
+    if (text > 0) parts.push(`texto ${formatUsd(text)}`);
+    if (image > 0) parts.push(`imagem ${formatUsd(image)}`);
+    if (voice > 0) parts.push(`voz ${formatUsd(voice)}`);
+    if (motion > 0) parts.push(`animação ${formatUsd(motion)}`);
   }
   const title = hasCost
     ? parts.length > 0
       ? parts.join(" · ")
-      : "Estimativa no momento da geração"
+      : "Gasto registado na geração"
     : "Sem registro de custo (gerado antes do tracking ou falha ao gravar usage)";
 
   return (
     <span className={`project-cost${hasCost ? "" : " project-cost-missing"}`} title={title}>
-      Custo: {hasCost ? formatUsd(total!) : "—"}
+      Gasto: {hasCost ? formatUsd(total!) : "—"}
+      {parts.length > 0 ? ` · ${parts.join(" · ")}` : ""}
     </span>
   );
 }

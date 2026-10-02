@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getChannel } from "../../../../../core/repo/channels";
 import { listProjectsForChannel } from "../../../../../core/repo/projects";
-import { listUsageForChannel } from "../../../../../core/repo/usage";
+import { listUsageForChannel, providerTaskLabel, spendTask } from "../../../../../core/repo/usage";
 import {
   CostBreakdown,
   emptyBreakdown,
@@ -46,12 +46,19 @@ export async function GET(req: NextRequest, { params }: { params: { channelId: s
   const titleById = new Map(projects.map((p) => [p.id, p.title]));
 
   const byStage: CostBreakdown = emptyBreakdown();
-  const providerMap = new Map<string, { provider: string; usd: number; count: number }>();
+  const providerMap = new Map<string, { provider: string; task: string; label: string; usd: number; count: number }>();
 
   for (const e of events) {
     if (e.stage in byStage) byStage[e.stage as keyof CostBreakdown] += e.estimatedUsd;
-    const key = e.provider || "unknown";
-    const prev = providerMap.get(key) ?? { provider: key, usd: 0, count: 0 };
+    const task = spendTask(e.stage);
+    const key = `${e.provider || "unknown"}|${task}`;
+    const prev = providerMap.get(key) ?? {
+      provider: e.provider || "unknown",
+      task,
+      label: providerTaskLabel(e.provider || "unknown", e.stage),
+      usd: 0,
+      count: 0,
+    };
     prev.usd += e.estimatedUsd;
     prev.count += 1;
     providerMap.set(key, prev);
@@ -117,15 +124,38 @@ export async function GET(req: NextRequest, { params }: { params: { channelId: s
         (typeof (published?.rawUsage as { videoId?: unknown } | null)?.videoId === "string"
           ? ((published?.rawUsage as { videoId: string }).videoId as string)
           : null) || p.youtubeVideoId;
-      const byProvider: { provider: string; usd: number }[] = [];
+      let textUsd = 0;
+      let imageUsd = 0;
+      let voiceUsd = 0;
+      let videoUsd = 0;
       if (fromEvents.length > 0) {
-        const map = new Map<string, number>();
         for (const e of fromEvents) {
-          if (e.estimatedUsd <= 0) continue;
-          map.set(e.provider, (map.get(e.provider) ?? 0) + e.estimatedUsd);
+          const task = spendTask(e.stage);
+          if (task === "text") textUsd += e.estimatedUsd;
+          else if (task === "image") imageUsd += e.estimatedUsd;
+          else if (task === "voice") voiceUsd += e.estimatedUsd;
+          else if (task === "video") videoUsd += e.estimatedUsd;
         }
-        for (const [provider, usd] of map) byProvider.push({ provider, usd });
-        byProvider.sort((a, b) => b.usd - a.usd);
+      } else {
+        textUsd = (breakdown.ideas || 0) + (breakdown.script || 0);
+        imageUsd = breakdown.thumbnail || 0;
+        voiceUsd = breakdown.audio || 0;
+        videoUsd = (breakdown.render || 0) + (breakdown.music || 0) + (breakdown.sfx || 0);
+      }
+      const lineMap = new Map<string, { label: string; usd: number }>();
+      if (fromEvents.length > 0) {
+        for (const e of fromEvents) {
+          if (!(e.estimatedUsd > 0)) continue;
+          const label = providerTaskLabel(e.provider, e.stage);
+          const prev = lineMap.get(label) ?? { label, usd: 0 };
+          prev.usd += e.estimatedUsd;
+          lineMap.set(label, prev);
+        }
+      } else {
+        if (textUsd > 0) lineMap.set("Texto", { label: "Texto", usd: textUsd });
+        if (imageUsd > 0) lineMap.set("Imagem", { label: "Imagem", usd: imageUsd });
+        if (voiceUsd > 0) lineMap.set("Voz", { label: "Voz", usd: voiceUsd });
+        if (videoUsd > 0) lineMap.set("Animação", { label: "Animação", usd: videoUsd });
       }
       return {
         id: p.id,
@@ -136,7 +166,11 @@ export async function GET(req: NextRequest, { params }: { params: { channelId: s
         publishedAt: published?.createdAt ?? null,
         totalUsd: total,
         breakdown,
-        byProvider,
+        textUsd,
+        imageUsd,
+        voiceUsd,
+        videoUsd,
+        lines: [...lineMap.values()].sort((a, b) => b.usd - a.usd),
       };
     })
     .filter((p) => p.totalUsd > 0 || projectsInPeriod.length <= 40)
@@ -157,7 +191,7 @@ export async function GET(req: NextRequest, { params }: { params: { channelId: s
   const recentEvents = events.slice(0, 40).map((e: UsageEvent) => ({
     id: e.id,
     stage: e.stage,
-    stageLabel: stageLabels[e.stage] ?? e.stage,
+    stageLabel: providerTaskLabel(e.provider, e.stage) || stageLabels[e.stage] || e.stage,
     provider: e.provider,
     model: e.model,
     estimatedUsd: e.estimatedUsd,

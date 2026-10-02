@@ -10,7 +10,7 @@ type UsageSummary = {
   since: string | null;
   totalUsd: number;
   byStage: CostBreakdown;
-  byProvider: { provider: string; usd: number; count: number }[];
+  byProvider: { provider: string; task: string; label: string; usd: number; count: number }[];
   projects: {
     id: string;
     title: string;
@@ -18,6 +18,10 @@ type UsageSummary = {
     createdAt: string;
     totalUsd: number;
     breakdown: CostBreakdown;
+    textUsd: number;
+    imageUsd: number;
+    voiceUsd: number;
+    videoUsd: number;
   }[];
   recentEvents: {
     id: string;
@@ -90,9 +94,9 @@ export function CostsPanel({ channelId }: { channelId: string }) {
         <div className="workspace-section-title">
           <h2>Custos de geração</h2>
           <p>
-            Estimativa por etapa (ideias, roteiro, áudio, portadas, vídeo), por projeto e por
-            período. Upload YouTube = <strong>$0</strong> (só quota diária da API, ~1600
-            unidades por vídeo).
+            Gasto registado, não o teto. O mesmo fornecedor aparece duas vezes quando faz duas
+            tarefas: OpenAI texto e OpenAI imagem são contas diferentes. Uma imagem em qualidade
+            média, paisagem, fica em US$0.06; em alta, US$0.25.
           </p>
         </div>
         <div className="costs-period-pills" role="group" aria-label="Período">
@@ -178,12 +182,10 @@ export function CostsPanel({ channelId }: { channelId: string }) {
                 <div className="costs-table" role="table">
                   <div className="costs-table-head" role="row">
                     <span>Projeto</span>
-                    <span>Ideias</span>
-                    <span>Roteiro</span>
-                    <span>Áudio</span>
-                    <span>Portada</span>
-                    <span>Vídeo</span>
-                    <span>YT</span>
+                    <span>Texto</span>
+                    <span>Imagem</span>
+                    <span>Voz</span>
+                    <span>Animação</span>
                     <span>Total</span>
                   </div>
                   {data.projects.map((p) => (
@@ -194,12 +196,10 @@ export function CostsPanel({ channelId }: { channelId: string }) {
                           {new Date(p.createdAt).toLocaleDateString("pt-BR")} · {p.status}
                         </small>
                       </span>
-                      <span>{formatUsd(p.breakdown.ideas)}</span>
-                      <span>{formatUsd(p.breakdown.script)}</span>
-                      <span>{formatUsd(p.breakdown.audio)}</span>
-                      <span>{formatUsd(p.breakdown.thumbnail ?? 0)}</span>
-                      <span>{formatUsd(p.breakdown.render)}</span>
-                      <span>{formatUsd(p.breakdown.youtube ?? 0)}</span>
+                      <span>{formatUsd(p.textUsd)}</span>
+                      <span>{formatUsd(p.imageUsd)}</span>
+                      <span>{formatUsd(p.voiceUsd)}</span>
+                      <span>{formatUsd(p.videoUsd)}</span>
                       <span className="costs-total-cell">{formatUsd(p.totalUsd)}</span>
                     </div>
                   ))}
@@ -209,14 +209,14 @@ export function CostsPanel({ channelId }: { channelId: string }) {
 
             <div className="costs-side">
               <div className="costs-block">
-                <h3>Por provedor</h3>
+                <h3>Por fornecedor e tarefa</h3>
                 {data.byProvider.length === 0 ? (
                   <p className="costs-muted">Sem eventos de provedor neste período.</p>
                 ) : (
                   <ul className="costs-provider-list">
                     {data.byProvider.map((row) => (
-                      <li key={row.provider}>
-                        <span>{row.provider}</span>
+                      <li key={`${row.provider}-${row.task}`}>
+                        <span>{row.label}</span>
                         <span>
                           {formatUsd(row.usd)}
                           <small> · {row.count}×</small>

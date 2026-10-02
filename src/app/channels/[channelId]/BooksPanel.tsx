@@ -8,10 +8,23 @@ import { CHAPTER_STEPS, chapterSnap } from "./chapterProgress";
 import { estimateChapterCost, formatUsd, normalizeVisualBudget } from "../../../core/audiobook/visualBudget";
 import { planChapterVisuals } from "../../../core/audiobook/visualPlan";
 
+type ChapterSpend = {
+  textUsd: number;
+  imageUsd: number;
+  voiceUsd: number;
+  videoUsd: number;
+  totalUsd: number;
+};
+
 type BookDetail = {
   book: BookListItem | (BookListItem & Record<string, unknown>);
   chapters: Chapter[];
+  spend: Record<string, ChapterSpend>;
 };
+
+function detailFrom(json: { book?: BookDetail["book"]; chapters?: Chapter[]; spend?: Record<string, ChapterSpend> }): BookDetail {
+  return { book: json.book as BookDetail["book"], chapters: json.chapters ?? [], spend: json.spend ?? {} };
+}
 
 const STATUS_LABEL: Record<string, string> = {
   queued: "Na fila",
@@ -124,7 +137,7 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
       .then(async (res) => {
         const json = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-        if (!cancelled) setDetail({ book: json.book, chapters: json.chapters ?? [] });
+        if (!cancelled) setDetail(detailFrom(json));
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
@@ -148,7 +161,7 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
         .then(async (res) => {
           const json = await res.json().catch(() => ({}));
           if (!res.ok) return;
-          setDetail({ book: json.book, chapters: json.chapters ?? [] });
+          setDetail(detailFrom(json));
         })
         .catch(() => undefined);
     }, 8000);
@@ -375,10 +388,13 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
                         ))}
                       </div>
                       <small>{snap.stage}</small>
-                      {snap.version > 1 && (
+                      {(c.attempts > 0 || detail.spend[c.id]) && (
                         <small className="books-muted">
-                          Prova 1 mantida · {formatUsd(estimateChapterCost(c.words, budget).totalUsd)}
-                          {snap.redoing ? ` · agora a versão ${snap.version}` : ""}
+                          Orçamento {formatUsd(estimateChapterCost(c.words, budget).totalUsd)}
+                          {detail.spend[c.id]?.totalUsd
+                            ? ` · gasto ${formatUsd(detail.spend[c.id].totalUsd)} (texto ${formatUsd(detail.spend[c.id].textUsd)} · imagem ${formatUsd(detail.spend[c.id].imageUsd)})`
+                            : " · gasto real ainda sem registo"}
+                          {snap.version > 1 ? ` · prova 1 mantida${snap.redoing ? ` · agora a versão ${snap.version}` : ""}` : ""}
                         </small>
                       )}
                       <div className="books-row-actions">
@@ -592,14 +608,14 @@ function ChapterBudget({
     <section className="books-budget">
       <h3>Orçamento do 1 ao {chapters[chapters.length - 1].index}</h3>
       <p>
-        {first.estimate.durationLabel} no primeiro capítulo · {first.estimate.staticImages} imagens ·{" "}
-        {first.estimate.aiClips} clipes de IA · voz {formatUsd(first.estimate.voiceUsd)} · imagens{" "}
-        {formatUsd(first.estimate.staticUsd)} · animação {formatUsd(first.estimate.aiUsd)} · total{" "}
-        {formatUsd(first.estimate.totalUsd)}
+        Teto planeado, pode ser ultrapassado. {first.estimate.durationLabel} no primeiro capítulo ·{" "}
+        {first.estimate.staticImages} imagens · {first.estimate.aiClips} clipes de IA · voz{" "}
+        {formatUsd(first.estimate.voiceUsd)} · imagens {formatUsd(first.estimate.staticUsd)} · animação{" "}
+        {formatUsd(first.estimate.aiUsd)} · total {formatUsd(first.estimate.totalUsd)}
       </p>
       {chapters.length > 1 && <p>Intervalo inteiro: {formatUsd(total)}</p>}
       <p className="books-muted">
-        Os {first.estimate.aiClips} clipes de {budget.aiClipSourceSeconds}s abrem o vídeo, um atrás do outro: é o trecho em que as pessoas ficam. Depois, as ilustrações seguem com zoom e panorâmica, e podem repetir. Sem o áudio do modelo.
+        O padrão é ilustração com movimento leve, música suave por baixo e a narração na frente. Fal, se entrar, só anima uns segundos. O resto é zoom lento, um fade entre planos e a voz.
       </p>
       {gate && (
         <div className="books-budget-gate">

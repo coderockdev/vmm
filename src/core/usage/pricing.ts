@@ -32,8 +32,8 @@ const PRICES = {
   cartesiaPer1kChars: () => numEnv("PRICING_CARTESIA_PER_1K_CHARS", 0.015),
   elevenlabsPer1kChars: () => numEnv("PRICING_ELEVENLABS_PER_1K_CHARS", 0.12),
   lambdaPerMin: () => numEnv("PRICING_LAMBDA_PER_MIN", 0.05),
-  /** gpt-image-1 medium / typical single image estimate. */
-  openaiImagePerImage: () => numEnv("PRICING_OPENAI_IMAGE_PER_IMAGE", 0.04),
+  /** gpt-image-1 medium landscape, when the event does not say the quality. */
+  openaiImagePerImage: () => numEnv("PRICING_OPENAI_IMAGE_PER_IMAGE", 0.063),
   /** Imagen 3 / Gemini image generation per image. */
   geminiImagePerImage: () => numEnv("PRICING_GEMINI_IMAGE_PER_IMAGE", 0.04),
   /** Wan 2.2 A14B Turbo is a flat fee per clip, not per second. */
@@ -41,6 +41,19 @@ const PRICES = {
   falWanTurbo580p: () => numEnv("PRICING_FAL_WAN_TURBO_580P", 0.075),
   falWanTurbo720p: () => numEnv("PRICING_FAL_WAN_TURBO_720P", 0.1),
 };
+
+/**
+ * gpt-image-1 list price, Oct 2026. Landscape is 1536x1024.
+ * High is about four times medium, which is why an "auto" quality burns the credit.
+ */
+export function openaiImageUsd(model: string | null | undefined): number {
+  const label = model || "";
+  const square = /1024x1024/.test(label);
+  if (/high/i.test(label)) return square ? 0.167 : 0.25;
+  if (/low/i.test(label)) return square ? 0.011 : 0.016;
+  if (/medium/i.test(label)) return square ? 0.042 : 0.063;
+  return PRICES.openaiImagePerImage();
+}
 
 function tokensUsd(input: number, output: number, inPerM: number, outPerM: number): number {
   return (input / 1_000_000) * inPerM + (output / 1_000_000) * outPerM;
@@ -58,7 +71,7 @@ export function estimateUsd(snapshot: UsageSnapshot): number {
     case "anthropic":
       return tokensUsd(input, output, PRICES.anthropicInputPerMTok(), PRICES.anthropicOutputPerMTok());
     case "openai":
-      if (images > 0) return images * PRICES.openaiImagePerImage();
+      if (images > 0) return images * openaiImageUsd(snapshot.model);
       if (/mini/i.test(snapshot.model || "")) {
         return tokensUsd(input, output, 0.15, 0.6);
       }
