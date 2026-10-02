@@ -302,9 +302,9 @@ export async function listProjectsForChannel(channelId: string): Promise<VideoPr
       .eq("channel_id", channelId)
       .order("created_at", { ascending: false });
     const projects = assertNoError(res).map(rowToProject);
-    return hydrateProjectThumbnails(
-      await hydrateMissingProjectCosts(await attachYoutubeFromUsage(projects))
-    );
+    // Cost recompute and thumbnail sidecars used to run on every read. A page
+    // load plus the 2s poll did that twice and the function died with a 504.
+    return attachYoutubeFromUsage(projects);
   }
   const rows = getDb()
     .prepare(`SELECT * FROM video_projects WHERE channel_id = ? ORDER BY created_at DESC`)
@@ -332,6 +332,94 @@ async function hydrateMissingProjectCosts(projects: VideoProject[]): Promise<Vid
   const refreshed = await Promise.all(needs.map((p) => getVideoProject(p.id)));
   const byId = new Map(refreshed.filter(Boolean).map((p) => [p!.id, p!]));
   return projects.map((p) => byId.get(p.id) ?? p);
+}
+
+export async function countCompletedFormats(
+  channelId: string
+): Promise<{ videos: number; shorts: number }> {
+  if (isSupabaseEnabled()) {
+    const [videos, shorts] = await Promise.all([
+      getSupabase()
+        .from("video_projects")
+        .select("id", { count: "exact", head: true })
+        .eq("channel_id", channelId)
+        .eq("status", "completed")
+        .eq("format", "video"),
+      getSupabase()
+        .from("video_projects")
+        .select("id", { count: "exact", head: true })
+        .eq("channel_id", channelId)
+        .eq("status", "completed")
+        .eq("format", "short"),
+    ]);
+    if (videos.error) throw new Error(`Supabase error: ${videos.error.message}`);
+    if (shorts.error) throw new Error(`Supabase error: ${shorts.error.message}`);
+    return { videos: videos.count ?? 0, shorts: shorts.count ?? 0 };
+  }
+  const rows = getDb()
+    .prepare(
+      `SELECT format, COUNT(*) as c FROM video_projects
+       WHERE channel_id = ? AND status = 'completed' AND format IN ('video', 'short')
+       GROUP BY format`
+    )
+    .all(channelId) as Array<{ format: string; c: number }>;
+  return {
+    videos: rows.find((row) => row.format === "video")?.c ?? 0,
+    shorts: rows.find((row) => row.format === "short")?.c ?? 0,
+  };
+}
+
+export async function listRecentCompletedProjects(limit = 3): Promise<
+  Array<{
+    id: string;
+    channelId: string;
+    title: string;
+    renderDurationSeconds: number | null;
+    createdAt: string;
+  }>
+> {
+  if (isSupabaseEnabled()) {
+    const res = await getSupabase()
+      .from("video_projects")
+      .select("id, channel_id, title, render_duration_seconds, created_at")
+      .eq("status", "completed")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    const rows = (assertNoError(res) ?? []) as Array<{
+      id: string;
+      channel_id: string;
+      title: string;
+      render_duration_seconds: number | null;
+      created_at: string;
+    }>;
+    return rows.map((row) => ({
+      id: row.id,
+      channelId: row.channel_id,
+      title: row.title,
+      renderDurationSeconds: row.render_duration_seconds,
+      createdAt: row.created_at,
+    }));
+  }
+  const rows = getDb()
+    .prepare(
+      `SELECT id, channel_id, title, render_duration_seconds, created_at
+       FROM video_projects WHERE status = 'completed'
+       ORDER BY created_at DESC LIMIT ?`
+    )
+    .all(limit) as Array<{
+    id: string;
+    channel_id: string;
+    title: string;
+    render_duration_seconds: number | null;
+    created_at: string;
+  }>;
+  return rows.map((row) => ({
+    id: row.id,
+    channelId: row.channel_id,
+    title: row.title,
+    renderDurationSeconds: row.render_duration_seconds,
+    createdAt: row.created_at,
+  }));
 }
 
 export async function listAllProjects(): Promise<VideoProject[]> {
@@ -493,7 +581,7 @@ async function readThumbnailSidecar(
       .storage.from(process.env.SUPABASE_STORAGE_BUCKET || "media")
       .getPublicUrl(`${channelId}/thumbnails/${projectId}.json`);
     const url = data.publicUrl;
-    const res = await fetch(`${url}?t=${Date.now()}`);
+    const res = await fetch(url);
     if (!res.ok) return null;
     const json = await res.json();
     return {
@@ -855,8 +943,18 @@ export async function getAudioAsset(id: string): Promise<AudioAsset | null> {
 
 export async function listAudioAssetsForChannel(channelId: string): Promise<AudioAsset[]> {
   if (isSupabaseEnabled()) {
-    const projects = await listProjectsForChannel(channelId);
-    const ids = projects.map((p) => p.audioAssetId).filter((id): id is string => Boolean(id));
+    const idRes = await getSupabase()
+      .from("video_projects")
+      .select("audio_asset_id")
+      .eq("channel_id", channelId)
+      .not("audio_asset_id", "is", null);
+    const ids = [
+      ...new Set(
+        (assertNoError(idRes) as Array<{ audio_asset_id: string | null }>)
+          .map((row) => row.audio_asset_id)
+          .filter((id): id is string => Boolean(id))
+      ),
+    ];
     if (ids.length === 0) return [];
     const res = await getSupabase().from("audio_assets").select("*").in("id", ids);
     return assertNoError(res).map((r) => rowToAudio(r as AudioRow));

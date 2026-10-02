@@ -3,7 +3,7 @@ import Link from "next/link";
 import { unstable_noStore as noStore } from "next/cache";
 import { ensureSeeded } from "../core/seed";
 import { listChannels, getChannel } from "../core/repo/channels";
-import { listProjectsForChannel, listAllProjects } from "../core/repo/projects";
+import { countCompletedFormats, listRecentCompletedProjects } from "../core/repo/projects";
 import { mediaUrl } from "../core/media";
 import { ChannelCardMenu } from "./ChannelCardMenu";
 import {
@@ -74,15 +74,15 @@ export default async function HomePage() {
   noStore();
   await ensureSeeded();
   const channels = await listChannels();
-  const recentContent = (await listAllProjects()).filter((p) => p.status === "completed").slice(0, 3);
+  const recentContent = await listRecentCompletedProjects(3);
 
   const channelCards = await Promise.all(
     channels.map(async (channel) => {
-      const projects = await listProjectsForChannel(channel.id);
+      const counts = await countCompletedFormats(channel.id);
       return {
         channel,
-        videos: projects.filter((p) => p.status === "completed" && p.format === "video").length,
-        shorts: projects.filter((p) => p.status === "completed" && p.format === "short").length,
+        videos: counts.videos,
+        shorts: counts.shorts,
         category: channel.niche?.split(" • ")[0]?.trim() || "Sem categoria",
         coverUrl: mediaUrl(channel.id, channel.channelImageRef ?? channel.coverRef),
         description:

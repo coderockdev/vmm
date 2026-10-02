@@ -16,9 +16,11 @@ export default async function ChannelPage({ params }: { params: { channelId: str
   const channel = await getChannel(params.channelId);
   if (!channel) notFound();
 
-  const projects = await listProjectsForChannel(channel.id);
-  const plans = await listPlansForChannel(channel.id);
-  const audioAssets = await listAudioAssetsForChannel(channel.id);
+  const [projects, plans, audioAssets] = await Promise.all([
+    listProjectsForChannel(channel.id),
+    listPlansForChannel(channel.id),
+    listAudioAssetsForChannel(channel.id),
+  ]);
 
   return (
     <ChannelWorkspace

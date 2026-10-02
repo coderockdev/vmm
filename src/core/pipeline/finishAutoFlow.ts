@@ -13,6 +13,7 @@ import { ensureLocalFile, persistFile, persistRenderLocalFirst, workingFilePath 
 import { renderVideo, mergePresetSettings } from "../videoRenderers";
 import { generateCoverConcept, buildThumbnailImagePrompt } from "../providers/script/coverConcept";
 import { burnThumbnailText } from "../providers/image/burnThumbnailText";
+import { persistIdentificationThumb } from "../providers/image/identificationThumb";
 import { getImageProvider } from "../providers/image";
 import { mergeThumbnailHistory, type ThumbnailCandidate } from "../providers/image/thumbnailStyles";
 import { normalizeCoverDna, pickRotatingCoverFormats } from "../providers/image/coverFormats";
@@ -283,6 +284,12 @@ async function generateAutoThumbnail(args: {
     try {
       await gpt.generate({ prompt, outPath });
       await burnThumbnailText(outPath, conceptForImage.thumbnailText);
+      await persistIdentificationThumb(outPath, channel.id, fileName).catch((err) => {
+        console.warn(
+          "[auto-flow] miniatura de identificación:",
+          err instanceof Error ? err.message : err
+        );
+      });
       const ref = await persistFile(outPath, channel.id, "thumbnails", fileName, "image/png");
       const candidate: ThumbnailCandidate = {
         id: randomUUID(),
