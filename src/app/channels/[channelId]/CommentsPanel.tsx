@@ -118,13 +118,19 @@ export function CommentsPanel({ channel }: { channel: Channel }) {
     return maxItems;
   }
 
-  async function startAuto() {
-    const max = effectiveMax();
+  async function startAuto(allPending = false) {
+    const max = allPending ? Math.max(1, counts.pending) : effectiveMax();
+    if (allPending && counts.pending === 0) {
+      setError("No hay comentarios pendientes.");
+      return;
+    }
     if (
       !confirm(
         dryRun
           ? `DRY RUN: se simularán hasta ${max} comentarios pendientes (nada se publica en YouTube).`
-          : `Se procesarán hasta ${max} comentarios pendientes y se publicarán respuestas en YouTube.`
+          : allPending
+            ? `Se publican respuestas en YouTube para los ${max} pendientes, de a 10. Los delicados van a revisión. YouTube suele frenar cerca de las 200 respuestas por el cupo del día; el resto queda para mañana.`
+            : `Se procesarán hasta ${max} comentarios pendientes y se publicarán respuestas en YouTube.`
       )
     ) {
       return;
@@ -133,23 +139,41 @@ export function CommentsPanel({ channel }: { channel: Channel }) {
     setRunning(true);
     setError(null);
     try {
-      const res = await fetch(`/api/channels/${channel.id}/comments/auto`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          maxItems: max,
-          dryRun,
-          skipDelicate,
-          varyResponses,
-          skipAlreadyAnswered: skipAnswered,
-          useAi: useAi && !useRules ? true : false,
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-      setRun(json.run ?? null);
-      if (json.run?.status === "quota_stopped") {
-        setError("Automatización detenida por límite de YouTube.");
+      let runId: string | undefined;
+      for (let step = 0; step < 400; step++) {
+        if (stopRef.current) break;
+        const res = await fetch(`/api/channels/${channel.id}/comments/auto`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            maxItems: max,
+            batchSize: dryRun ? 30 : 10,
+            runId,
+            dryRun,
+            skipDelicate,
+            varyResponses,
+            skipAlreadyAnswered: skipAnswered,
+            useAi: useAi && !useRules ? true : false,
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(
+            res.status === 504
+              ? "Esta tanda tardó demasiado. Volvé a iniciar: lo ya respondido quedó guardado."
+              : (json.error ?? `HTTP ${res.status}`)
+          );
+        }
+        const next = json.run ?? null;
+        setRun(next);
+        runId = next?.id;
+        if (next?.status === "quota_stopped") {
+          setError(
+            "YouTube cortó por el cupo del día. Cada respuesta gasta 50 de 10.000. Mañana se puede seguir con los que queden."
+          );
+          break;
+        }
+        if (!next || next.status !== "running") break;
       }
       await load();
     } catch (err) {
@@ -252,7 +276,8 @@ export function CommentsPanel({ channel }: { channel: Channel }) {
       <div className="costs-block" style={{ marginBottom: 24 }}>
         <h3>AUTO RESPONDER</h3>
         <p className="portadas-actions-hint" style={{ marginBottom: 12 }}>
-          Máximo por ejecución
+          Máximo por ejecución. Vercel corta cada pedido alrededor de un minuto, así que las
+          respuestas salen de a 10. YouTube deja unas 200 respuestas por día.
         </p>
         <div className="portadas-count-pills" role="group" aria-label="Máximo">
           {[10, 25, 50, 100].map((n) => (
@@ -329,8 +354,15 @@ export function CommentsPanel({ channel }: { channel: Channel }) {
         </div>
 
         <div className="portadas-actions" style={{ marginTop: 16, gap: 8 }}>
-          <button type="button" disabled={running || !connected} onClick={() => void startAuto()}>
+          <button type="button" disabled={running || !connected} onClick={() => void startAuto(false)}>
             {running ? "Procesando…" : "▶ Iniciar auto respuestas"}
+          </button>
+          <button
+            type="button"
+            disabled={running || !connected || counts.pending === 0}
+            onClick={() => void startAuto(true)}
+          >
+            {running ? "Procesando…" : `Responder todos (${counts.pending})`}
           </button>
           {running && (
             <button type="button" onClick={() => void stopAuto()}>

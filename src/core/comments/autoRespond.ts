@@ -23,6 +23,11 @@ export type AutoRespondOptions = {
   skipAlreadyAnswered?: boolean;
   /** If provided, continue an existing run (for stop polling). */
   runId?: string;
+  /**
+   * How many comments to touch in this request. The run's maxItems is the
+   * whole goal; the platform kills a function that tries to do hundreds at once.
+   */
+  batchSize?: number;
 };
 
 /**
@@ -43,13 +48,29 @@ export async function runAutoRespond(args: AutoRespondOptions): Promise<YoutubeC
       maxItems: args.maxItems,
     }));
 
-  const pending = await listPendingForAuto(args.channel.id, args.maxItems);
   const log: CommentRunLogEntry[] = [...run.log];
   let answered = run.answered;
   let skipped = run.skipped;
   let needsReview = run.needsReview;
   let errors = run.errors;
   let processed = run.processed;
+
+  const room = Math.max(0, run.maxItems - processed);
+  const batchSize = Math.min(room, Math.max(1, args.batchSize ?? room));
+  const pending = room === 0 ? [] : await listPendingForAuto(args.channel.id, batchSize);
+  if (pending.length === 0) {
+    await patchCommentRun(run.id, {
+      status: "completed",
+      processed,
+      answered,
+      skipped,
+      needsReview,
+      errors,
+      log: log.slice(-200),
+      finishedAt: new Date().toISOString(),
+    });
+    return (await getCommentRun(run.id))!;
+  }
 
   for (const comment of pending) {
     // Re-read stop flag
@@ -247,15 +268,18 @@ export async function runAutoRespond(args: AutoRespondOptions): Promise<YoutubeC
     await sleep(350 + Math.floor(Math.random() * 400));
   }
 
+  const hitGoal = processed >= run.maxItems;
+  const drained = pending.length < batchSize;
+  const finished = hitGoal || drained;
   await patchCommentRun(run.id, {
-    status: "completed",
+    status: finished ? "completed" : "running",
     processed,
     answered,
     skipped,
     needsReview,
     errors,
     log: log.slice(-200),
-    finishedAt: new Date().toISOString(),
+    finishedAt: finished ? new Date().toISOString() : null,
   });
   return (await getCommentRun(run.id))!;
 }
