@@ -1,5 +1,6 @@
 import React from "react";
 import { JobStatus, VideoProject } from "../../../core/types";
+import { ChapterParts } from "./ChapterParts";
 
 type JobSnap = { progress: number; statusMessage: string; status: string };
 
@@ -7,21 +8,54 @@ const LIVE: JobStatus[] = ["planned", "audio", "timing", "composing", "rendering
 
 const STEPS = [
   { id: "roteiro", label: "Roteiro" },
-  { id: "voz", label: "Voz" },
+  { id: "voz", label: "Áudio" },
   { id: "musica", label: "Música" },
-  { id: "video", label: "Vídeo" },
+  { id: "render", label: "Renderização" },
   { id: "portada", label: "Portada" },
+  { id: "copy", label: "Descrição" },
   { id: "youtube", label: "YouTube" },
 ] as const;
 
 function stepIndex(project: VideoProject): number {
-  if (project.youtubeVideoId) return 5;
+  if (project.youtubeVideoId) return 6;
+  if (project.headline || project.youtubeDescription) return 5;
   if (project.thumbnailRef) return 4;
   if (project.renderPath) return 3;
   if (project.mixAudioRef || project.musicRef) return 2;
   if (project.audioAssetId) return 1;
   if (project.scriptId) return 0;
   return -1;
+}
+
+function prayerParts(project: VideoProject, job?: JobSnap) {
+  const reached = stepIndex(project);
+  const liveStatus = job?.status;
+  return STEPS.map((step, index) => {
+    const done = reached >= index || Boolean(project.youtubeVideoId);
+    const running =
+      !done &&
+      ((step.id === "voz" && liveStatus === "audio") ||
+        (step.id === "musica" && (liveStatus === "timing" || liveStatus === "composing")) ||
+        (step.id === "render" && liveStatus === "rendering") ||
+        (step.id === "roteiro" && liveStatus === "planned" && !project.scriptId));
+    const detail = done
+      ? step.id === "render"
+        ? "Texto, áudio e música"
+        : step.id === "youtube"
+          ? "No YouTube"
+          : "Pronto"
+      : running
+        ? job?.statusMessage || "Em curso"
+        : "À espera";
+    return {
+      id: step.id,
+      label: step.label,
+      percent: done ? 100 : running ? 45 : 0,
+      detail,
+      startedAt: running ? project.updatedAt : null,
+      finishedAt: null,
+    };
+  });
 }
 
 function floorPercent(project: VideoProject): number {
@@ -253,13 +287,7 @@ export function ControlPanel({
               <div className="control-bar" role="progressbar" aria-valuenow={snap.percent} aria-valuemin={0} aria-valuemax={100}>
                 <span style={{ width: `${snap.percent}%` }} />
               </div>
-              <div className="control-steps">
-                {STEPS.map((step, index) => (
-                  <span key={step.id} className={index <= snap.step ? "on" : ""}>
-                    {step.label}
-                  </span>
-                ))}
-              </div>
+              <ChapterParts parts={prayerParts(project, jobByProject[project.id])} />
               <small>{snap.stage.length > 140 ? `${snap.stage.slice(0, 140)}…` : snap.stage}</small>
               <CostLine cost={costs[project.id]} fallback={project.costUsdTotal} />
             </li>

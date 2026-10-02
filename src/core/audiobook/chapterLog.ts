@@ -1,7 +1,8 @@
 export const CHAPTER_PARTS = [
   { id: "audio", label: "Áudio", weight: 15 },
-  { id: "images", label: "Imagens", weight: 25 },
-  { id: "video", label: "Vídeo", weight: 35 },
+  { id: "images", label: "Imagens", weight: 22 },
+  { id: "video", label: "Animação", weight: 23 },
+  { id: "render", label: "Renderização", weight: 15 },
   { id: "cover", label: "Portada", weight: 10 },
   { id: "copy", label: "Descrição", weight: 5 },
   { id: "youtube", label: "YouTube", weight: 10 },

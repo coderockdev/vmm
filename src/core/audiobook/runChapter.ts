@@ -168,10 +168,10 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
       const label =
         slot.kind === "ai-clip"
           ? `Animação: clipe da imagem ${slot.imageIndex + 1}`
-          : `Vídeo: movimento da imagem ${slot.imageIndex + 1}`;
+          : `Animação: movimento da imagem ${slot.imageIndex + 1}`;
       await note(chapter.id, "images_ready", `${label}…`, {
         id: "video",
-        percent: Math.round((slot.index / Math.max(1, plan.slots.length)) * 80),
+        percent: Math.round((slot.index / Math.max(1, plan.slots.length)) * 100),
         detail: `${slot.index + 1}/${plan.slots.length}`,
       });
       const out = path.join(dirs.motion, `slot-${String(slot.index + 1).padStart(2, "0")}.mp4`);
@@ -216,21 +216,32 @@ async function produceClaimedChapter(chapterId: string, mode: "audio" | "full"):
       clips.push(out);
     }
 
-    await note(chapter.id, "images_ready", "Vídeo: a juntar imagens, clips, narração e música suave…", {
+    await note(chapter.id, "images_ready", "Animação pronta. A renderizar…", {
       id: "video",
-      percent: 90,
-      detail: "A juntar",
+      percent: 100,
+      detail: `${clips.length} clipes`,
+      done: true,
+    });
+    await note(chapter.id, "images_ready", "Renderização: narração e música…", {
+      id: "render",
+      percent: 20,
+      detail: "Áudio",
     });
     const finalPath = path.join(dirs.final, "chapter.mp4");
     const mixedAudio = await underVoice(audioPath, dirs.audio, channel.id, chapter.id);
+    await note(chapter.id, "images_ready", "Renderização: fades, imagens e áudio…", {
+      id: "render",
+      percent: 55,
+      detail: "Fades",
+    });
     await assemble(clips, mixedAudio, finalPath);
     const videoBytes = fs.statSync(finalPath).size;
     const videoRef =
       videoBytes > 45 * 1024 * 1024
         ? finalPath
         : await persistFile(finalPath, channel.id, "render", `${chapter.id}.mp4`, "video/mp4");
-    await note(chapter.id, "video_ready", "Vídeo pronto. A fazer a portada…", {
-      id: "video",
+    await note(chapter.id, "video_ready", "Renderização pronta. A fazer a portada…", {
+      id: "render",
       percent: 100,
       detail: "Pronto",
       done: true,

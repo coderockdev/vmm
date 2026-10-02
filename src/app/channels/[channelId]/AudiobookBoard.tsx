@@ -36,7 +36,7 @@ export function AudiobookBoard({ channelId }: { channelId: string }) {
     <section className="review-queue-section">
       <div className="workspace-section-title">
         <h2>Painel</h2>
-        <p>Capítulos que já saíram de pendente. Áudio, vídeo, portada, descrição e YouTube.</p>
+        <p>Capítulos que já saíram de pendente. Áudio, imagens, animação, renderização, portada, descrição e YouTube.</p>
       </div>
       {loading && rows.length === 0 && <p className="books-muted">A carregar o painel…</p>}
       {error && <p className="generation-error">{error}</p>}

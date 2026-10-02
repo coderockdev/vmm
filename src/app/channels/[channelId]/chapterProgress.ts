@@ -21,7 +21,7 @@ export function chapterSnap(c: Chapter) {
   const failed = c.status === "failed";
   const done = !redoing && !queued && Boolean(c.youtubeVideoId || c.status === "published");
 
-  const parts = stored ?? partsFromStatus(c, human, queued, redoing, done, failed);
+  const parts = placeAssembly(stored ?? partsFromStatus(c, human, queued, redoing, done, failed));
   const percent = queued ? 0 : done ? 100 : overallPercent(parts);
   const running = parts.find((part) => part.startedAt && !part.finishedAt);
   const step = running ? CHAPTER_PARTS.findIndex((part) => part.id === running.id) : parts.filter((part) => part.percent >= 100).length - 1;
@@ -56,15 +56,17 @@ function partsFromStatus(
     return parts;
   }
   let active = 0;
-  if (done || c.youtubeVideoId) active = 6;
-  else if (/^YouTube:/i.test(human) || c.status === "uploading") active = 5;
-  else if (/descrição/i.test(human)) active = 4;
-  else if (/^Portada:/i.test(human) || c.status === "thumb_ready") active = 3;
-  else if (/^Vídeo:/i.test(human) || c.status === "video_ready") active = 2;
-  else if (/^Imagens:|^Animação:/i.test(human) || c.status === "images_ready") active = 1;
+  if (done || c.youtubeVideoId) active = CHAPTER_PARTS.length;
+  else if (/^YouTube:/i.test(human) || c.status === "uploading") active = 6;
+  else if (/descrição/i.test(human)) active = 5;
+  else if (/^Portada:/i.test(human) || c.status === "thumb_ready") active = 4;
+  else if (/^Renderização:/i.test(human)) active = 3;
+  else if (c.status === "video_ready" || c.videoPath) active = 4;
+  else if (/^Animação:|^Vídeo:/i.test(human)) active = 2;
+  else if (/^Imagens:/i.test(human) || c.status === "images_ready") active = 1;
   else if (redoing || /^Áudio:/i.test(human) || c.status === "tts_running" || c.status === "audio_ready") active = 0;
-  else if (!redoing && (c.thumbPath || c.videoPath || c.audioPath)) {
-    active = c.thumbPath ? 4 : c.videoPath ? 3 : 1;
+  else if (!redoing && (c.thumbPath || c.audioPath)) {
+    active = c.thumbPath ? 5 : 1;
   }
   return parts.map((part, index) => {
     if (done || index < active) {
@@ -90,4 +92,27 @@ export function partClock(iso: string | null): string {
 
 function clock(iso: string): string {
   return partClock(iso);
+}
+
+/** Older runs wrote the assembly on Animação. Show that line on Renderização. */
+function placeAssembly(parts: ChapterPart[]): ChapterPart[] {
+  const video = parts.find((part) => part.id === "video");
+  const render = parts.find((part) => part.id === "render");
+  if (!video?.startedAt || !render || render.startedAt) return parts;
+  if (!/juntar|fade|narra|música|mont/i.test(`${video.detail}`)) return parts;
+  return parts.map((part) => {
+    if (part.id === "video") {
+      return { ...part, percent: 100, detail: "Clipes prontos", finishedAt: video.startedAt };
+    }
+    if (part.id === "render") {
+      return {
+        ...part,
+        percent: video.percent,
+        detail: video.detail,
+        startedAt: video.startedAt,
+        finishedAt: video.finishedAt,
+      };
+    }
+    return part;
+  });
 }
