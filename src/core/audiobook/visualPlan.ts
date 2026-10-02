@@ -94,17 +94,35 @@ export function planChapterVisuals(words: number, budget: AudiobookVisualBudget)
   const estimate = estimateChapterCost(words, budget);
   const imageCount = estimate.staticImages;
   const totalWords = Math.max(imageCount, Math.round(words));
-  const wordsEach = Math.max(1, Math.floor(totalWords / imageCount));
-  const images: PlannedImage[] = Array.from({ length: imageCount }, (_, index) => {
-    const wordStart = index * wordsEach;
-    const wordEnd = index === imageCount - 1 ? totalWords : wordStart + wordsEach;
-    const role = index === 0 ? "opening" : index === 1 ? "main" : "moment";
-    return { index, wordStart, wordEnd, role };
-  });
+  const clipCountForImages = estimate.aiClips;
+  const openCount = Math.min(clipCountForImages, imageCount);
+  const openWords = Math.min(
+    Math.max(0, totalWords - Math.max(1, imageCount - openCount)),
+    Math.max(openCount * 12, Math.round((budget.wordsPerMinute * 45) / 60))
+  );
+  const images: PlannedImage[] = [];
+  const openEach = Math.max(1, Math.floor(Math.max(openWords, openCount) / Math.max(1, openCount)));
+  for (let index = 0; index < openCount; index++) {
+    const wordStart = index * openEach;
+    const wordEnd = index === openCount - 1 ? openWords : Math.min(openWords, wordStart + openEach);
+    images.push({ index, wordStart, wordEnd: Math.max(wordStart + 1, wordEnd), role: index === 0 ? "opening" : "moment" });
+  }
+  const restCount = imageCount - openCount;
+  const restEach = Math.max(1, Math.floor(Math.max(1, totalWords - openWords) / Math.max(1, restCount)));
+  for (let index = 0; index < restCount; index++) {
+    const wordStart = openWords + index * restEach;
+    const wordEnd = index === restCount - 1 ? totalWords : Math.min(totalWords, wordStart + restEach);
+    images.push({
+      index: openCount + index,
+      wordStart,
+      wordEnd: Math.max(wordStart + 1, wordEnd),
+      role: "moment",
+    });
+  }
 
   const used = new Set<string>();
   const slots: TimelineSlot[] = [];
-  const playSec = budget.aiClipPlaySeconds;
+  const playSec = budget.aiClipSourceSeconds;
   const audio = estimate.durationSec;
   const clipCount = estimate.aiClips;
 
@@ -154,13 +172,16 @@ export function planChapterVisuals(words: number, budget: AudiobookVisualBudget)
   };
 
   let cursor = 0;
-  // The opening reel is the start of the chapter, where the hook is.
-  // Later images still appear as stills, and these can return.
-  const pool = Math.min(imageCount, Math.max(clipCount, Math.ceil(imageCount * 0.6)));
+  // Five slow clips from the opening of the text, with a still between them.
+  // The still is where the fades live, so the 5s of Fal stays whole.
   for (let index = 0; index < clipCount; index++) {
-    const imageIndex = clipCount <= 1 ? 0 : Math.round((index * (pool - 1)) / (clipCount - 1));
+    const imageIndex = Math.min(index, Math.max(0, imageCount - 1));
     push("ai-clip", cursor, playSec, imageIndex, index);
     cursor += playSec;
+    if (index < clipCount - 1) {
+      push("still-motion", cursor, 4, imageIndex, 100 + index);
+      cursor += 4;
+    }
   }
   if (cursor < audio - 0.4) fillStills(cursor, audio, clipCount + 3);
 
