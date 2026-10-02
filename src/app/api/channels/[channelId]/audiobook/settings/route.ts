@@ -13,6 +13,7 @@ import {
   findAuditionVoice,
   isCartesiaVoiceId,
 } from "../../../../../../core/audiobook/auditionVoices";
+import { isChirpVoiceId, listChirpVoices } from "../../../../../../core/audiobook/chirpVoices";
 
 export const dynamic = "force-dynamic";
 
@@ -27,12 +28,12 @@ export async function GET(
   }
 
   const settings = await getAudiobookSettings(channel.id);
-  const chirpLocale = channel.dna.language === "es" ? "es-US-" : "pt-BR-";
+  const chirp = await listChirpVoices(channel.dna.language);
   return NextResponse.json({
     settings,
     language: channel.dna.language,
     providers: AUDITION_PROVIDERS,
-    voices: AUDITION_VOICES.filter((voice) => voice.provider !== "google" || voice.id.startsWith(chirpLocale)),
+    voices: [...AUDITION_VOICES, ...chirp],
   });
 }
 
@@ -69,12 +70,15 @@ export async function PATCH(
     const known = findAuditionVoice(String(body.ttsProvider ?? ""), voiceId) ??
       AUDITION_VOICES.find((v) => v.id === voiceId);
     const dynamicCartesia = String(body.ttsProvider ?? "") === "cartesia" && isCartesiaVoiceId(voiceId);
-    if (!known && !dynamicCartesia) {
+    const dynamicChirp = isChirpVoiceId(voiceId);
+    if (!known && !dynamicCartesia && !dynamicChirp) {
       return NextResponse.json({ error: "Voz desconhecida." }, { status: 400 });
     }
     const provider = dynamicCartesia
       ? "cartesia"
-      : storedProvider(String(body.ttsProvider ?? known?.provider ?? ""), voiceId);
+      : dynamicChirp
+        ? "google-chirp3-hd"
+        : storedProvider(String(body.ttsProvider ?? known?.provider ?? ""), voiceId);
     if (!provider) {
       return NextResponse.json({ error: "Provedor desconhecido." }, { status: 400 });
     }

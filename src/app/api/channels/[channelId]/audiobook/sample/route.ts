@@ -9,6 +9,7 @@ import {
   isCartesiaVoiceId,
   type AuditionProvider,
 } from "../../../../../../core/audiobook/auditionVoices";
+import { isChirpVoiceId } from "../../../../../../core/audiobook/chirpVoices";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -41,7 +42,8 @@ export async function POST(
   }
   const voice = findAuditionVoice(provider, voiceId);
   const dynamicCartesia = provider === "cartesia" && isCartesiaVoiceId(voiceId);
-  if (!voice && !dynamicCartesia) {
+  const dynamicChirp = provider === "google" && isChirpVoiceId(voiceId);
+  if (!voice && !dynamicCartesia && !dynamicChirp) {
     return NextResponse.json({ error: "Voz desconhecida." }, { status: 400 });
   }
 

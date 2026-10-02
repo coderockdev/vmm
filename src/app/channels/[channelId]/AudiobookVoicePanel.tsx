@@ -32,6 +32,8 @@ export function AudiobookVoicePanel({ channelId }: { channelId: string }) {
   const [cartesiaVoices, setCartesiaVoices] = useState<AuditionVoice[]>([]);
   const [cartesiaQuery, setCartesiaQuery] = useState("");
   const [cartesiaGender, setCartesiaGender] = useState<CartesiaGender>("all");
+  const [chirpQuery, setChirpQuery] = useState("");
+  const [chirpGender, setChirpGender] = useState<CartesiaGender>("all");
   const [cartesiaLoading, setCartesiaLoading] = useState(false);
   const [cartesiaError, setCartesiaError] = useState<string | null>(null);
   const [cartesiaCursor, setCartesiaCursor] = useState<string | null>(null);
@@ -249,8 +251,8 @@ export function AudiobookVoicePanel({ channelId }: { channelId: string }) {
       <div className="workspace-section-title">
         <h2>Voz do audiolivro</h2>
         <p>
-          Cartesia lista as vozes em <strong>{languageName}</strong>, o idioma deste canal. Ouve uma e
-          clica em <strong>Usar como padrão</strong>. As outras casas continuam disponíveis abaixo.
+          Google Cloud lista as vozes Chirp em <strong>{languageName}</strong>. Ouve uma e clica em{" "}
+          <strong>Usar como padrão</strong>. As outras casas ficam abaixo.
         </p>
       </div>
 
@@ -299,14 +301,41 @@ export function AudiobookVoicePanel({ channelId }: { channelId: string }) {
               : cartesiaError
                 ? voices.filter((v) => v.provider === "cartesia")
                 : []
-            : voices.filter((v) => v.provider === group.id);
-        if (group.id !== "cartesia" && rows.length === 0) return null;
+            : group.id === "google"
+              ? voices.filter((voice) => {
+                  if (voice.provider !== "google") return false;
+                  if (chirpGender === "masculine" && !voice.note.startsWith("masculina")) return false;
+                  if (chirpGender === "feminine" && !voice.note.startsWith("feminina")) return false;
+                  const q = chirpQuery.trim().toLowerCase();
+                  return !q || voice.name.toLowerCase().includes(q) || voice.note.toLowerCase().includes(q);
+                })
+              : voices.filter((v) => v.provider === group.id);
+        if (group.id !== "cartesia" && group.id !== "google" && rows.length === 0) return null;
         return (
           <section key={group.id} className="audiobook-voice-card">
             <h3>
               {group.label}
-              {group.id === "cartesia" ? ` · ${languageName}` : ""}
+              {group.id === "cartesia" || group.id === "google" ? ` · ${languageName}` : ""}
             </h3>
+            {group.id === "google" && (
+              <div className="audiobook-voice-filters">
+                <input
+                  value={chirpQuery}
+                  onChange={(event) => setChirpQuery(event.target.value)}
+                  placeholder={`Buscar voz Chirp em ${languageName}…`}
+                  aria-label="Buscar voz Google Cloud"
+                />
+                <select
+                  value={chirpGender}
+                  onChange={(event) => setChirpGender(event.target.value as CartesiaGender)}
+                  aria-label="Filtrar Chirp por gênero"
+                >
+                  <option value="all">Todas</option>
+                  <option value="masculine">Masculinas</option>
+                  <option value="feminine">Femininas</option>
+                </select>
+              </div>
+            )}
             {group.id === "cartesia" && (
               <div className="audiobook-voice-filters">
                 <input
@@ -376,6 +405,9 @@ export function AudiobookVoicePanel({ channelId }: { channelId: string }) {
                 </div>
               );
             })}
+            {group.id === "google" && rows.length === 0 && (
+              <p className="books-muted">Nenhuma voz Chirp em {languageName} com esse filtro.</p>
+            )}
             {group.id === "cartesia" && cartesiaLoading && (
               <p className="books-muted">A carregar vozes em {languageName}…</p>
             )}
