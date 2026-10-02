@@ -21,10 +21,11 @@ export async function POST(req: NextRequest, { params }: { params: { channelId: 
   }
 
   const body = await req.json().catch(() => ({}));
-  const maxPages = Number(body.maxPages) || 10;
+  const maxPages = Number(body.maxPages) || 1;
+  const pageToken = typeof body.pageToken === "string" ? body.pageToken : undefined;
 
   try {
-    const result = await syncChannelComments({ channelId: channel.id, maxPages });
+    const result = await syncChannelComments({ channelId: channel.id, maxPages, pageToken });
     const counts = await countCommentsByStatus(channel.id);
     return NextResponse.json({ ...result, counts });
   } catch (err) {

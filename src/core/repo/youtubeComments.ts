@@ -248,6 +248,77 @@ export async function upsertYoutubeComment(input: {
   return (await getCommentByYoutubeId(input.channelId, input.youtubeCommentId))!;
 }
 
+/** One read plus one write for a page of comments. Keeps answered rows answered. */
+export async function upsertYoutubeCommentsBatch(
+  inputs: Array<Parameters<typeof upsertYoutubeComment>[0]>
+): Promise<number> {
+  if (inputs.length === 0) return 0;
+  if (!isSupabaseEnabled()) {
+    for (const input of inputs) await upsertYoutubeComment(input);
+    return inputs.length;
+  }
+
+  const channelId = inputs[0].channelId;
+  const ids = inputs.map((input) => input.youtubeCommentId);
+  const existingRows = (assertNoError(
+    await getSupabase()
+      .from("youtube_comments")
+      .select("*")
+      .eq("channel_id", channelId)
+      .in("youtube_comment_id", ids)
+  ) ?? []) as CommentDbRow[];
+  const byYt = new Map(existingRows.map((row) => [row.youtube_comment_id, row]));
+  const now = new Date().toISOString();
+
+  const payload = inputs.map((input) => {
+    const existing = byYt.get(input.youtubeCommentId);
+    let status = input.status ?? existing?.status ?? "pending";
+    let ourReplyId = existing?.our_reply_id ?? null;
+    let ourReplyText = existing?.our_reply_text ?? null;
+    let processedAt = existing?.processed_at ?? null;
+
+    if (input.ourReplyId) {
+      ourReplyId = input.ourReplyId;
+      ourReplyText = input.ourReplyText ?? ourReplyText;
+      status = "answered";
+      processedAt = processedAt || now;
+    } else if (existing?.status === "answered" || existing?.our_reply_id) {
+      status = "answered";
+      ourReplyId = existing.our_reply_id;
+      ourReplyText = existing.our_reply_text;
+    }
+
+    return {
+      id: existing?.id ?? randomUUID(),
+      channel_id: input.channelId,
+      youtube_comment_id: input.youtubeCommentId,
+      youtube_thread_id: input.youtubeThreadId,
+      video_id: input.videoId,
+      video_title: input.videoTitle ?? existing?.video_title ?? null,
+      author_name: input.authorName ?? existing?.author_name ?? null,
+      author_channel_id: input.authorChannelId ?? existing?.author_channel_id ?? null,
+      author_profile_image_url:
+        input.authorProfileImageUrl ?? existing?.author_profile_image_url ?? null,
+      comment_text: input.commentText,
+      published_at: input.publishedAt ?? existing?.published_at ?? null,
+      updated_at_yt: input.updatedAtYt ?? existing?.updated_at_yt ?? null,
+      like_count: input.likeCount ?? existing?.like_count ?? 0,
+      reply_count: input.replyCount ?? existing?.reply_count ?? 0,
+      our_reply_id: ourReplyId,
+      our_reply_text: ourReplyText,
+      category: existing?.category ?? null,
+      status,
+      error_message: existing?.error_message ?? null,
+      processed_at: processedAt,
+      created_at: existing?.created_at ?? now,
+      updated_at: now,
+    };
+  });
+
+  assertNoError(await getSupabase().from("youtube_comments").upsert(payload));
+  return payload.length;
+}
+
 export async function getCommentById(id: string): Promise<YoutubeCommentRow | null> {
   if (isSupabaseEnabled()) {
     const res = await getSupabase().from("youtube_comments").select("*").eq("id", id).maybeSingle();

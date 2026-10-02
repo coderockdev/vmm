@@ -78,14 +78,30 @@ export function CommentsPanel({ channel }: { channel: Channel }) {
     setSyncing(true);
     setError(null);
     try {
-      const res = await fetch(`/api/channels/${channel.id}/comments/sync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ maxPages: 10 }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-      if (json.counts) setCounts(json.counts);
+      let pageToken: string | undefined;
+      let imported = 0;
+      for (let page = 0; page < 10; page++) {
+        const res = await fetch(`/api/channels/${channel.id}/comments/sync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ maxPages: 1, pageToken }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const detail =
+            res.status === 504
+              ? "La actualización tardó demasiado. Volvé a apretar Actualizar comentarios."
+              : (json.error ?? `HTTP ${res.status}`);
+          if (imported > 0) {
+            throw new Error(`${detail} Ya se guardaron ${imported} comentarios.`);
+          }
+          throw new Error(detail);
+        }
+        imported += Number(json.imported) || 0;
+        if (json.counts) setCounts(json.counts);
+        pageToken = json.nextPageToken || undefined;
+        if (!pageToken) break;
+      }
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
