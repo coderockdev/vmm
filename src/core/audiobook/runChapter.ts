@@ -470,7 +470,7 @@ function imagePrompt(style: string, bookTitle: string, scene: string, look: stri
 
 /** Subtle motion only. A richer prompt made Fal redraw the people. */
 function motionPrompt(): string {
-  return "Slow cinematic camera move across this illustration. Gentle motion only: cloth, leaves, curtains, hair, and dust in the light. Keep the same drawing, the same faces, and the same clothes. Do not add objects or change the place. No text.";
+  return "Almost still. Locked camera. Only a very small motion: a little dust in the light, a slight shift of cloth or a strand of hair. Do not pan, do not zoom, do not walk. Keep the same drawing, the same faces, and the same clothes. Do not add objects or change the place. No text.";
 }
 
 async function narrateChirp(

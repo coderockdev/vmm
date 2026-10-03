@@ -626,7 +626,7 @@ function ChapterBudget({
       </p>
       {chapters.length > 1 && <p>Intervalo inteiro: {formatUsd(total)}</p>}
       <p className="books-muted">
-        O padrão é ilustração com movimento leve, música suave por baixo e a narração na frente. Fal, se entrar, só anima uns segundos. O resto é zoom lento, um fade entre planos e a voz.
+        O padrão é uma imagem a cada 10 segundos do texto. Fal entrega 5 segundos e o vídeo os estica a 10. A imagem seguinte é outra: zoom out, ou de vez em quando um paneo lateral.
       </p>
       {gate && (
         <div className="books-budget-gate">

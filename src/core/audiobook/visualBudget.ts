@@ -95,11 +95,6 @@ export function chapterDurationSeconds(words: number, budget: AudiobookVisualBud
   return Math.max(1, (Math.max(0, words) / wpm) * 60);
 }
 
-function scaledCount(perReference: number, scale: number, min: number, max: number): number {
-  const raw = Math.round(perReference * scale);
-  return Math.min(max, Math.max(min, raw));
-}
-
 export interface ChapterCostEstimate {
   durationSec: number;
   durationLabel: string;
@@ -116,25 +111,34 @@ export interface ChapterCostEstimate {
   needsApproval: boolean;
 }
 
+/** One picture every 10s of screen. Fal still renders 5s; we play that clip for 10. */
+export const BEAT_SECONDS = 10;
+/** The picture also covers the fade, so the script window is a second longer than the shot. */
+export const SCRIPT_PAD_SECONDS = 1;
+/** Seven clips on a 10-minute chapter: three in the first minute, the rest spread out. */
+export const CLIPS_PER_TEN_MINUTES = 7;
+
+export function timelineCounts(
+  durationSec: number,
+  budget: AudiobookVisualBudget
+): { playSec: number; beatCount: number; clipCount: number } {
+  const playSec = BEAT_SECONDS;
+  const beatCount = Math.max(1, Math.ceil(Math.max(playSec, durationSec) / playSec - 1e-6));
+  const rawClips = Math.round(CLIPS_PER_TEN_MINUTES * (durationSec / 600));
+  const clipCount = Math.min(beatCount, budget.maxAiClips, Math.max(budget.minAiClips, rawClips));
+  return { playSec, beatCount, clipCount };
+}
+
 /** Money follows the clamped image and clip counts. Voice follows the real duration. */
 export function estimateChapterCost(words: number, budget: AudiobookVisualBudget): ChapterCostEstimate {
   const durationSec = chapterDurationSeconds(words, budget);
   const scale = durationSec / 60 / budget.referenceMinutes;
-  const staticImages = scaledCount(
-    budget.staticImagesPerReference,
-    scale,
-    budget.minStaticImages,
-    budget.maxStaticImages
-  );
-  const scaledClips = scaledCount(budget.aiClipsPerReference, scale, budget.minAiClips, budget.maxAiClips);
-  const aiClips =
-    durationSec >= 6 * 60
-      ? Math.min(budget.maxAiClips, Math.max(scaledClips, budget.aiClipsPerReference))
-      : scaledClips;
-  const staticUsd =
-    budget.staticImagesPerReference > 0
-      ? budget.staticImageBudgetUsd * (staticImages / budget.staticImagesPerReference)
-      : 0;
+  const { beatCount, clipCount } = timelineCounts(durationSec, budget);
+  const staticImages = Math.min(90, beatCount);
+  const aiClips = clipCount;
+  const perImage =
+    budget.staticImagesPerReference > 0 ? budget.staticImageBudgetUsd / budget.staticImagesPerReference : 0;
+  const staticUsd = staticImages * perImage;
   const aiUsd = aiClips * budget.aiClipUsd;
   const voiceUsd = budget.voiceBudgetUsd * scale;
   const scriptUsd = budget.scriptCostUsd;

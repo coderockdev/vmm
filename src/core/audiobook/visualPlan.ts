@@ -1,5 +1,10 @@
 import { AudiobookVisualBudget } from "../types";
-import { ChapterCostEstimate, estimateChapterCost } from "./visualBudget";
+import {
+  ChapterCostEstimate,
+  SCRIPT_PAD_SECONDS,
+  estimateChapterCost,
+  timelineCounts,
+} from "./visualBudget";
 
 export const MOTION_KINDS = [
   "zoom-in",
@@ -63,127 +68,83 @@ export interface ChapterVisualPlan {
   actualTotalUsd: number | null;
 }
 
-function pickMotion(
-  imageIndex: number,
-  durationSec: number,
-  used: Set<string>,
-  salt: number
-): { motion: MotionKind; crop: FrameCrop; durationSec: number } {
-  for (let attempt = 0; attempt < MOTION_KINDS.length * FRAME_CROPS.length; attempt++) {
-    const motion = MOTION_KINDS[(imageIndex + salt + attempt) % MOTION_KINDS.length];
-    const crop = FRAME_CROPS[(imageIndex * 2 + salt + attempt) % FRAME_CROPS.length];
-    const key = `${imageIndex}|${motion}|${crop}|${durationSec.toFixed(1)}`;
-    if (used.has(key)) continue;
-    used.add(key);
-    return { motion, crop, durationSec };
+function placeClipBeats(beatCount: number, clipCount: number): number[] {
+  const chosen: number[] = [];
+  const early = Math.min(3, clipCount, beatCount);
+  for (let i = 0; i < early; i++) {
+    const beat = i * 2;
+    if (beat < beatCount) chosen.push(beat);
   }
-  const duration = Math.round((durationSec + 1) * 10) / 10;
-  const motion = MOTION_KINDS[salt % MOTION_KINDS.length];
-  const crop = FRAME_CROPS[(salt + 1) % FRAME_CROPS.length];
-  used.add(`${imageIndex}|${motion}|${crop}|${duration.toFixed(1)}`);
-  return { motion, crop, durationSec: duration };
+  const rest = clipCount - chosen.length;
+  const from = chosen.length > 0 ? chosen[chosen.length - 1] + 2 : 0;
+  const tail = Math.max(0, beatCount - from);
+  if (rest > 0 && tail > 0) {
+    const step = tail / rest;
+    for (let i = 0; i < rest; i++) {
+      const beat = Math.min(beatCount - 1, from + Math.round(i * step));
+      if (!chosen.includes(beat)) chosen.push(beat);
+    }
+  }
+  return chosen;
+}
+
+/** Zoom out most of the time. A lateral pan every third still, alternating sides. */
+function stillMotion(index: number): MotionKind {
+  if (index % 3 !== 2) return "zoom-out";
+  return index % 6 === 2 ? "pan-left" : "pan-right";
 }
 
 /**
- * The AI clips open the video back to back. That is the stretch people
- * actually stay for. After that, stills carry the chapter with camera
- * moves, and the same paintings can return.
- * Does not generate images or spend money.
+ * Each beat is 10s on screen and illustrates about 11s of narration, so the
+ * fade has a picture without stealing time from the shot. Fal still paints 5s.
+ * Three of the clips sit in the first minute; the rest are spread later.
+ * A still between clips is always a different painting. Does not spend money.
  */
 export function planChapterVisuals(words: number, budget: AudiobookVisualBudget): ChapterVisualPlan {
   const estimate = estimateChapterCost(words, budget);
-  const imageCount = estimate.staticImages;
-  const totalWords = Math.max(imageCount, Math.round(words));
-  const clipCountForImages = estimate.aiClips;
-  const openCount = Math.min(clipCountForImages, imageCount);
-  const openWords = Math.min(
-    Math.max(0, totalWords - Math.max(1, imageCount - openCount)),
-    Math.max(openCount * 12, Math.round((budget.wordsPerMinute * 45) / 60))
-  );
-  const images: PlannedImage[] = [];
-  const openEach = Math.max(1, Math.floor(Math.max(openWords, openCount) / Math.max(1, openCount)));
-  for (let index = 0; index < openCount; index++) {
-    const wordStart = index * openEach;
-    const wordEnd = index === openCount - 1 ? openWords : Math.min(openWords, wordStart + openEach);
-    images.push({ index, wordStart, wordEnd: Math.max(wordStart + 1, wordEnd), role: index === 0 ? "opening" : "moment" });
-  }
-  const restCount = imageCount - openCount;
-  const restEach = Math.max(1, Math.floor(Math.max(1, totalWords - openWords) / Math.max(1, restCount)));
-  for (let index = 0; index < restCount; index++) {
-    const wordStart = openWords + index * restEach;
-    const wordEnd = index === restCount - 1 ? totalWords : Math.min(totalWords, wordStart + restEach);
-    images.push({
-      index: openCount + index,
-      wordStart,
-      wordEnd: Math.max(wordStart + 1, wordEnd),
-      role: "moment",
-    });
-  }
-
-  const used = new Set<string>();
-  const slots: TimelineSlot[] = [];
-  const playSec = budget.aiClipSourceSeconds;
   const audio = estimate.durationSec;
-  const clipCount = estimate.aiClips;
+  const { playSec, beatCount, clipCount } = timelineCounts(audio, budget);
+  const clipBeats = new Set(placeClipBeats(beatCount, clipCount));
+  const totalWords = Math.max(1, Math.round(words));
+  const wpm = budget.wordsPerMinute || 150;
+  const wordAt = (sec: number) => Math.min(totalWords, Math.max(0, Math.round((sec * wpm) / 60)));
 
-  const push = (
-    kind: TimelineSlot["kind"],
-    startSec: number,
-    durationSec: number,
-    imageIndex: number,
-    salt: number
-  ) => {
-    const motion = pickMotion(imageIndex, Math.round(durationSec * 10) / 10, used, salt);
+  const images: PlannedImage[] = [];
+  const slots: TimelineSlot[] = [];
+  let stills = 0;
+
+  for (let beat = 0; beat < beatCount; beat++) {
+    const startSec = beat * playSec;
+    if (startSec >= audio - 0.3) break;
+    const durationSec = Math.round(Math.min(playSec, audio - startSec) * 10) / 10;
+    const wordStart = wordAt(startSec);
+    const wordEnd = Math.max(
+      wordStart + 1,
+      Math.min(totalWords, wordAt(startSec + durationSec + SCRIPT_PAD_SECONDS))
+    );
+    images.push({
+      index: beat,
+      wordStart,
+      wordEnd,
+      role: beat === 0 ? "opening" : "moment",
+    });
+    const kind: TimelineSlot["kind"] = clipBeats.has(beat) ? "ai-clip" : "still-motion";
+    const motion = kind === "ai-clip" ? "zoom-out" : stillMotion(stills);
+    if (kind === "still-motion") stills += 1;
     slots.push({
-      index: slots.length,
+      index: beat,
       kind,
       startSec: Math.round(startSec * 10) / 10,
-      durationSec: motion.durationSec,
-      imageIndex,
-      motion: motion.motion,
-      crop: motion.crop,
+      durationSec,
+      imageIndex: beat,
+      motion,
+      crop: "center",
       transition: "crossfade",
       sourceDurationSec: kind === "ai-clip" ? budget.aiClipSourceSeconds : null,
       silent: true,
       estimatedUsd: kind === "ai-clip" ? estimate.perClipUsd : 0,
     });
-  };
-
-  const fillStills = (from: number, to: number, salt: number) => {
-    let cursor = from;
-    let step = 0;
-    const holds = [35, 40, 45, 50, 55, 32, 48];
-    while (cursor < to - 0.4) {
-      const remaining = to - cursor;
-      let hold = holds[(salt + step) % holds.length];
-      hold = Math.min(budget.stillHoldMaxSeconds, Math.max(Math.min(budget.stillHoldMinSeconds, remaining), Math.min(hold, remaining)));
-      if (remaining < budget.stillHoldMinSeconds) hold = remaining;
-      const imageIndex = step % imageCount;
-      push("still-motion", cursor, hold, imageIndex, salt + step);
-      cursor += slots[slots.length - 1].durationSec;
-      if (cursor > to) {
-        const last = slots[slots.length - 1];
-        last.durationSec = Math.max(1, Math.round((last.durationSec - (cursor - to)) * 10) / 10);
-        break;
-      }
-      step += 1;
-      if (step > 40) break;
-    }
-  };
-
-  let cursor = 0;
-  // Five slow clips from the opening of the text, with a still between them.
-  // The still is where the fades live, so the 5s of Fal stays whole.
-  for (let index = 0; index < clipCount; index++) {
-    const imageIndex = Math.min(index, Math.max(0, imageCount - 1));
-    push("ai-clip", cursor, playSec, imageIndex, index);
-    cursor += playSec;
-    if (index < clipCount - 1) {
-      push("still-motion", cursor, 4, imageIndex, 100 + index);
-      cursor += 4;
-    }
   }
-  if (cursor < audio - 0.4) fillStills(cursor, audio, clipCount + 3);
 
   const covered = slots.reduce((sum, slot) => sum + slot.durationSec, 0);
   const drift = audio - covered;
