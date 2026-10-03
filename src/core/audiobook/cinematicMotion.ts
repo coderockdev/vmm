@@ -29,39 +29,26 @@ export function buildMotionFilter(args: {
   const fps = args.fps ?? 30;
   const width = args.width ?? 1920;
   const height = args.height ?? 1080;
-  const frames = Math.max(1, Math.round(args.durationSec * fps));
+  const frames = Math.max(2, Math.round(args.durationSec * fps));
+  const den = Math.max(1, frames - 1);
   const zoom =
     args.motion === "zoom-out" || args.motion === "pull-out"
-      ? "max(1.06-0.00028*on,1.01)"
-      : args.motion === "zoom-in" || args.motion === "push-in"
-        ? "min(1.01+0.00028*on,1.06)"
-        : "1.04";
-  const drift = args.motion === "drift" || args.motion === "parallax" ? "on*0.08" : "0";
+      ? `max(1,2-on/${den})`
+      : args.motion === "pan-left" || args.motion === "pan-right"
+        ? "2"
+        : args.motion === "zoom-in" || args.motion === "push-in"
+          ? "min(1.02+0.0002*on,1.12)"
+          : "1.08";
   const span = `(iw-iw/zoom)`;
   const spanY = `(ih-ih/zoom)`;
   const panX =
     args.motion === "pan-left"
-      ? `${span}*(1-on/${frames})`
-      : args.motion === "pan-right" || args.motion === "diagonal"
-        ? `${span}*(on/${frames})`
-        : args.crop === "left"
-          ? `${span}*0.15`
-          : args.crop === "right"
-            ? `${span}*0.85`
-            : `${span}/2`;
-  const panY =
-    args.motion === "pan-up"
-      ? `${spanY}*(1-on/${frames})`
-      : args.motion === "pan-down" || args.motion === "diagonal"
-        ? `${spanY}*(on/${frames})`
-        : args.crop === "top"
-          ? `${spanY}*0.12`
-          : args.crop === "bottom"
-            ? `${spanY}*0.88`
-            : `${spanY}/2`;
-  const x = `(${panX})+${drift}`;
-  const y = panY;
-  return `scale=${width * 2}:${height * 2}:force_original_aspect_ratio=increase,crop=${width * 2}:${height * 2},zoompan=z='${zoom}':x='${x}':y='${y}':d=${frames}:s=${width}x${height}:fps=${fps}`;
+      ? `${span}*(1-on/${den})`
+      : args.motion === "pan-right"
+        ? `${span}*(on/${den})`
+        : `${span}/2`;
+  const panY = `${spanY}/2`;
+  return `scale=${width * 2}:${height * 2}:force_original_aspect_ratio=increase,crop=${width * 2}:${height * 2},zoompan=z='${zoom}':x='${panX}':y='${panY}':d=${frames}:s=${width}x${height}:fps=${fps}`;
 }
 
 export async function renderCinematicStill(args: MotionRenderRequest): Promise<{ outputPath: string }> {
