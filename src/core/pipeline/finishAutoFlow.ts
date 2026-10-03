@@ -12,6 +12,7 @@ import {
 import { ensureLocalFile, persistFile, persistRenderLocalFirst, workingFilePath } from "../storage";
 import { renderVideo, mergePresetSettings } from "../videoRenderers";
 import { generateCoverConcept, buildThumbnailImagePrompt } from "../providers/script/coverConcept";
+import { stillImageRequest } from "../providers/image/stillChoices";
 import { burnThumbnailText } from "../providers/image/burnThumbnailText";
 import { persistIdentificationThumb } from "../providers/image/identificationThumb";
 import { getImageProvider } from "../providers/image";
@@ -282,7 +283,8 @@ async function generateAutoThumbnail(args: {
     const outPath = workingFilePath(channel.id, "thumbnails", fileName);
 
     try {
-      await gpt.generate({ prompt, outPath });
+      const still = stillImageRequest(channel.dna.visual.stillImage);
+      await gpt.generate({ prompt, outPath, model: still.model, quality: still.quality, size: "1536x1024" });
       await burnThumbnailText(outPath, conceptForImage.thumbnailText);
       await persistIdentificationThumb(outPath, channel.id, fileName).catch((err) => {
         console.warn(

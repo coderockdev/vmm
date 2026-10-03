@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getChannel, updateChannelDna } from "../../../../../core/repo/channels";
+import { getChannel, updateChannelCoverRef, updateChannelDna } from "../../../../../core/repo/channels";
 import { getImageProvider } from "../../../../../core/providers/image";
 import { channelComparePrompt } from "../../../../../core/providers/image/channelStillPrompt";
+import { normalizeCoverDna } from "../../../../../core/providers/image/coverFormats";
 import {
   STILL_IMAGE_CHOICES,
   stillImageChoice,
@@ -22,8 +23,12 @@ function isChoiceId(value: string): value is StillImageChoiceId {
 export async function GET(_req: NextRequest, { params }: { params: { channelId: string } }) {
   const channel = await getChannel(params.channelId);
   if (!channel) return NextResponse.json({ error: "Channel not found" }, { status: 404 });
+  const cover = normalizeCoverDna(channel.dna.visual?.cover);
+  const coverUrl = mediaUrl(channel.id, channel.coverRef);
   return NextResponse.json({
     prompt: channelComparePrompt(channel),
+    coverPrompt: cover.styleRules,
+    coverUrl: coverUrl ? `${coverUrl}?t=${Date.now()}` : null,
     stillImage: channel.dna.visual.stillImage ?? null,
     choices: STILL_IMAGE_CHOICES,
   });
@@ -39,9 +44,17 @@ export async function POST(req: NextRequest, { params }: { params: { channelId: 
     return NextResponse.json({ error: "Qualidade desconhecida." }, { status: 400 });
   }
   const choice = stillImageChoice(choiceId);
-  const prompt = channelComparePrompt(channel);
-  const fileName = `still-compare-${choice.id}.png`;
-  const outPath = workingFilePath(channel.id, "thumbnails", fileName);
+  const kind = body.kind === "cover" ? "cover" : "still";
+  const written = typeof body.prompt === "string" ? body.prompt.trim() : "";
+  const prompt =
+    written ||
+    (kind === "cover"
+      ? normalizeCoverDna(channel.dna.visual?.cover).styleRules
+      : channelComparePrompt(channel));
+  const fileName =
+    kind === "cover" ? (body.useOnChannel === true ? "cover.png" : "cover-sample.png") : `still-compare-${choice.id}.png`;
+  const folder = kind === "cover" && body.useOnChannel === true ? "cover" : "thumbnails";
+  const outPath = workingFilePath(channel.id, folder, fileName);
 
   try {
     await getImageProvider("openai").generate({
@@ -51,7 +64,15 @@ export async function POST(req: NextRequest, { params }: { params: { channelId: 
       model: choice.model,
       size: "1536x1024",
     });
-    const ref = await persistFile(outPath, channel.id, "thumbnails", fileName, "image/png");
+    const ref = await persistFile(outPath, channel.id, folder, fileName, "image/png");
+    if (kind === "cover" && body.useOnChannel === true) {
+      await updateChannelCoverRef(channel.id, ref);
+      const cover = normalizeCoverDna(channel.dna.visual?.cover);
+      await updateChannelDna(channel.id, {
+        ...channel.dna,
+        visual: { ...channel.dna.visual, cover: { ...cover, styleRules: prompt } },
+      });
+    }
     await insertUsageEvent({
       channelId: channel.id,
       stage: "thumbnail",
@@ -59,7 +80,7 @@ export async function POST(req: NextRequest, { params }: { params: { channelId: 
         provider: "openai",
         model: stillImageUsageLabel(choice),
         images: 1,
-        raw: { task: "still-compare", choiceId: choice.id },
+        raw: { task: kind === "cover" ? "cover-sample" : "still-compare", choiceId: choice.id },
       },
     }).catch(() => undefined);
     const url = mediaUrl(channel.id, ref);
@@ -79,12 +100,24 @@ export async function PATCH(req: NextRequest, { params }: { params: { channelId:
   if (!channel) return NextResponse.json({ error: "Channel not found" }, { status: 404 });
   const body = await req.json().catch(() => ({}));
   const choiceId = typeof body.choiceId === "string" ? body.choiceId : "";
-  if (!isChoiceId(choiceId)) {
+  const coverPrompt = typeof body.coverPrompt === "string" ? body.coverPrompt.trim() : "";
+  if (choiceId && !isChoiceId(choiceId)) {
     return NextResponse.json({ error: "Qualidade desconhecida." }, { status: 400 });
   }
+  if (!choiceId && !coverPrompt) {
+    return NextResponse.json({ error: "Nada para guardar." }, { status: 400 });
+  }
+  const cover = normalizeCoverDna(channel.dna.visual?.cover);
   await updateChannelDna(channel.id, {
     ...channel.dna,
-    visual: { ...channel.dna.visual, stillImage: choiceId },
+    visual: {
+      ...channel.dna.visual,
+      ...(choiceId ? { stillImage: choiceId } : {}),
+      ...(coverPrompt ? { cover: { ...cover, styleRules: coverPrompt } } : {}),
+    },
   });
-  return NextResponse.json({ stillImage: choiceId });
+  return NextResponse.json({
+    stillImage: choiceId || channel.dna.visual.stillImage || null,
+    coverPrompt: coverPrompt || cover.styleRules,
+  });
 }

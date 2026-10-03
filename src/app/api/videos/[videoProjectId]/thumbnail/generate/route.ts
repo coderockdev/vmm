@@ -6,6 +6,7 @@ import { getImageProvider } from "../../../../../../core/providers/image";
 import { ImageProviderName } from "../../../../../../core/providers/image/ImageProvider";
 import { stylesForCount, mergeThumbnailHistory, ThumbnailCandidate } from "../../../../../../core/providers/image/thumbnailStyles";
 import { buildThumbnailImagePrompt } from "../../../../../../core/providers/script/coverConcept";
+import { stillImageRequest } from "../../../../../../core/providers/image/stillChoices";
 import { burnThumbnailText } from "../../../../../../core/providers/image/burnThumbnailText";
 import { persistIdentificationThumb } from "../../../../../../core/providers/image/identificationThumb";
 import { normalizeCoverDna, VideoConcept } from "../../../../../../core/providers/image/coverFormats";
@@ -79,7 +80,12 @@ export async function POST(req: NextRequest, { params }: { params: { videoProjec
       const fileName = `thumb-${project.id}-${style.id}-${Date.now()}-${i}.png`;
       const outPath = workingFilePath(channel.id, "thumbnails", fileName);
       try {
-        await provider.generate({ prompt, outPath });
+        const still = provider.name === "openai" ? stillImageRequest(channel.dna.visual.stillImage) : null;
+        await provider.generate({
+          prompt,
+          outPath,
+          ...(still ? { model: still.model, quality: still.quality, size: "1536x1024" } : {}),
+        });
         await burnThumbnailText(outPath, concept.thumbnailText);
         await persistIdentificationThumb(outPath, channel.id, fileName).catch(() => undefined);
         const ref = await persistFile(outPath, channel.id, "thumbnails", fileName, "image/png");

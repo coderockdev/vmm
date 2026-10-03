@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getChannel, updateChannelCoverRef } from "../../../../../core/repo/channels";
 import { getImageProvider, buildCoverPrompt } from "../../../../../core/providers/image";
+import { stillImageRequest } from "../../../../../core/providers/image/stillChoices";
 import { workingFilePath, persistFile } from "../../../../../core/storage";
 import { mediaUrl } from "../../../../../core/media";
 
@@ -20,7 +21,13 @@ export async function POST(_req: NextRequest, { params }: { params: { channelId:
 
     const fileName = "cover.png";
     const outPath = workingFilePath(channel.id, "cover", fileName);
-    await getImageProvider().generate({ prompt, outPath });
+    const provider = getImageProvider();
+    const still = provider.name === "openai" ? stillImageRequest(channel.dna.visual.stillImage) : null;
+    await provider.generate({
+      prompt,
+      outPath,
+      ...(still ? { model: still.model, quality: still.quality, size: "1536x1024" } : {}),
+    });
     const ref = await persistFile(outPath, channel.id, "cover", fileName, "image/png");
     await updateChannelCoverRef(channel.id, ref);
 

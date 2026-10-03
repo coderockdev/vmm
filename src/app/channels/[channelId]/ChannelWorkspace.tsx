@@ -1181,7 +1181,6 @@ export function ChannelWorkspace({
             </button>
           </>
         )}
-        <button type="button" disabled title="Ainda não implementado">Estatísticas</button>
         <button type="button" onClick={() => router.push(`/channels/${channel.id}/edit`)}>Configurações</button>
       </nav>
 

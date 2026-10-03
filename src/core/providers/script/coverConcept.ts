@@ -1,5 +1,6 @@
 import { Channel, Script, VideoProject } from "../../types";
 import {
+  AMOR_AMOR_COVER_FORMATS,
   CoverVisualDna,
   InventedCoverFormat,
   ThumbnailFormatChoice,
@@ -31,7 +32,20 @@ export interface CoverConceptResult {
 }
 
 function coverDna(channel: Channel): CoverVisualDna {
-  return normalizeCoverDna(channel.dna.visual?.cover);
+  const cover = normalizeCoverDna(channel.dna.visual?.cover);
+  const byId = new Map(AMOR_AMOR_COVER_FORMATS.map((format) => [format.id, format]));
+  cover.formats = cover.formats.map((format) => {
+    const code = byId.get(format.id);
+    if (!code) return format;
+    return {
+      ...format,
+      name: code.name,
+      description: code.description,
+      structure: code.structure,
+      textStrategy: code.textStrategy,
+    };
+  });
+  return cover;
 }
 
 function formatCatalogBlock(cover: CoverVisualDna): string {
@@ -126,7 +140,17 @@ ${scriptExcerpt || "(no script yet — use title/topic + successful-title patter
 """
 
 Fill thumbnailText + thumbnailScene yourself from the script/DNA — the user may leave those fields empty.
-thumbnailText rules: ONE phrase, 2–4 short words, large type, wide margin. No arrow and no second phrase. Do not repeat those words inside thumbnailScene. The photograph never contains the caption.
+thumbnailText rules: ONE phrase, 2–4 short words, large type, wide margin. Words only — no arrow glyph.
+- WITH the word ORACIÓN: formats 03-momento-emocional, 05-frase-imposible, 06-misterio-hora, 10-pregunta.
+- WITHOUT the word oración: every other format.
+Do not repeat those words inside thumbnailScene. The photograph never contains the caption.
+thumbnailScene rules: describe THAT format's structure, simple and obvious. Do not describe a generic face on the right.
+- 01: same woman, problem on the left, result on the right, a clear red arrow from left to right.
+- 02: close-up, phone screen off, an empty chat-bubble shape, no letters.
+- 06: large analog clock, hands only, no numerals, she by a window at night, face lit.
+- 07: one object fills most of the frame.
+- 08: two people, physical distance between them.
+- 04: a simple comment block with no full YouTube chrome, and no letters inside the photo.
 
 Return ONLY a JSON object:
 {
@@ -394,8 +418,8 @@ export function buildThumbnailImagePrompt(args: {
     "ABSOLUTE: the photograph contains zero letters, zero numbers, zero logos, zero captions, zero subtitles, zero speech-bubble text, zero UI. A caption is composited afterwards. If any glyph appears, the image is wrong.",
     "PHONE: if a phone is in frame it is a matte dark object, screen OFF and solid black. No lock screen, no incoming call, no caller name, no icons, no writing. An analog clock with no numerals is allowed only when the format requires a clock.",
     "LIGHT: frontal key light on the face. Catchlight in both eyes. Skin and expression are the brightest part of the frame. A window may rim the hair, but it is never the only light. A face in silhouette or lost in shadow is a failed image.",
-    "COMPOSITION: her face fills the right half, eyes and mouth fully visible. The format's signature object sits upper-left, large and unmistakable. The lower-left stays darker and empty for a caption.",
-    "QUALITY: this must read as a finished YouTube thumbnail, not a moody still. One clear object from the format, a lit face, and one red or yellow accent. A generic portrait that ignores the format is a failed image.",
+    "COMPOSITION: follow this format's structure exactly. Keep the photograph simple. Its signature must be obvious: a split with a red arrow, an empty chat bubble, a clock with no numerals, an object filling the frame, two people apart, or one lit face. Leave the lower-left darker and empty for a caption we add later. A generic portrait that ignores the format is a failed image.",
+    "QUALITY: one clear idea, a lit face, and one red or yellow accent. Not a crowded clickbait collage.",
     `Channel mood: ${args.channel.name}.`,
     `Format: ${format.name}. Structure: ${"structure" in format ? format.structure : ""}.`,
     scene ? `Scene (photograph only, no writing): ${scene}.` : "",
