@@ -24,6 +24,7 @@ import { JUAN_CARLOS_ELEVENLABS_VOICE_ID } from "../../../core/providers/tts/voi
 import { ScriptReviewModal } from "./ScriptReviewModal";
 import { lightCoverUrl, mediaUrl } from "../../../core/media";
 import { sampleIdeasFromDna, suggestTopicsFromDna } from "../../../core/providers/script/ideaSuggestions";
+import { StoryboardPanel } from "./StoryboardPanel";
 import {
   CalendarIcon,
   CarouselIcon,
@@ -51,6 +52,7 @@ type WorkspaceTab =
   | "roteiros"
   | "descricoes"
   | "audio"
+  | "storyboard"
   | "imagens"
   | "videos"
   | "portadas"
@@ -193,11 +195,13 @@ export function ChannelWorkspace({
       if (tab === "livros" && isAudiobook) return "livros";
       if (tab === "laboratorio" && isAudiobook) return "laboratorio";
       if (tab === "audio") return "audio";
+      if (tab === "storyboard" && !isAudiobook) return "storyboard";
       if (tab === "painel") return "painel";
     }
     return isAudiobook ? "livros" : "painel";
   });
   const [portadasFocusId, setPortadasFocusId] = useState<string | null>(null);
+  const [storyboardProjectId, setStoryboardProjectId] = useState<string | null>(null);
   const [createMode, setCreateMode] = useState<CreateMode>("auto");
   const [topic, setTopic] = useState("");
   const [quantity, setQuantity] = useState(5);
@@ -1164,6 +1168,9 @@ export function ChannelWorkspace({
                 <span className="tab-badge">{audioBusyCount + videoBusyCount}</span>
               )}
             </button>
+            <button type="button" className={activeTab === "storyboard" ? "active" : ""} onClick={() => setActiveTab("storyboard")}>
+              Storyboard
+            </button>
             <button type="button" className={activeTab === "imagens" ? "active" : ""} onClick={() => setActiveTab("imagens")}>
               Imagens
             </button>
@@ -2048,6 +2055,18 @@ export function ChannelWorkspace({
                             ? "A gerar…"
                             : "Gerar vídeo"}
                         </button>
+                        {!isAudiobook && (
+                          <button
+                            type="button"
+                            className="review-queue-action"
+                            onClick={() => {
+                              setStoryboardProjectId(project.id);
+                              setActiveTab("storyboard");
+                            }}
+                          >
+                            Storyboard
+                          </button>
+                        )}
                       </div>
                     ) : asset ? (
                       <span className="review-queue-action review-queue-action-muted" title="Arquivo só existia no disco da máquina que gerou; gere de novo para subir ao Supabase.">
@@ -2082,6 +2101,18 @@ export function ChannelWorkspace({
         </section>
       )}
 
+      {activeTab === "storyboard" && !isAudiobook && (
+        <StoryboardPanel
+          initialProjectId={storyboardProjectId}
+          episodes={projects
+            .filter((project) => project.scriptId)
+            .map((project) => ({
+              id: project.id,
+              title: project.title,
+              hasAudio: Boolean(project.audioAssetId),
+            }))}
+        />
+      )}
       {activeTab === "imagens" && <StillCompare channelId={channel.id} audiobook={isAudiobook} />}
 
       {activeTab === "videos" && (

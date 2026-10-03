@@ -1,13 +1,16 @@
 import { ChannelDNA } from "./types";
 import {
   defaultAmorAmorCoverDna,
+  defaultArquivoCoverDna,
   defaultJulioVerneCoverDna,
+  ARQUIVO_INTERIOR_STYLE_RULES,
   JULIO_VERNE_INTERIOR_STYLE_RULES,
 } from "./providers/image/coverFormats";
 import { defaultAmorAmorCommentAutomation } from "./comments/defaults";
 import { DEFAULT_AMOR_AMOR_MUSICAL } from "./providers/music/musicalDna";
 import { AMOR_AMOR_SUCCESSFUL_TITLES } from "./channels/amorAmorSuccessfulTitles";
 import { AMOR_AMOR_SCRIPT_PROMPT } from "./channels/amorAmorScriptPrompt";
+import { ARQUIVO_SCRIPT_PROMPT } from "./channels/arquivoScriptPrompt";
 
 export interface SeedChannel {
   id: string;
@@ -212,42 +215,71 @@ Columna: DESEO → DESESPERACIÓN → CLÍMAX → EGO → DIOS.`,
     },
   },
   {
-    id: "oracoes-da-noite",
-    name: "Orações da Noite",
-    niche: "Oração • Espiritual",
-    coverColor: "#5a6fe0",
+    id: "arquivo-ovni",
+    name: "O Arquivo",
+    niche: "Mistério brasileiro • testemunho • investigação",
+    coverColor: "#071510",
     dna: {
       description:
-        "Canal em português sobre orações, reflexão, gratidão, paz e mensagens espirituais para o fim do dia.",
+        "Canal brasileiro de mistérios contados por quem estava lá: testemunho, dossiê e reconstrução. OVNI é um ramo, não o canal inteiro. O Brasil é o lugar — sertão, litoral, Amazônia, Minas, estrada, rio, pista, farol — e não um cenário americano com nome brasileiro.",
       purpose:
-        "Criar conteúdos de oração e reflexão espiritual que tragam paz e acolhimento antes de dormir.",
+        "Publicar um caso por vídeo, em português do Brasil. Casos reais e histórias originais se alternam. O vídeo diz qual é qual. Fato documentado não se mistura com reconstrução. Cada episódio termina num detalhe concreto que continua sem resposta.",
       audience:
-        "Pessoas que buscam conforto espiritual, fé e paz interior antes de dormir.",
+        "Quem assiste no Brasil e quer uma investigação, não um corte de curiosidades nem uma Area 51 traduzida.",
       language: "pt",
-      tone: ["sereno", "acolhedor", "reverente", "esperançoso"],
-      topics: ["oração", "gratidão", "paz interior", "fé", "reflexão noturna", "mensagens espirituais"],
-      avoid: ["política", "polêmicas religiosas", "notícias", "assuntos não relacionados à espiritualidade"],
+      tone: ["testemunho", "contido", "concreto", "noturno", "investigativo"],
+      topics: [
+        "mistério brasileiro",
+        "testemunho em primeira pessoa",
+        "dossiê",
+        "sertão",
+        "Amazônia",
+        "litoral",
+        "casos reais brasileiros",
+        "história original",
+      ],
+      avoid: [
+        "Cenário americano com nome brasileiro",
+        "Viatura, placa, uniforme ou fazenda dos Estados Unidos",
+        "Deserto estilo Nevada",
+        "Inventar documento, testemunha, foto ou gravação e apresentar como prova real",
+        "Tratar ficção como caso documentado",
+        "Encerrar com «talvez nunca saibamos a verdade»",
+        "Pedir like e inscrição como fecho",
+        "Homenzinhos verdes e abdução de filme",
+      ],
       scriptRules: {
-        opening: "acolher quem chega cansado do dia com serenidade",
-        structure: "introdução → oração principal → reflexão → momento de silêncio → encerramento com bênção",
-        cta: "convite gentil para compartilhar ou voltar amanhã",
-        defaultDurationMinutes: 10,
-        defaultSceneCount: 4,
-        generationPrompt: "",
-        pauses: { betweenLines: 0.65, betweenSections: 2 },
-        wordsPerMinute: 140,
+        opening:
+          "Começa dentro do momento. Não começa com o nome, a data nem com boas-vindas. O cartão verde do lugar entra depois do corte.",
+        structure:
+          "Testemunho em primeira pessoa. O caso vira investigação. Cartão de lugar em português, no Brasil. Fato, testemunho e reconstrução ficam separados. Um detalhe final sem resposta.",
+        cta: "Uma pergunta só, depois da história. Sem pedido de like ou inscrição.",
+        defaultDurationMinutes: 18,
+        defaultSceneCount: 8,
+        generationPrompt: ARQUIVO_SCRIPT_PROMPT,
+        pauses: { betweenLines: 0.4, betweenSections: 1.2 },
+        wordsPerMinute: 150,
         charsPerWord: 6,
-        performanceTags: { enabled: false, selected: [], tagsPerThousandWords: 35 },
+        performanceTags: { enabled: false, selected: [], tagsPerThousandWords: 0 },
       },
       visual: {
         template: "neon-meditation",
         palette: "night-sky",
-        textPreset: "bold-scroll",
+        textPreset: "none",
+        cover: defaultArquivoCoverDna(),
+        interiorStyleRules: ARQUIVO_INTERIOR_STYLE_RULES,
+        stillImage: "gpt-image-1-medium",
+        locationCard: {
+          background: "#071510",
+          textColor: "#3DFF7A",
+          reveal: "character",
+          glow: true,
+        },
       },
       voice: {
-        provider: "cartesia",
-        voiceId: "cb2694c3-715f-4da9-99f3-1c974fff2928", // Eloá (pt-BR, calorosa/calma)
-        speed: 0.85,
+        provider: "google",
+        voiceId: "pt-BR-Chirp3-HD-Charon",
+        speed: 0.95,
         volume: 1,
       },
       usesScript: true,

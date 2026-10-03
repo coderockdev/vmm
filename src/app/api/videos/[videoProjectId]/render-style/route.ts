@@ -38,6 +38,14 @@ export async function POST(req: NextRequest, { params }: { params: { videoProjec
   if (!project.audioAssetId) {
     return NextResponse.json({ error: "Gere a voz antes do vídeo." }, { status: 400 });
   }
+  const { readStoryboard } = await import("../../../../../core/storyboard/store");
+  const approvedBoard = await readStoryboard(project.id);
+  if (approvedBoard?.status === "approved") {
+    return NextResponse.json(
+      { error: "Este episódio tem um storyboard aprovado. O vídeo sai desse plano, não de um estilo de texto." },
+      { status: 409 }
+    );
+  }
 
   const body = await req.json().catch(() => ({}));
   const styleId = (body.styleId || "scrolling-text") as VideoStyleId;

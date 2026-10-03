@@ -94,6 +94,16 @@ export interface ChannelDNA {
     interiorStyleRules?: string;
     /** Chapter stills. Missing means gpt-image-1 at medium. */
     stillImage?: StillImageChoiceId;
+    /**
+     * Native location card. Rendered by VMM, not by an image model.
+     * O Arquivo uses a dark field and green terminal type.
+     */
+    locationCard?: {
+      background: string;
+      textColor: string;
+      reveal: "character" | "instant";
+      glow: boolean;
+    };
     /** Default FFmpeg/Remotion video style for this channel. */
     defaultVideoStyle?: VideoStyleChoice | null;
   };
