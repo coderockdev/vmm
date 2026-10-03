@@ -11,6 +11,7 @@ import { BooksPanel } from "./BooksPanel";
 import { AudiobookBoard } from "./AudiobookBoard";
 import { AudiobookVoicePanel } from "./AudiobookVoicePanel";
 import { ImageToVideoLab } from "./ImageToVideoLab";
+import { StillCompare } from "./StillCompare";
 import { YoutubeConnectPanel } from "./YoutubeConnectPanel";
 import { CommentsPanel } from "./CommentsPanel";
 import { ControlPanel } from "./ControlPanel";
@@ -50,6 +51,7 @@ type WorkspaceTab =
   | "roteiros"
   | "descricoes"
   | "audio"
+  | "imagens"
   | "videos"
   | "portadas"
   | "custos"
@@ -1093,7 +1095,7 @@ export function ChannelWorkspace({
               <small>
                 {isAudiobook
                   ? "Voz, qualidade das imagens e regras do audiolivro (1 capítulo = 1 vídeo)."
-                  : "Contexto, estilo, tom, público, temas e configurações do canal para geração de conteúdo."}
+                  : "Contexto, tom e a qualidade de imagem que o canal guarda no DNA."}
               </small>
             </span>
           </div>
@@ -1112,6 +1114,9 @@ export function ChannelWorkspace({
             </button>
             <button type="button" className={activeTab === "audio" ? "active" : ""} onClick={() => setActiveTab("audio")}>
               Áudio
+            </button>
+            <button type="button" className={activeTab === "imagens" ? "active" : ""} onClick={() => setActiveTab("imagens")}>
+              Imagens
             </button>
             <button type="button" className={activeTab === "videos" ? "active" : ""} onClick={() => setActiveTab("videos")}>
               Vídeos
@@ -1158,6 +1163,9 @@ export function ChannelWorkspace({
               Áudio{(audioBusyCount > 0 || videoBusyCount > 0) && (
                 <span className="tab-badge">{audioBusyCount + videoBusyCount}</span>
               )}
+            </button>
+            <button type="button" className={activeTab === "imagens" ? "active" : ""} onClick={() => setActiveTab("imagens")}>
+              Imagens
             </button>
             <button type="button" className={activeTab === "videos" ? "active" : ""} onClick={() => setActiveTab("videos")}>
               Vídeos
@@ -2074,6 +2082,8 @@ export function ChannelWorkspace({
           )}
         </section>
       )}
+
+      {activeTab === "imagens" && <StillCompare channelId={channel.id} audiobook={isAudiobook} />}
 
       {activeTab === "videos" && (
         <section className="channel-videos-section" id="channel-videos">
