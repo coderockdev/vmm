@@ -1092,7 +1092,7 @@ export function ChannelWorkspace({
               <strong>DNA do canal</strong>
               <small>
                 {isAudiobook
-                  ? "Voz, estilo visual e regras do audiolivro (1 capítulo = 1 vídeo)."
+                  ? "Voz, qualidade das imagens e regras do audiolivro (1 capítulo = 1 vídeo)."
                   : "Contexto, estilo, tom, público, temas e configurações do canal para geração de conteúdo."}
               </small>
             </span>

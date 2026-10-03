@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import type { BookListItem, Chapter } from "../../../core/types";
 import { DEFAULT_AUDIOBOOK_SETTINGS } from "../../../core/types";
 import type { AudiobookVisualBudget } from "../../../core/types";
@@ -8,6 +9,7 @@ import { chapterSnap } from "./chapterProgress";
 import { ChapterParts } from "./ChapterParts";
 import { estimateChapterCost, formatUsd, normalizeVisualBudget } from "../../../core/audiobook/visualBudget";
 import { planChapterVisuals } from "../../../core/audiobook/visualPlan";
+import { formatStillUsd, stillImageChoice } from "../../../core/providers/image/stillChoices";
 
 type ChapterSpend = {
   textUsd: number;
@@ -85,6 +87,7 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
   const [bulkTo, setBulkTo] = useState(1);
   const [bulkMode, setBulkMode] = useState<"audio" | "full" | null>(null);
   const [budget, setBudget] = useState<AudiobookVisualBudget>(DEFAULT_AUDIOBOOK_SETTINGS.visualBudget);
+  const [stillImage, setStillImage] = useState<string | null>(null);
   const [costGate, setCostGate] = useState<{ mode: "audio" | "full"; chapterId: string | null } | null>(null);
 
   const loadBooks = useCallback(async () => {
@@ -118,6 +121,7 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
         const match = (json.voices ?? []).find((v: { id: string; name?: string }) => v.id === voice);
         setVoiceLabel(match?.name || voice.replace("pt-BR-Chirp3-HD-", "") || null);
         setBudget(normalizeVisualBudget(json.settings?.visualBudget));
+        setStillImage(typeof json.stillImage === "string" ? json.stillImage : null);
       })
       .catch(() => undefined);
   }, [channelId]);
@@ -190,7 +194,7 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
   async function produceChapter(chapterId: string, mode: "audio" | "full", confirmed = false) {
     if (!selectedId) return;
     const chapter = detail?.chapters.find((item) => item.id === chapterId);
-    if (!confirmed && chapter && estimateChapterCost(chapter.words, budget).needsApproval) {
+    if (!confirmed && chapter && estimateChapterCost(chapter.words, budget, stillImage).needsApproval) {
       setCostGate({ mode, chapterId });
       return;
     }
@@ -230,7 +234,7 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
     const chosen = detail.chapters.filter((chapter) => chapter.index >= 1 && chapter.index <= to);
     const estimates = chosen.map((chapter) => ({
       chapter,
-      estimate: estimateChapterCost(chapter.words, budget),
+      estimate: estimateChapterCost(chapter.words, budget, stillImage),
     }));
     if (!confirmed && estimates.some((row) => row.estimate.needsApproval)) {
       setCostGate({ mode, chapterId: null });
@@ -368,6 +372,8 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
             <ChapterBudget
               chapters={detail.chapters.filter((chapter) => chapter.index >= 1 && chapter.index <= Math.max(1, bulkTo))}
               budget={budget}
+              stillImage={stillImage}
+              channelId={channelId}
               gate={costGate}
               onCancel={() => setCostGate(null)}
               onContinue={() => {
@@ -403,7 +409,7 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
                       <ChapterParts parts={snap.parts} />
                       {(c.attempts > 0 || detail.spend[c.id]) && (
                         <small className="books-muted">
-                          Orçamento {formatUsd(estimateChapterCost(c.words, budget).totalUsd)}
+                          Orçamento {formatUsd(estimateChapterCost(c.words, budget, stillImage).totalUsd)}
                           {chapterSpendLabel(detail.spend[c.id])}
                           {snap.version > 1 ? ` · prova 1 mantida${snap.redoing ? ` · agora a versão ${snap.version}` : ""}` : ""}
                         </small>
@@ -595,21 +601,26 @@ export function BooksPanel({ channelId, onGoToVoice }: Props) {
 function ChapterBudget({
   chapters,
   budget,
+  stillImage,
+  channelId,
   gate,
   onCancel,
   onContinue,
 }: {
   chapters: Chapter[];
   budget: AudiobookVisualBudget;
+  stillImage: string | null;
+  channelId: string;
   gate: { mode: "audio" | "full"; chapterId: string | null } | null;
   onCancel: () => void;
   onContinue: () => void;
 }) {
   if (chapters.length === 0) return null;
+  const imageChoice = stillImageChoice(stillImage);
   const rows = chapters.map((chapter) => ({
     chapter,
-    estimate: estimateChapterCost(chapter.words, budget),
-    plan: planChapterVisuals(chapter.words, budget),
+    estimate: estimateChapterCost(chapter.words, budget, stillImage),
+    plan: planChapterVisuals(chapter.words, budget, stillImage),
   }));
   const total = rows.reduce((sum, row) => sum + row.estimate.totalUsd, 0);
   const first = rows[0];
@@ -626,7 +637,9 @@ function ChapterBudget({
       </p>
       {chapters.length > 1 && <p>Intervalo inteiro: {formatUsd(total)}</p>}
       <p className="books-muted">
-        O padrão é uma imagem a cada 10 segundos do texto. Fal entrega 5 segundos e o vídeo os estica a 10. A imagem seguinte é outra: zoom out, ou de vez em quando um paneo lateral.
+        Imagens: {imageChoice.label}, {formatStillUsd(imageChoice.usd)} cada. A escolha fica no{" "}
+        <Link href={`/channels/${channelId}/edit`}>DNA do canal</Link>. Uma imagem a cada 10 segundos do texto.
+        Fal entrega 5 segundos e o vídeo os estica a 10. A imagem seguinte é outra: zoom out, ou de vez em quando um paneo lateral.
       </p>
       {gate && (
         <div className="books-budget-gate">

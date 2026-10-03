@@ -100,8 +100,12 @@ function stillMotion(index: number): MotionKind {
  * Three of the clips sit in the first minute; the rest are spread later.
  * A still between clips is always a different painting. Does not spend money.
  */
-export function planChapterVisuals(words: number, budget: AudiobookVisualBudget): ChapterVisualPlan {
-  const estimate = estimateChapterCost(words, budget);
+export function planChapterVisuals(
+  words: number,
+  budget: AudiobookVisualBudget,
+  stillChoiceId?: string | null
+): ChapterVisualPlan {
+  const estimate = estimateChapterCost(words, budget, stillChoiceId);
   const audio = estimate.durationSec;
   const { playSec, beatCount, clipCount } = timelineCounts(audio, budget);
   const clipBeats = new Set(placeClipBeats(beatCount, clipCount));

@@ -3,7 +3,9 @@ import path from "path";
 import { ImageProvider, GenerateImageArgs, GenerateImageResult } from "./ImageProvider";
 import { fetchWithRetry, describeProviderError } from "../../httpRetry";
 
-const MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
+function defaultModel(): string {
+  return process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
+}
 
 /**
  * Real OpenAI Images API integration. Requires OPENAI_API_KEY. Model is
@@ -19,10 +21,11 @@ export class OpenAIImageProvider implements ImageProvider {
       throw new Error("OPENAI_API_KEY is not set. Add it to your .env.local to generate cover art with AI.");
     }
 
+    const model = args.model?.trim() || defaultModel();
     const quality = args.quality ?? (process.env.OPENAI_IMAGE_QUALITY === "high" || process.env.OPENAI_IMAGE_QUALITY === "low"
       ? process.env.OPENAI_IMAGE_QUALITY
       : "medium");
-    const size = imageSize(MODEL, args.size);
+    const size = imageSize(model, args.size);
     const response = await fetchWithRetry("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: {
@@ -30,7 +33,7 @@ export class OpenAIImageProvider implements ImageProvider {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: MODEL,
+        model,
         prompt: args.prompt,
         size,
         quality,
@@ -40,7 +43,7 @@ export class OpenAIImageProvider implements ImageProvider {
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");
-      throw new Error(describeProviderError(`OpenAI Images (modelo "${MODEL}")`, response.status, body));
+      throw new Error(describeProviderError(`OpenAI Images (modelo "${model}")`, response.status, body));
     }
 
     const json = await response.json();

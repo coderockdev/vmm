@@ -4,7 +4,7 @@ import {
   DEFAULT_AUDIOBOOK_SETTINGS,
   ImageToVideoProviderId,
 } from "../types";
-import { openaiImageUsd } from "../usage/pricing";
+import { stillImageChoice } from "../providers/image/stillChoices";
 
 const PROVIDERS: ImageToVideoProviderId[] = ["fal", "runway", "kling", "luma", "pika"];
 
@@ -131,13 +131,17 @@ export function timelineCounts(
 }
 
 /** Money follows the clamped image and clip counts. Voice follows the real duration. */
-export function estimateChapterCost(words: number, budget: AudiobookVisualBudget): ChapterCostEstimate {
+export function estimateChapterCost(
+  words: number,
+  budget: AudiobookVisualBudget,
+  stillChoiceId?: string | null
+): ChapterCostEstimate {
   const durationSec = chapterDurationSeconds(words, budget);
   const scale = durationSec / 60 / budget.referenceMinutes;
   const { beatCount, clipCount } = timelineCounts(durationSec, budget);
   const staticImages = Math.min(90, beatCount);
   const aiClips = clipCount;
-  const perImage = openaiImageUsd("gpt-image-1 medium 1536x1024");
+  const perImage = stillImageChoice(stillChoiceId).usd;
   const staticUsd = staticImages * perImage;
   const aiUsd = aiClips * budget.aiClipUsd;
   const voiceUsd = budget.voiceBudgetUsd * scale;

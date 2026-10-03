@@ -33,6 +33,7 @@ export async function GET(
   return NextResponse.json({
     settings,
     language: channel.dna.language,
+    stillImage: channel.dna.visual.stillImage ?? null,
     providers: AUDITION_PROVIDERS,
     voices: [...AUDITION_VOICES, ...chirp],
   });

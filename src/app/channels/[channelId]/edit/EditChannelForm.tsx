@@ -19,6 +19,13 @@ import {
   wordsForDuration,
 } from "../../../../core/scriptBudget";
 import { VoicePicker } from "./VoicePicker";
+import {
+  DEFAULT_STILL_IMAGE_CHOICE,
+  STILL_IMAGE_CHOICES,
+  STILLS_PER_TEN_MINUTES,
+  formatStillUsd,
+  stillImageChoice,
+} from "../../../../core/providers/image/stillChoices";
 
 function initialVoiceProfile(channel: Channel): VoiceProfile {
   if (channel.dna.voice.profile) return channel.dna.voice.profile;
@@ -125,6 +132,10 @@ export function EditChannelForm({
   const [useMusic, setUseMusic] = useState(musical?.useMusicByDefault !== false);
   const [musicPct, setMusicPct] = useState(Math.round((musical?.volume ?? 0.08) * 100));
   const [useSfx, setUseSfx] = useState(Boolean(musical?.useSfx) && musical?.sfxMode !== "off");
+  const [stillImage, setStillImage] = useState(
+    channel.dna.visual.stillImage ?? DEFAULT_STILL_IMAGE_CHOICE
+  );
+  const pickedStill = stillImageChoice(stillImage);
 
   const tagCatalog = useMemo(() => catalogForProvider(voiceProfile.provider as any), [voiceProfile.provider]);
   const catalogMarkups = useMemo(() => tagCatalog.map((t) => t.markup), [tagCatalog]);
@@ -232,6 +243,10 @@ export function EditChannelForm({
               sfxMode: useSfx ? "auto" : "off",
               sfxVolume: useSfx ? channel.dna.musical?.sfxVolume || 0.5 : 0,
             },
+            visual: {
+              ...channel.dna.visual,
+              stillImage: channel.dna.mode === "audiobook" ? stillImageChoice(stillImage).id : channel.dna.visual.stillImage,
+            },
           },
         }),
       });
@@ -302,6 +317,7 @@ export function EditChannelForm({
           : " · sem emoções"}
         {channel.dna.musical?.useMusicByDefault === false ? " · sem música" : " · com música"}
         {channel.dna.musical?.useSfx && channel.dna.musical?.sfxMode !== "off" ? " · com efeitos" : " · sem efeitos"}
+        {channel.dna.mode === "audiobook" ? ` · ${stillImageChoice(channel.dna.visual.stillImage).label}` : ""}
       </div>
 
       {saveMessage && (
@@ -401,6 +417,57 @@ export function EditChannelForm({
           <label style={labelStyle}>Tagline</label>
           <input style={inputStyle} value={niche} onChange={(e) => setNiche(e.target.value)} />
         </section>
+
+        {channel.dna.mode === "audiobook" && (
+          <section style={sectionStyle}>
+            <strong>IMAGENS DO CAPÍTULO</strong>
+            <p style={{ fontSize: 13, color: "var(--text-dim)", marginTop: 8, marginBottom: 12, lineHeight: 1.45 }}>
+              Cada imagem do capítulo sai neste modelo e nesta qualidade. O mini é o ChatGPT mais barato:
+              segue a cena, e o desenho sai mais simples, com menos detalhe na cara, na roupa e no traço.
+              O preço é por imagem, em paisagem.
+            </p>
+            <div role="radiogroup" aria-label="Qualidade das imagens" style={{ display: "grid", gap: 8 }}>
+              {STILL_IMAGE_CHOICES.map((choice) => {
+                const selected = pickedStill.id === choice.id;
+                return (
+                  <label
+                    key={choice.id}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "auto 1fr auto",
+                      gap: 12,
+                      alignItems: "start",
+                      padding: "12px 14px",
+                      borderRadius: 12,
+                      border: `1px solid ${selected ? "var(--accent)" : "var(--border)"}`,
+                      background: selected ? "color-mix(in srgb, var(--accent) 8%, transparent)" : "transparent",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="still-image"
+                      checked={selected}
+                      onChange={() => setStillImage(choice.id)}
+                      style={{ marginTop: 3 }}
+                    />
+                    <span>
+                      <strong style={{ fontSize: 14 }}>{choice.label}</strong>
+                      <span style={{ display: "block", fontSize: 12, color: "var(--text-dim)", marginTop: 3, lineHeight: 1.4 }}>
+                        {choice.offer}
+                      </span>
+                    </span>
+                    <strong style={{ fontSize: 13, whiteSpace: "nowrap" }}>{formatStillUsd(choice.usd)}</strong>
+                  </label>
+                );
+              })}
+            </div>
+            <p style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 10, marginBottom: 0, lineHeight: 1.4 }}>
+              Num capítulo de 10 minutos, cerca de {STILLS_PER_TEN_MINUTES} imagens ficam em{" "}
+              {formatStillUsd(pickedStill.usd * STILLS_PER_TEN_MINUTES)}. Salvar grava a escolha no DNA.
+            </p>
+          </section>
+        )}
 
         <section style={sectionStyle}>
           <strong>CONTEÚDO</strong>

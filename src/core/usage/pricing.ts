@@ -66,6 +66,12 @@ export function chirpFreeChars(): number {
 export function openaiImageUsd(model: string | null | undefined): number {
   const label = model || "";
   const square = /1024x1024/.test(label);
+  const mini = /mini/i.test(label);
+  if (mini) {
+    if (/high/i.test(label)) return square ? 0.036 : 0.052;
+    if (/low/i.test(label)) return square ? 0.005 : 0.006;
+    return square ? 0.011 : 0.015;
+  }
   if (/high/i.test(label)) return square ? 0.167 : 0.25;
   if (/low/i.test(label)) return square ? 0.011 : 0.016;
   if (/medium/i.test(label)) return square ? 0.042 : 0.063;
