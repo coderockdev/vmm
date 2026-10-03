@@ -142,8 +142,10 @@ export function StillCompare({ channelId, audiobook }: { channelId: string; audi
       <div className="workspace-section-title">
         <h2>Imagens</h2>
         <p>
-          O mesmo pedido, uma imagem de cada qualidade. Serve para ver o desenho e o preço antes de
-          gastar um capítulo inteiro.
+          O mesmo pedido, uma imagem de cada qualidade. O texto sai do DNA deste canal.
+          {audiobook
+            ? " Serve para ver o desenho e o preço antes de gastar um capítulo inteiro."
+            : " Serve para ver o desenho e o preço antes de gastar as capas."}
         </p>
       </div>
       <p className="books-muted">
@@ -155,7 +157,7 @@ export function StillCompare({ channelId, audiobook }: { channelId: string; audi
       <label className="portadas-label" style={{ display: "block", marginTop: 12 }}>
         Pedido das imagens
         <span className="books-muted" style={{ display: "block", margin: "4px 0 8px" }}>
-          Sugestão a partir do DNA. Podes editar antes de gerar. As seis qualidades recebem este mesmo texto.
+          Sugestão deste canal, a partir do DNA dele. Podes editar antes de gerar. As seis qualidades recebem este mesmo texto.
         </span>
         <textarea value={prompt} rows={6} onChange={(event) => setPrompt(event.target.value)} style={{ width: "100%" }} />
       </label>

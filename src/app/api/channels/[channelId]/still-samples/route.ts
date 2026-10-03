@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getChannel, updateChannelCoverRef, updateChannelDna } from "../../../../../core/repo/channels";
 import { getImageProvider } from "../../../../../core/providers/image";
-import { channelComparePrompt } from "../../../../../core/providers/image/channelStillPrompt";
+import { channelComparePrompt, channelCoverPrompt } from "../../../../../core/providers/image/channelStillPrompt";
 import { normalizeCoverDna } from "../../../../../core/providers/image/coverFormats";
 import {
   STILL_IMAGE_CHOICES,
@@ -23,11 +23,10 @@ function isChoiceId(value: string): value is StillImageChoiceId {
 export async function GET(_req: NextRequest, { params }: { params: { channelId: string } }) {
   const channel = await getChannel(params.channelId);
   if (!channel) return NextResponse.json({ error: "Channel not found" }, { status: 404 });
-  const cover = normalizeCoverDna(channel.dna.visual?.cover);
   const coverUrl = mediaUrl(channel.id, channel.coverRef);
   return NextResponse.json({
     prompt: channelComparePrompt(channel),
-    coverPrompt: cover.styleRules,
+    coverPrompt: channelCoverPrompt(channel),
     coverUrl: coverUrl ? `${coverUrl}?t=${Date.now()}` : null,
     stillImage: channel.dna.visual.stillImage ?? null,
     choices: STILL_IMAGE_CHOICES,
@@ -48,9 +47,7 @@ export async function POST(req: NextRequest, { params }: { params: { channelId: 
   const written = typeof body.prompt === "string" ? body.prompt.trim() : "";
   const prompt =
     written ||
-    (kind === "cover"
-      ? normalizeCoverDna(channel.dna.visual?.cover).styleRules
-      : channelComparePrompt(channel));
+    (kind === "cover" ? channelCoverPrompt(channel) : channelComparePrompt(channel));
   const fileName =
     kind === "cover" ? (body.useOnChannel === true ? "cover.png" : "cover-sample.png") : `still-compare-${choice.id}.png`;
   const folder = kind === "cover" && body.useOnChannel === true ? "cover" : "thumbnails";
