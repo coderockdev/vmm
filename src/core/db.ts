@@ -246,6 +246,7 @@ function migrate(db: Database.Database) {
   addColumnIfMissing(db, "video_projects", "video_style_json", "TEXT");
   addColumnIfMissing(db, "video_projects", "audio_bed_json", "TEXT");
   addColumnIfMissing(db, "video_projects", "publish_json", "TEXT");
+  addColumnIfMissing(db, "video_projects", "storyboard_json", "TEXT");
   addColumnIfMissing(db, "channels", "cover_ref", "TEXT");
   addColumnIfMissing(db, "video_projects", "cost_usd_total", "REAL");
   addColumnIfMissing(db, "video_projects", "cost_breakdown_json", "TEXT");

@@ -599,6 +599,98 @@ NO LETTERING.
 NO LOGOS.
 NO WATERMARK.`;
 
+export const ARQUIVO_COVER_STYLE_RULES = `CRIAR CAPA DE YOUTUBE — O ARQUIVO
+
+Capa 16:9 de um mistério brasileiro contado como dossiê. Não é um canal de OVNI americano traduzido.
+
+ESTILO:
+Reconstrução documental fotoreal, noite, um só elemento principal. Estrada, testemunha, barco, torre, documento ou rádio. O lugar tem de ser o Brasil de verdade: caatinga, litoral, rio, serra, cidade pequena, caminhão brasileiro, placa brasileira, uniforme brasileiro.
+
+TEXTO:
+2 a 5 palavras em português, grandes, legíveis no celular. Em baixo, pequeno, «O ARQUIVO». Nenhum outro texto. Não revelar o detalhe final. Não apresentar uma prova inventada como se fosse real.
+
+CORES: noite, verde de terminal só como acento pequeno, âmbar de farol. Sem neon, sem deserto de Nevada, sem viatura americana.`;
+
+export const ARQUIVO_COVER_AVOID = [
+  "deserto estilo Nevada",
+  "viatura americana",
+  "placa de estrada americana",
+  "uniforme militar americano",
+  "fazenda americana",
+  "homenzinhos verdes",
+  "abdução de filme",
+  "Area 51",
+  "logotipos",
+  "spoiler do detalhe final",
+  "texto além do título curto e de O ARQUIVO",
+  "prova inventada apresentada como fato",
+];
+
+export const ARQUIVO_COVER_FORMATS: CoverFormat[] = [
+  {
+    id: "arq-estrada",
+    name: "Estrada",
+    description: "Uma estrada brasileira à noite, vazia, com um veículo só.",
+    previewHint: "estrada · noite",
+    structure: "Caminhão ou carro brasileiro sozinho. Faróis na caatinga, no asfalto ou na serra. Nenhum outro veículo. O céu ou a serra guardam uma luz distante, simples.",
+    textStrategy: "2–5 palavras do título, grandes. «O ARQUIVO» pequeno.",
+    enabled: true,
+  },
+  {
+    id: "arq-testemunha",
+    name: "Testemunha",
+    description: "A pessoa que estava lá, no ofício dela.",
+    previewHint: "testemunha",
+    structure: "Uma testemunha no trabalho: cabine de caminhão, barco, torre, rádio, plantão. O rosto não posa. O lugar brasileiro conta onde ela estava.",
+    textStrategy: "2–5 palavras do título, grandes. «O ARQUIVO» pequeno.",
+    enabled: true,
+  },
+  {
+    id: "arq-dossie",
+    name: "Dossiê",
+    description: "Um papel, uma foto, um mapa ou uma fita sobre a mesa.",
+    previewHint: "dossiê",
+    structure: "Uma mesa escura com um só item de investigação: foto, mapa do Brasil, caderno, fita cassete ou página com trechos cobertos. Sem parecer um cartaz de filme americano.",
+    textStrategy: "2–5 palavras do título, grandes. «O ARQUIVO» pequeno.",
+    enabled: true,
+  },
+  {
+    id: "arq-lugar",
+    name: "Lugar",
+    description: "O lugar brasileiro é o assunto: rio, farol, usina, pista antiga.",
+    previewHint: "lugar",
+    structure: "Um lugar reconhecível do Brasil, quase vazio, à noite ou no fim da tarde. Farol, comunidade ribeirinha, pista de terra, usina, porto. Uma anomalia pequena, não um espetáculo.",
+    textStrategy: "2–5 palavras do título, grandes. «O ARQUIVO» pequeno.",
+    enabled: true,
+  },
+];
+
+export const ARQUIVO_INTERIOR_STYLE_RULES = `INTERIOR FRAMES — O ARQUIVO
+
+16:9 frame for a Brazilian mystery investigation told in Portuguese. Not a thumbnail. Not a Jules Verne ink drawing. Not an American UFO stock scene.
+
+Follow the shot's own image prompt when the script gives one. If it does not, use one of these, and do not use the same kind for every frame:
+
+- Photoreal documentary reconstruction of the Brazilian place in that sentence: sertão road, caatinga, Amazon river, fishing boat, small airfield, radar room, hydroelectric plant, lighthouse, Minas countryside, Pantanal. Brazilian vehicles, signs, uniforms, vegetation, and weather.
+- Investigation material: photograph, map, clipping, notebook, cassette, redacted page, radar screen.
+- A rough investigation sketch, not polished artwork.
+- Occasional archival treatment: VHS, Super 8, 16mm, surveillance. Do not degrade every frame.
+
+No American police car, American road sign, American farm, American uniform, or Nevada desert.
+No invented "proof" that the narration does not contain.
+NO TEXT. NO LETTERING. NO LOGOS. NO WATERMARK.
+16:9. Faces and feet stay in the middle of the frame.`;
+
+export function defaultArquivoCoverDna(): CoverVisualDna {
+  return {
+    styleRules: ARQUIVO_COVER_STYLE_RULES,
+    avoid: [...ARQUIVO_COVER_AVOID],
+    accentColors: { primary: "verde terminal", emphasis: "âmbar" },
+    formats: ARQUIVO_COVER_FORMATS.map((format) => ({ ...format })),
+    recentFormatIds: [],
+  };
+}
+
 export function defaultJulioVerneCoverDna(): CoverVisualDna {
   return {
     styleRules: JULIO_VERNE_COVER_STYLE_RULES,
