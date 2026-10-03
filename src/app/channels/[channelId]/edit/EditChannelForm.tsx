@@ -245,7 +245,7 @@ export function EditChannelForm({
             },
             visual: {
               ...channel.dna.visual,
-              stillImage: channel.dna.mode === "audiobook" ? stillImageChoice(stillImage).id : channel.dna.visual.stillImage,
+              stillImage: stillImageChoice(stillImage).id,
             },
           },
         }),
@@ -317,7 +317,7 @@ export function EditChannelForm({
           : " · sem emoções"}
         {channel.dna.musical?.useMusicByDefault === false ? " · sem música" : " · com música"}
         {channel.dna.musical?.useSfx && channel.dna.musical?.sfxMode !== "off" ? " · com efeitos" : " · sem efeitos"}
-        {channel.dna.mode === "audiobook" ? ` · ${stillImageChoice(channel.dna.visual.stillImage).label}` : ""}
+        {` · ${stillImageChoice(channel.dna.visual.stillImage).label}`}
       </div>
 
       {saveMessage && (
@@ -418,13 +418,12 @@ export function EditChannelForm({
           <input style={inputStyle} value={niche} onChange={(e) => setNiche(e.target.value)} />
         </section>
 
-        {channel.dna.mode === "audiobook" && (
-          <section style={sectionStyle}>
-            <strong>IMAGENS DO CAPÍTULO</strong>
+        <section style={sectionStyle}>
+            <strong>IMAGENS DO CANAL</strong>
             <p style={{ fontSize: 13, color: "var(--text-dim)", marginTop: 8, marginBottom: 12, lineHeight: 1.45 }}>
-              Cada imagem do capítulo sai neste modelo e nesta qualidade. O mini é o ChatGPT mais barato:
+              Esta é a qualidade que o canal usa quando gera imagens. O mini é o ChatGPT mais barato:
               segue a cena, e o desenho sai mais simples, com menos detalhe na cara, na roupa e no traço.
-              O preço é por imagem, em paisagem.
+              O preço é por imagem, em paisagem. Na aba Imagens, antes de Vídeos, dá para gerar uma de cada com o mesmo pedido e comparar.
             </p>
             <div role="radiogroup" aria-label="Qualidade das imagens" style={{ display: "grid", gap: 8 }}>
               {STILL_IMAGE_CHOICES.map((choice) => {
@@ -463,11 +462,12 @@ export function EditChannelForm({
               })}
             </div>
             <p style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 10, marginBottom: 0, lineHeight: 1.4 }}>
-              Num capítulo de 10 minutos, cerca de {STILLS_PER_TEN_MINUTES} imagens ficam em{" "}
-              {formatStillUsd(pickedStill.usd * STILLS_PER_TEN_MINUTES)}. Salvar grava a escolha no DNA.
+              {channel.dna.mode === "audiobook"
+                ? `Num capítulo de 10 minutos, cerca de ${STILLS_PER_TEN_MINUTES} imagens ficam em ${formatStillUsd(pickedStill.usd * STILLS_PER_TEN_MINUTES)}. `
+                : "Este canal ainda não gasta isto em cada vídeo. A escolha fica guardada para quando gerar imagens. "}
+              Salvar grava a escolha no DNA.
             </p>
           </section>
-        )}
 
         <section style={sectionStyle}>
           <strong>CONTEÚDO</strong>
