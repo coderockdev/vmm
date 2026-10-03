@@ -80,6 +80,15 @@ export function stillImageChoice(id: string | null | undefined): StillImageChoic
   return STILL_IMAGE_CHOICES.find((choice) => choice.id === id) ?? STILL_IMAGE_CHOICES[1];
 }
 
+/** What a video cover asks OpenAI for. The DNA card is the source. */
+export function stillImageRequest(id: string | null | undefined): {
+  model: StillImageChoice["model"];
+  quality: StillImageChoice["quality"];
+} {
+  const choice = stillImageChoice(id);
+  return { model: choice.model, quality: choice.quality };
+}
+
 /** Usage-event label. openaiImageUsd reads the model and the quality from this string. */
 export function stillImageUsageLabel(choice: StillImageChoice): string {
   return `${choice.model} ${choice.quality} 1536x1024`;

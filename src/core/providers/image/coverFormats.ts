@@ -106,7 +106,7 @@ export const AMOR_AMOR_COVER_FORMATS: CoverFormat[] = [
     name: "Antes / Después",
     description: "Pantalla dividida: problema a la izquierda, resultado a la derecha.",
     previewHint: "split · flecha",
-    structure: "Split screen of the same woman: left is the problem, right is the result. Optional red arrow and a thin red divider. No words, no labels, no speech bubble.",
+    structure: "Split screen of the same woman: left is the problem, right is the result. A clear red arrow points from the problem to the result, plus a thin red divider. No words, no labels, no speech bubble.",
     textStrategy: "One short phrase for the whole thumbnail, 2–4 words. The split shows the change. Do not write a second phrase.",
     enabled: true,
   },
