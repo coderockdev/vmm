@@ -4,6 +4,7 @@ import {
   DEFAULT_AUDIOBOOK_SETTINGS,
   ImageToVideoProviderId,
 } from "../types";
+import { openaiImageUsd } from "../usage/pricing";
 
 const PROVIDERS: ImageToVideoProviderId[] = ["fal", "runway", "kling", "luma", "pika"];
 
@@ -136,8 +137,7 @@ export function estimateChapterCost(words: number, budget: AudiobookVisualBudget
   const { beatCount, clipCount } = timelineCounts(durationSec, budget);
   const staticImages = Math.min(90, beatCount);
   const aiClips = clipCount;
-  const perImage =
-    budget.staticImagesPerReference > 0 ? budget.staticImageBudgetUsd / budget.staticImagesPerReference : 0;
+  const perImage = openaiImageUsd("gpt-image-1 medium 1536x1024");
   const staticUsd = staticImages * perImage;
   const aiUsd = aiClips * budget.aiClipUsd;
   const voiceUsd = budget.voiceBudgetUsd * scale;
