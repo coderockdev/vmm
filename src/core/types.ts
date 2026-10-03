@@ -16,6 +16,7 @@ import type { VoiceProfile } from "./providers/tts/voiceCapabilities";
 import type { MusicalDna } from "./providers/music/musicalDna";
 import type { VideoStyleChoice } from "./videoRenderers/types";
 import type { CommentAutomationConfig } from "./comments/types";
+import type { StillImageChoiceId } from "./providers/image/stillChoices";
 
 /**
  * ChannelDNA is the permanent editorial identity of a channel.
@@ -91,6 +92,8 @@ export interface ChannelDNA {
     cover?: CoverVisualDna;
     /** Still frames shown while the chapter is read. No lettering. */
     interiorStyleRules?: string;
+    /** Chapter stills. Missing means gpt-image-1 at medium. */
+    stillImage?: StillImageChoiceId;
     /** Default FFmpeg/Remotion video style for this channel. */
     defaultVideoStyle?: VideoStyleChoice | null;
   };

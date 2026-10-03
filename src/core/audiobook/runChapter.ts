@@ -6,6 +6,7 @@ import { LibraryMusicProvider } from "../providers/music";
 import { burnStoryCover } from "../providers/image/burnThumbnailText";
 import { JULIO_VERNE_INTERIOR_STYLE_RULES } from "../providers/image/coverFormats";
 import { getImageProvider } from "../providers/image";
+import { stillImageChoice, stillImageUsageLabel, type StillImageChoice } from "../providers/image/stillChoices";
 import { CartesiaTTSProvider } from "../providers/tts/CartesiaTTSProvider";
 import { chirpBilledCharacters, synthesizeChirpToFile } from "../providers/tts/chirpSpeech";
 import { isChirpVoiceId } from "./chirpVoices";
@@ -148,7 +149,8 @@ async function produceClaimedChapter(
     );
     if (mode === "audio") return;
 
-    const plan = planChapterVisuals(chapter.words, settings.visualBudget);
+    const stillChoice = stillImageChoice(channel.dna.visual.stillImage);
+    const plan = planChapterVisuals(chapter.words, settings.visualBudget, stillChoice.id);
     fitSlots(plan.slots, audioSec);
     const style = channel.dna.visual.interiorStyleRules || JULIO_VERNE_INTERIOR_STYLE_RULES;
     const look = visualFacts(body);
@@ -170,14 +172,14 @@ async function produceClaimedChapter(
         }
       );
       const scene = excerpt(body, image.wordStart, image.wordEnd);
-      const made = await generateStill(imagePrompt(style, book.title, scene, look), file);
+      const made = await generateStill(imagePrompt(style, book.title, scene, look), file, stillChoice);
       await frameTo16x9(file);
       await insertUsageEvent({
         channelId: channel.id,
         stage: "thumbnail",
         snapshot: {
           provider: made === "gemini" ? "gemini" : "openai",
-          model: made === "gemini" ? "gemini-3.1-flash-image" : "gpt-image-1 medium 1536x1024",
+          model: made === "gemini" ? "gemini-3.1-flash-image" : stillImageUsageLabel(stillChoice),
           images: 1,
           raw: { chapterId: chapter.id, task: "image" },
         },
@@ -432,11 +434,21 @@ function visualFacts(text: string): string {
     .slice(0, 520);
 }
 
-async function generateStill(prompt: string, outPath: string): Promise<"openai" | "gemini"> {
+async function generateStill(
+  prompt: string,
+  outPath: string,
+  choice: StillImageChoice
+): Promise<"openai" | "gemini"> {
   const quota = (err: unknown) => /429|insufficient_quota|quota/i.test(err instanceof Error ? err.message : String(err));
   const provider = getImageProvider();
   try {
-    await provider.generate({ prompt, outPath, quality: "medium", size: "1536x864" });
+    await provider.generate({
+      prompt,
+      outPath,
+      quality: choice.quality,
+      model: choice.model,
+      size: "1536x864",
+    });
     return provider.name === "gemini" ? "gemini" : "openai";
   } catch (err) {
     if (!quota(err)) throw err;
